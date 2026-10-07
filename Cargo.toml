@@ -1,0 +1,33 @@
+[package]
+name = "snakedaw"
+version = "0.1.0"
+edition = "2021"
+description = "A simple DAW for practice and recording"
+
+[dependencies]
+eframe = { version = "0.31", default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
+jack = { version = "0.13", optional = true }
+livi = { version = "0.7", optional = true }
+cpal = "0.18"
+rtrb = "0.3"
+crossbeam-channel = "0.5"
+hound = "3.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+dirs = "5"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[features]
+default = ["jack-backend", "lv2"]
+# Linux: talk to PipeWire/JACK directly (lowest latency, desktop audio capture).
+jack-backend = ["dep:jack"]
+# Linux: host LV2 effect plugins. Needs the lilv library.
+lv2 = ["dep:livi"]
+
+[profile.dev]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"

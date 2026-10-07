@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SnakeDAW
+Comment=Practice and recording
+Exec=snakedaw
+Icon=audio-x-generic
+Categories=AudioVideo;Audio;
+StartupWMClass=snakedaw
