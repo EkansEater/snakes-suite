@@ -1,0 +1,9 @@
+# ROMs are copyrighted; never commit them.
+roms/
+# Generated output (derived from the ROM, so also not for sharing).
+build/
+# Name lists downloaded from other projects.
+symbols/
+# Your saved games.
+saves/
+__pycache__/
