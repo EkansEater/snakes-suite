@@ -449,8 +449,10 @@ static void overlay_quad(float x, float y, float w, float h, float u0, float u1,
 }
 
 /* Positions are in window pixels from the top-left. */
-void glb_overlay_box(int x, int y, int w, int h, int opacity) {
-    float color[4] = {0, 0, 0, (float)opacity / 255};
+void glb_overlay_box(int x, int y, int w, int h, int opacity) { glb_overlay_bar(x, y, w, h, 0, 0, 0, opacity); }
+
+void glb_overlay_bar(int x, int y, int w, int h, int r, int g, int b, int opacity) {
+    float color[4] = {(float)r / 255, (float)g / 255, (float)b / 255, (float)opacity / 255};
     overlay_quad((float)x, (float)y, (float)w, (float)h, -1, -1, color); /* u < 0: no texture */
 }
 
@@ -459,8 +461,8 @@ void glb_overlay_text(int x, int y, const char *text, int size, int r, int g, in
     for (; *text; text++, x += 8 * size) {
         if (*text < 32 || *text > 126)
             continue;
-        float u = (float)(*text - 32) / 95;
-        overlay_quad((float)x, (float)y, (float)(8 * size), (float)(16 * size), u, u + 1.0f / 95, color);
+        float u = (float)((*text - 32) * (FONT_W + FONT_GAP) + FONT_GAP / 2) / FONT_PICTURE_W;
+        overlay_quad((float)x, (float)y, (float)(8 * size), (float)(16 * size), u, u + (float)FONT_W / FONT_PICTURE_W, color);
     }
 }
 
@@ -539,17 +541,23 @@ void glb_init(void) {
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void *)(8 * sizeof(float)));
     glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, stride, (void *)(10 * sizeof(float)));
 
-    /* The menu font: every character side by side in one picture. */
-    static uint8_t pixels[16][95 * 8][4];
-    for (int c = 0; c < 95; c++)
-        for (int y = 0; y < 16; y++)
-            for (int x = 0; x < 8; x++)
-                memset(pixels[y][c * 8 + x], (font_8x16[c][y] >> (7 - x)) & 1 ? 255 : 0, 4);
+    /* The menu font: every character side by side in one picture, much
+     * larger than it is usually shown. "Mipmaps" are ready-made half-size,
+     * quarter-size... copies, which the card uses to shrink it cleanly. */
+    static uint8_t pixels[FONT_H][FONT_PICTURE_W][4];
+    for (int y = 0; y < FONT_H; y++)
+        for (int x = 0; x < FONT_PICTURE_W; x++) {
+            memset(pixels[y][x], 255, 3);
+            pixels[y][x][3] = (uint8_t)((font_rows[y][x] - 'A') * 17); /* how solid: 0 to 255 */
+        }
     glGenTextures(1, &font_texture);
     glBindTexture(GL_TEXTURE_2D, font_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 95 * 8, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, FONT_PICTURE_W, FONT_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     gfx_set_backend(&backend);
 }

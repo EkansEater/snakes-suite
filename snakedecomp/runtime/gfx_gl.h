@@ -14,6 +14,7 @@ void glb_present(int which, int window_width, int window_height);
 /* The menu and statistics, drawn on top. Positions are in window pixels
  * from the top-left; nothing appears until glb_overlay_finish. */
 void glb_overlay_box(int x, int y, int w, int h, int opacity);
+void glb_overlay_bar(int x, int y, int w, int h, int r, int g, int b, int opacity); /* a box of any colour */
 void glb_overlay_text(int x, int y, const char *text, int size, int r, int g, int b);
 void glb_overlay_finish(void);
 

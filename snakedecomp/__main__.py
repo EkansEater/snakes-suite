@@ -5,12 +5,12 @@ import os
 import re
 import subprocess
 
-from .build import build, game_source, host_addresses, host_replacements, sdl_flags
+from .build import build, game_names, game_source, host_addresses, host_replacements, sdl_flags
 from .program import Program, analyse
 from .recomp import Recompiler
 from .rom import Rom
-from .signatures import learn, recognise
-from .symbols import load_map
+from .signatures import learn, load_database, recognise, save_database
+from .symbols import Symbols, load_map
 from .verify import verify
 
 
@@ -19,7 +19,8 @@ def load_program(rom: Rom, args: argparse.Namespace) -> Program:
 
     With a linker map for this ROM (by default symbols/<rom name>.map) every
     function gets its real name. Without one, the OS library functions are
-    recognised by comparing against any other ROM we do have a map for.
+    recognised from the fingerprints that come with this tool, and a few
+    game-specific names come from the game's file in runtime/games/.
     """
     path = args.symbols
     if path is None:
@@ -29,14 +30,23 @@ def load_program(rom: Rom, args: argparse.Namespace) -> Program:
         return analyse(rom, load_map(path))
 
     program = analyse(rom)
-    folder = os.path.dirname(args.rom)
-    for other in sorted(os.listdir(folder)):
-        other_map = os.path.join("symbols", os.path.splitext(other)[0] + ".map")
-        if other.endswith(".z64") and os.path.exists(other_map):
-            teacher = analyse(Rom.from_file(os.path.join(folder, other)), load_map(other_map))
-            for start, symbol in recognise(program, learn(teacher)).items():
-                program.functions[start].symbol = symbol
+    for start, symbol in recognise(program, load_database()).items():
+        program.functions[start].symbol = symbol
+    program.symbols = Symbols(addresses=game_names(rom.header.game_code))
+    for symbol, start in program.symbols.addresses.items():
+        if start in program.functions:
+            program.functions[start].symbol = symbol
     return program
+
+
+def cmd_learn(rom: Rom, args: argparse.Namespace) -> None:
+    """Rebuild the fingerprint file from a ROM we have a linker map for."""
+    program = load_program(rom, args)
+    if program.symbols is None or not program.symbols.code_blocks:
+        raise SystemExit("learning needs a linker map for this ROM (see --symbols)")
+    entries = learn(program)
+    save_database(entries)
+    print(f"Saved fingerprints of {len(entries)} library functions.")
 
 
 def cmd_info(rom: Rom, args: argparse.Namespace) -> None:
@@ -87,7 +97,7 @@ def cmd_functions(rom: Rom, args: argparse.Namespace) -> None:
     print(f"Switch tables:  {sum(len(f.jump_tables) for f in functions)}")
     print(f"Never called directly:  {sum(1 for f in functions if not f.callers)}")
     print(f"Calls to unknown addresses:  {len(program.unresolved_calls)}")
-    if program.symbols:
+    if program.symbols and program.symbols.functions:
         # Leave out labels inside hand-written assembly, which are not functions.
         named = {
             a for a, n in program.symbols.functions.items()
@@ -124,15 +134,22 @@ def cmd_recompile(rom: Rom, args: argparse.Namespace) -> None:
 def cmd_run(rom: Rom, args: argparse.Namespace, extra: list[str]) -> None:
     program = load_program(rom, args)
     if not any(f.symbol for f in program.functions.values()):
-        raise SystemExit("running needs function names: a linker map for this ROM or another")
-    flags, libraries = ["-O2", "-DHOST_RUNTIME"], []
+        raise SystemExit("could not recognise the OS library in this ROM, so it cannot be run yet")
+    # -fno-pie / -no-pie: put the program's code and variables at the same
+    # addresses on every run, and -fno-stack-protector: leave out a check
+    # that uses a number chosen afresh on every run. Save states need both
+    # (see "Save states" in runtime/host.c).
+    flags, libraries = ["-O2", "-DHOST_RUNTIME", "-fno-pie", "-fno-stack-protector"], ["-no-pie"]
     sdl = sdl_flags()
     if sdl:
         flags += ["-DUSE_SDL", *sdl[0]]
-        libraries = [*sdl[1], "-lGL"]
+        libraries += [*sdl[1], "-lGL"]
     else:
         print("SDL2 not found: building without a window.")
 
+    # Each ROM gets its own build folder, so several games can sit side by side.
+    rom_name = os.path.splitext(os.path.basename(args.rom))[0]
+    args.output = args.output or os.path.join("build", rom_name)
     # Rebuild if the game has never been built, or our own code is newer.
     game = os.path.join(args.output, "game")
     package = os.path.dirname(__file__)
@@ -147,16 +164,26 @@ def cmd_run(rom: Rom, args: argparse.Namespace, extra: list[str]) -> None:
         for problem in recompiler.problems:
             print(f"note: {problem}")
         print("Compiling (a minute or two the first time)...")
-        sources = ["host.c", "gfx.c", "audio.c", game_source(code)]
+        sources = ["host.c", "gfx.c", "audio.c", game_source(code) or "games/none.c"]
         if sdl:
             sources.append("gfx_gl.c")  # drawing on the graphics card needs the window
         game = build(args.output, sources, "game", tuple(flags), tuple(libraries))
 
     os.makedirs("saves", exist_ok=True)
-    save = os.path.join("saves", os.path.splitext(os.path.basename(args.rom))[0] + ".eep")
-    # Smooth motion draws twice as many pictures, so start it at a lower resolution.
-    scale = args.scale or (2 if "--smooth" in extra else 3)
-    subprocess.run([game, args.rom, "--save", save, "--scale", str(scale), *extra])
+    save = os.path.join("saves", rom_name + ".eep")
+    # What the player chooses in the F1 menu is remembered here, per game.
+    os.makedirs("settings", exist_ok=True)
+    settings = os.path.join("settings", rom_name + ".txt")
+    # Save states, several per game.
+    os.makedirs("states", exist_ok=True)
+    options = ["--save", save, "--settings", settings, "--states", os.path.join("states", rom_name)]
+    if args.scale:
+        options += ["--scale", str(args.scale)]
+    elif "--smooth" in extra and not os.path.exists(settings):
+        # Smooth motion draws twice as many pictures, so unless the player
+        # has chosen a resolution, start it at a lower one.
+        options += ["--scale", "2"]
+    subprocess.run([game, args.rom, *options, *extra])
 
 
 def parse_int(text: str) -> int:
@@ -204,21 +231,27 @@ def main() -> None:
         "run",
         help="recompile, build and play the game",
         description="Controls: WASD move, J or Space = A, K = B, L or Left Shift = Z, "
-        "Enter = Start, arrow keys = C buttons, E = R, Esc = quit. Gamepads work too. "
+        "Enter = Start, arrow keys = C buttons, E = R, Esc = menu (settings, reset, quit). Gamepads work too. "
         "Extras: --wide for a 16:9 picture, --smooth for 60 frames per second, and "
         "free look with the mouse (hold the right button and move; wheel zooms; "
         "middle button resets). While playing: F1 (Select on a controller) opens a "
         "settings menu, F3 shows live statistics (or start with --stats).",
     )
     run.add_argument("rom")
-    run.add_argument("-o", "--output", default="build/game", help="output directory")
+    run.add_argument("-o", "--output", help="output directory (default: build/<rom name>)")
     run.add_argument(
-        "--scale", type=parse_int, help="resolution multiplier (default 3, or 2 with --smooth)"
+        "--scale", type=parse_int, help="resolution multiplier (default: as last chosen, else 3)"
     )
     run.add_argument("--rebuild", action="store_true", help="recompile even if already built")
     run.set_defaults(func=cmd_run)
 
-    for command in (disasm, functions, recompile, run):
+    learn_command = commands.add_parser(
+        "learn", help="rebuild the library fingerprints from a ROM with a linker map"
+    )
+    learn_command.add_argument("rom")
+    learn_command.set_defaults(func=cmd_learn)
+
+    for command in (disasm, functions, recompile, run, learn_command):
         command.add_argument("-s", "--symbols", help="linker map with function names")
 
     # Options we do not recognise are handed on to the game itself.

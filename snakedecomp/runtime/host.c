@@ -15,6 +15,8 @@
  *   --frames N          stop after N screen refreshes (default: run until closed)
  *   --scale N           draw at N times the console's 320x240 (default 3)
  *   --save FILE         where saved games are kept
+ *   --settings FILE     where the choices made in the menu are kept
+ *   --states NAME       save states are kept in files called NAME.slot1, ...
  *   --wide              16:9 picture instead of the original 4:3
  *   --smooth            60 pictures a second instead of the game's 30
  *   --headless          no window (for testing)
@@ -23,9 +25,12 @@
  *   --keys LIST         scripted input: frame:buttons:duration[:x:y],...
  *   --wav FILE          record the sound to a file
  */
-#define _XOPEN_SOURCE 700
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* for a few Linux-only things: mmap's options, REG_RSP */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
@@ -38,6 +43,7 @@
 #include "audio.h"
 #include "gfx.h"
 #include "functions.h"
+#include "mods.h"
 
 static uint8_t *ram, *rom;
 static size_t rom_size;
@@ -45,6 +51,21 @@ static size_t rom_size;
 static void fatal(const char *what, uint32_t value) {
     fprintf(stderr, "host: %s (0x%08X)\n", what, value);
     exit(1);
+}
+
+/* Ask the system for memory at an address of our choosing. Normally a
+ * program takes whatever address it is given, and it differs on every run.
+ * Save states (further down) store pointers into the game's memory and the
+ * threads' stacks, and those are only right if both are in the same place
+ * every time. */
+#define RAM_PLACE 0x100000000000ull
+#define STACKS_PLACE 0x110000000000ull
+static void *memory_at(unsigned long long place, size_t size) {
+    void *p = mmap((void *)place, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    if (p != (void *)place)
+        fatal("could not get memory at a fixed address", (uint32_t)(place >> 32));
+    return p;
 }
 
 /* ---- Reading and writing the game's memory from the host --------------- */
@@ -127,6 +148,15 @@ static Thread *current;
 static ucontext_t scheduler;
 static uint64_t turn_counter;
 
+/* Each thread's stack has its own fixed place (see memory_at), with a gap
+ * before the next. */
+static uint8_t *thread_stack(int index) {
+    static uint8_t *stacks[MAX_THREADS];
+    if (!stacks[index])
+        stacks[index] = memory_at(STACKS_PLACE + (unsigned long long)index * 2 * NATIVE_STACK_SIZE, NATIVE_STACK_SIZE);
+    return stacks[index];
+}
+
 static void make_runnable(Thread *t) {
     t->state = RUNNABLE;
     t->turn = ++turn_counter;
@@ -175,7 +205,7 @@ static Thread *new_thread(uint32_t guest_address, int id, int priority, uint32_t
     t->ctx.ram = ram;
     t->ctx.ra = S32(THREAD_RETURN_ADDRESS);
     getcontext(&t->uc);
-    t->uc.uc_stack.ss_sp = malloc(NATIVE_STACK_SIZE);
+    t->uc.uc_stack.ss_sp = thread_stack(thread_count);
     t->uc.uc_stack.ss_size = NATIVE_STACK_SIZE;
     t->uc.uc_link = &scheduler;
     makecontext(&t->uc, (void (*)(void))thread_main, 1, thread_count);
@@ -345,6 +375,7 @@ void hle_osInitialize(Context *ctx) { (void)ctx; }
 
 static uint32_t vi_queue, vi_message, framebuffer;
 static long frames;
+static long frames_now(void) { return frames; }
 
 void hle_osCreateViManager(Context *ctx) { (void)ctx; }
 void hle_osViSetMode(Context *ctx) { (void)ctx; }
@@ -365,10 +396,13 @@ static void present_frame(void); /* further down: window, input, screenshots */
 static void run_timers(void);
 
 static long forced_frames;
+static long most_loops; /* the most of the loop budget any one refresh has used */
 
 static void next_frame(void) {
     frames++;
     ticks += TICKS_PER_FRAME;
+    if (frames > 1000 && LOOP_BUDGET_PER_FRAME - loop_budget > most_loops)
+        most_loops = LOOP_BUDGET_PER_FRAME - loop_budget; /* (after start-up, which is always busy) */
     loop_budget = LOOP_BUDGET_PER_FRAME;
     present_frame();
     run_timers();
@@ -450,6 +484,148 @@ void hle_osPiStartDma(Context *ctx) {
     preempt_check();
 }
 
+/* ---- Free camera ----------------------------------------------------------------
+ * A camera of our own, which the player turns with the right stick or the
+ * mouse, in place of the game's. It circles the player's character at a
+ * distance, like the camera of a modern game.
+ *
+ * The game knows nothing about it. The game still works out its own camera
+ * and builds the scene for that; the renderer then draws the scene as our
+ * camera would see it instead (gfx_set_free_camera). Three things have to
+ * be patched up around that, and all three are further down or in the
+ * game's file:
+ *   - "Up" on the stick should mean "away from me, as I see it", but the
+ *     game takes it to mean away from its own camera. So we turn the
+ *     stick's direction by the angle between the two (turn_stick).
+ *   - The game leaves out things its own camera cannot see, and turns flat
+ *     things such as trees to face its own camera. The game's file undoes
+ *     both, using host_view_widen and host_view_back.
+ *   - Our camera must not go through walls. Only the game knows where the
+ *     walls are, so its file measures how much room there is behind the
+ *     character and tells us (host_camera.room).
+ *
+ * All of this needs to know where the character is, which the game's file
+ * says (game_focus in mods.h). For a game that does not, the older, simpler
+ * look-around is used: the view turns on the spot (gfx_set_view). */
+
+FreeCamera host_camera = {.room = 1e9f};
+float host_view_back[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+static float camera_distance_now; /* how far away it actually is: host_camera.distance, less if a wall is in the way */
+static float camera_game_facing;  /* the direction the game's own camera faces */
+static float camera_test_turn;    /* for testing: start turned this far to the right (--look) */
+
+/* Where the character is, if the game's file can tell us. */
+static int camera_focus(float focus[3]) {
+    static Context ctx;
+    ctx.ram = ram;
+    return game_focus && game_focus(&ctx, focus);
+}
+
+/* Is the game paused, or showing a menu of its own? Then the sticks are for
+ * that menu: ours leaves the camera where it is and does not interfere. */
+static int camera_paused(void) {
+    static Context ctx;
+    ctx.ram = ram;
+    return game_paused && game_paused(&ctx);
+}
+
+#define CAMERA_NEAREST 300
+#define CAMERA_FARTHEST 2500
+
+/* Make the free camera the one in use, if it is not already. It starts
+ * from exactly where the game's camera is, so that the picture does not
+ * jump. Returns 0 if it cannot (there is no 3D scene to take over). */
+static int camera_take_over(const float focus[3]) {
+    if (host_camera.on)
+        return 1;
+    if (!gfx_game_camera(focus, &host_camera.yaw, &host_camera.pitch, &host_camera.distance, &camera_game_facing))
+        return 0;
+    host_camera.distance = host_camera.distance < CAMERA_NEAREST ? CAMERA_NEAREST
+                           : host_camera.distance > CAMERA_FARTHEST ? CAMERA_FARTHEST : host_camera.distance;
+    camera_distance_now = host_camera.distance;
+    host_camera.room = 1e9f;
+    host_camera.on = 1;
+    return 1;
+}
+
+/* Can the player move the free camera at this moment? */
+static int camera_usable(void) {
+    float focus[3];
+    return game_focus && !camera_paused() && camera_focus(focus);
+}
+
+/* The player moved the camera nearer (a factor below 1) or farther. */
+static void zoom_camera(float factor) {
+    float focus[3];
+    if (!camera_usable() || !camera_focus(focus) || !camera_take_over(focus))
+        return;
+    host_camera.distance *= factor;
+    host_camera.distance = host_camera.distance < CAMERA_NEAREST ? CAMERA_NEAREST
+                           : host_camera.distance > CAMERA_FARTHEST ? CAMERA_FARTHEST : host_camera.distance;
+}
+
+/* The player turned the camera: right and down are angles in radians.
+ * Returns 0 if this game has no free camera (the caller then falls back on
+ * the simple look-around). */
+static int turn_camera(float right, float down) {
+    float focus[3];
+    if (!game_focus)
+        return 0;
+    if (camera_paused())
+        return 1; /* stays exactly as it is */
+    if (!camera_focus(focus)) {
+        /* Nothing to circle just now, or the game is showing a scene of its
+         * own (an introduction, a door opening): the camera is the game's,
+         * and the stick does nothing to it. */
+        host_camera.on = 0;
+        return 1;
+    }
+    if ((right == 0 && down == 0) || !camera_take_over(focus))
+        return 1;
+    /* Seen from above, the world's angles run anticlockwise, so turning to
+     * the right makes the angle smaller. */
+    host_camera.yaw -= right;
+    host_camera.pitch += down;
+    /* From a little below level (looking up) to nearly overhead. */
+    host_camera.pitch = host_camera.pitch < -0.3f ? -0.3f : host_camera.pitch > 1.4f ? 1.4f : host_camera.pitch;
+    return 1;
+}
+
+/* Tell the renderer about the camera for the frame it is about to draw. */
+static void camera_before_drawing(void) {
+    float focus[3] = {0, 0, 0};
+    /* For testing: --look takes effect at frame LOOK_FRAME (default: at once). */
+    if (camera_test_turn != 0 && frames >= (getenv("LOOK_FRAME") ? atol(getenv("LOOK_FRAME")) : 0) &&
+        turn_camera(camera_test_turn, getenv("LOOK_DOWN") ? (float)atof(getenv("LOOK_DOWN")) : 0) && host_camera.on)
+        camera_test_turn = 0;
+    if (host_camera.on && !camera_focus(focus))
+        host_camera.on = 0; /* a scene of the game's own has begun: hand the camera back */
+    if (host_camera.on && getenv("LOOK_DISTANCE")) /* for testing: how far away the camera wants to be */
+        host_camera.distance = (float)atof(getenv("LOOK_DISTANCE"));
+    int on = host_camera.on;
+    if (on) {
+        /* Come in at once when a wall is in the way; drift back out
+         * gently when it no longer is, so the view does not lurch. */
+        float wanted = host_camera.distance < host_camera.room ? host_camera.distance : host_camera.room;
+        if (wanted < camera_distance_now)
+            camera_distance_now += (wanted - camera_distance_now) * 0.6f;
+        else
+            camera_distance_now = wanted < camera_distance_now + 25 ? wanted : camera_distance_now + 25;
+    }
+    gfx_set_free_camera(on, host_camera.yaw, host_camera.pitch, camera_distance_now, focus);
+    if (on && getenv("CAMERA_TEST")) /* for testing: say what the camera is doing */
+        fprintf(stderr, "camera %ld: yaw %.2f pitch %.2f wants %.0f room %.0f at %.0f\n", frames, host_camera.yaw,
+                host_camera.pitch, host_camera.distance, host_camera.room, camera_distance_now);
+}
+
+/* ...and afterwards, collect what the game's file needs for the next one. */
+static void camera_after_drawing(void) {
+    float focus[3], unused;
+    gfx_view_back(host_view_back);
+    if (camera_focus(focus))
+        gfx_game_camera(focus, &unused, &unused, &unused, &camera_game_facing);
+}
+
 /* ---- Graphics and audio chip tasks --------------------------------------------
  * Each frame the game builds a "display list" (a list of drawing commands)
  * and hands it to the graphics chip; our renderer (gfx.c) draws it instead.
@@ -466,6 +642,9 @@ static double draw_ms_total, draw_ms_worst; /* time spent drawing pictures */
 static double second_draw_ms, second_draw_worst;
 static int second_pictures;
 static int sound_muted, speed_limit = 1;
+static int sound_volume = 10; /* 0 to 10: tenths of full volume */
+static int fast_forward;      /* is the fast-forward button held? */
+static int fast_speed = 4;    /* how many times normal speed that is; 0 = as fast as the PC can go */
 
 void hle_osSpTaskLoad(Context *ctx) { (void)ctx; }
 void hle_osSpTaskStartGo(Context *ctx) {
@@ -485,7 +664,9 @@ void hle_osSpTaskStartGo(Context *ctx) {
             gfx_set_extended(f3dex);
             dialect_known = 1;
         }
+        camera_before_drawing();
         int made = gfx_run(g32(ARG0 + 0x30), smooth_motion); /* +0x30: the display list */
+        camera_after_drawing();
         shown_count = shown_next = 0;
         if (made == 2)
             shown_queue[shown_count++] = 0; /* the in-between picture first */
@@ -517,7 +698,11 @@ void hle_osSpTaskYielded(Context *ctx) { RETURN(0); }
  * played and makes a little more or less next time, which keeps it in step
  * with the sound card's clock. */
 
-#define SOUND_CUSHION_BYTES 6400 /* 50 ms of 16-bit stereo at 32 kHz */
+/* How much sound we keep waiting, beyond what the game asks for, as a
+ * cushion against hiccups (see hle_osAiGetLength). More is safer against
+ * crackling but makes sounds arrive later; it can be changed in the menu. */
+static int sound_cushion_ms = 100;
+#define SOUND_CUSHION_BYTES ((uint32_t)sound_cushion_ms * 128) /* 16-bit stereo at 32 kHz is 128 bytes a millisecond */
 static FILE *wav_file;
 static long wav_bytes, sound_blocks, sound_gaps, sound_skipped;
 #ifdef USE_SDL
@@ -555,12 +740,20 @@ void hle_osAiSetNextBuffer(Context *ctx) {
 #ifdef USE_SDL
     /* If far too much is waiting (the game ran ahead), skip this block
      * rather than let the sound fall further and further behind. */
-    if (audio_device && !sound_muted) {
+    if (audio_device && !sound_muted && !fast_forward) { /* fast forward is silent */
         uint32_t waiting = SDL_GetQueuedAudioSize(audio_device);
         sound_blocks++;
-        if (waiting == 0 && sound_blocks > 1)
+        if (waiting == 0 && sound_blocks > 1) {
             sound_gaps++; /* the sound card ran out: an audible gap */
-        if (waiting < 32000)
+            if (getenv("SOUND_TEST")) /* for testing: say when */
+                fprintf(stderr, "sound gap at frame %ld\n", frames);
+        }
+        if (getenv("SOUND_TEST") && frames % 120 == 0)
+            fprintf(stderr, "sound queue at frame %ld: %u ms, block %u bytes\n", frames, waiting / 128, size);
+        if (sound_volume < 10) /* turned down in the menu */
+            for (uint32_t i = 0; i < size / 2; i++)
+                samples[i] = (int16_t)(samples[i] * sound_volume / 10);
+        if (waiting < SOUND_CUSHION_BYTES + 25600) /* the cushion plus a fifth of a second */
             SDL_QueueAudio(audio_device, samples, size);
         else
             sound_skipped++;
@@ -603,6 +796,19 @@ static int8_t pad_x, pad_y;
 #define EEPROM_SIZE 512
 static uint8_t eeprom[EEPROM_SIZE];
 static const char *save_path;
+static const char *settings_path;
+static const char *states_path;
+
+/* A short message for the player, shown at the bottom of the window for a
+ * couple of seconds (and printed, for when there is no window). */
+static char message[64];
+static long message_until;
+static long frames_now(void);
+static void say(const char *text) {
+    snprintf(message, sizeof message, "%s", text);
+    message_until = frames_now() + 150;
+    printf("%s\n", text);
+}
 
 static void save_eeprom(void) {
     FILE *file = save_path ? fopen(save_path, "wb") : NULL;
@@ -746,6 +952,167 @@ uint64_t cop0_read(Context *ctx, int reg) {
 }
 void cop0_write(Context *ctx, int reg, uint64_t value) { (void)ctx, (void)reg, (void)value; }
 
+/* ---- Save states -----------------------------------------------------------------
+ * A save state is a photograph of the whole machine at one moment: the
+ * game's memory, every thread, the timers, the save chip. Loading one puts
+ * all of it back, and the game carries on from that moment as if nothing
+ * had happened. It is not the game's own saving and the game knows nothing
+ * about it.
+ *
+ * The awkward part is the threads. Each is a half-finished chain of C
+ * function calls, kept on its own stack: return addresses, and pointers to
+ * memory. Bytes copied back into the same place work again only if
+ * everything they point to is where it was. So the game's memory and the
+ * stacks are at fixed addresses (memory_at), and the program is built so
+ * that its own code and variables are too (-no-pie in __main__.py).
+ *
+ * That makes a state good for this exact build of this exact game. A state
+ * from another build is refused: its return addresses would point into the
+ * wrong code. Rebuilding (after any change to the tools) therefore makes
+ * old states unusable; the game's own saves are not affected. */
+
+static int state_slot = 1;
+static int state_request; /* 1: save, 2: load. Carried out in main(), between threads. */
+enum { STATE_SAVE = 1, STATE_LOAD = 2 };
+
+/* Everything apart from the memory and the stacks. */
+static struct { void *data; size_t size; } state_parts[] = {
+    {tlb, sizeof tlb}, {threads, sizeof threads}, {&thread_count, sizeof thread_count},
+    {&turn_counter, sizeof turn_counter}, {events, sizeof events},
+    {&vi_queue, sizeof vi_queue}, {&vi_message, sizeof vi_message}, {&framebuffer, sizeof framebuffer},
+    {&loop_budget, sizeof loop_budget}, {&ticks, sizeof ticks}, {timers, sizeof timers},
+    {eeprom, sizeof eeprom}, {pif, sizeof pif},
+};
+#define STATE_PART_COUNT (sizeof state_parts / sizeof state_parts[0])
+
+static const char *state_file(int slot) {
+    static char path[600];
+    snprintf(path, sizeof path, "%s.slot%d", states_path ? states_path : "", slot);
+    return path;
+}
+static int state_exists(int slot) { return states_path && access(state_file(slot), R_OK) == 0; }
+
+/* A number that is different for every build and every ROM: a hash of this
+ * program's own file and of the ROM. */
+static uint64_t build_number(void) {
+    static uint64_t hash;
+    if (hash)
+        return hash;
+    hash = 1469598103934665603ull;
+    FILE *file = fopen("/proc/self/exe", "rb"); /* Linux's name for "the program now running" */
+    uint8_t block[65536];
+    size_t got;
+    while (file && (got = fread(block, 1, sizeof block, file)) > 0)
+        for (size_t i = 0; i < got; i++)
+            hash = (hash ^ block[i]) * 1099511628211ull;
+    if (file)
+        fclose(file);
+    for (size_t i = 0; i < rom_size; i++)
+        hash = (hash ^ rom[i]) * 1099511628211ull;
+    return hash;
+}
+
+/* The part of a thread's stack that is in use: from where its stack pointer
+ * was when it last stopped, to the top. (Stacks grow downwards.) */
+static void stack_in_use(int index, uint8_t **start, uint64_t *size) {
+    uint8_t *bottom = thread_stack(index), *top = bottom + NATIVE_STACK_SIZE;
+    uint8_t *used = bottom;
+#ifdef __x86_64__
+    uint8_t *sp = (uint8_t *)threads[index].uc.uc_mcontext.gregs[REG_RSP] - 256;
+    if (sp > bottom && sp < top)
+        used = sp;
+#endif
+    *start = used, *size = (uint64_t)(top - used);
+}
+
+#define STATE_MAGIC "SnakeState 1"
+
+static void save_state(void) {
+    char text[64];
+    FILE *file = states_path ? fopen(state_file(state_slot), "wb") : NULL;
+    if (!file) {
+        say("Could not save the state");
+        return;
+    }
+    uint64_t build = build_number();
+    fwrite(STATE_MAGIC, 1, sizeof STATE_MAGIC, file);
+    fwrite(&build, sizeof build, 1, file);
+    for (size_t i = 0; i < STATE_PART_COUNT; i++)
+        fwrite(state_parts[i].data, 1, state_parts[i].size, file);
+    fwrite(ram, 1, RAM_SIZE, file);
+    for (int i = 0; i < thread_count; i++) {
+        uint8_t *start;
+        uint64_t size;
+        stack_in_use(i, &start, &size);
+        fwrite(&size, sizeof size, 1, file);
+        fwrite(start, 1, size, file);
+    }
+    int failed = ferror(file);
+    failed |= fclose(file) != 0;
+    snprintf(text, sizeof text, failed ? "Could not save state %d" : "State %d saved", state_slot);
+    say(text);
+}
+
+static void load_state(void) {
+    char text[64], magic[sizeof STATE_MAGIC];
+    uint64_t build = 0;
+    FILE *file = states_path ? fopen(state_file(state_slot), "rb") : NULL;
+    if (!file) {
+        snprintf(text, sizeof text, "State %d is empty", state_slot);
+        say(text);
+        return;
+    }
+    /* Check everything we can before changing anything: once we start
+     * copying over the machine there is no going back. */
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file), fixed = (long)(sizeof magic + sizeof build) + RAM_SIZE;
+    for (size_t i = 0; i < STATE_PART_COUNT; i++)
+        fixed += (long)state_parts[i].size;
+    rewind(file);
+    if (length < fixed || fread(magic, 1, sizeof magic, file) != sizeof magic ||
+        memcmp(magic, STATE_MAGIC, sizeof magic) || fread(&build, sizeof build, 1, file) != 1 ||
+        build != build_number()) {
+        fclose(file);
+        snprintf(text, sizeof text, "State %d is from another build: not loaded", state_slot);
+        say(text);
+        return;
+    }
+    size_t got = 0, wanted = 0;
+    for (size_t i = 0; i < STATE_PART_COUNT; i++)
+        got += fread(state_parts[i].data, 1, state_parts[i].size, file), wanted += state_parts[i].size;
+    got += fread(ram, 1, RAM_SIZE, file), wanted += RAM_SIZE;
+    for (int i = 0; i < thread_count && i < MAX_THREADS; i++) {
+        uint8_t *bottom = thread_stack(i); /* (this also makes the stack, if this run has not needed it yet) */
+        uint64_t size = 0;
+        got += fread(&size, 1, sizeof size, file), wanted += sizeof size;
+        if (size > NATIVE_STACK_SIZE)
+            break;
+        got += fread(bottom + NATIVE_STACK_SIZE - size, 1, size, file), wanted += size;
+    }
+    fclose(file);
+    if (got != wanted) /* a damaged file: the machine is now half one thing and half another */
+        fatal("the state file was cut short; the game cannot carry on", (uint32_t)state_slot);
+
+    /* The pictures and sound that were waiting belong to the moment we left. */
+    shown_count = shown_next = 0;
+    gfx_forget_last_frame();
+#ifdef USE_SDL
+    if (audio_device)
+        SDL_ClearQueuedAudio(audio_device);
+#endif
+    snprintf(text, sizeof text, "State %d loaded", state_slot);
+    say(text);
+}
+
+/* Called from main() at a moment when no thread is part-way through running. */
+static void carry_out_state_request(void) {
+    if (state_request == STATE_SAVE)
+        save_state();
+    if (state_request == STATE_LOAD)
+        load_state();
+    state_request = 0;
+}
+
 /* ---- Window, input, screenshots ------------------------------------------------ */
 
 enum { /* the N64 controller's buttons, as bits */
@@ -761,6 +1128,8 @@ static long max_frames = -1;
  * (the games/ folder) uses it to keep objects at the sides from vanishing. */
 float host_view_widen = 1;
 static float base_view_widen = 1;
+/* How far the simple look-around has turned the view to the right (radians). */
+static float simple_look_yaw, simple_look_pitch;
 static int screenshot_every = 60;
 static float look_test_yaw;
 static int start_with_stats;
@@ -797,6 +1166,187 @@ static double latest_ms;
 
 static float current_aspect = 4.0f / 3;
 static int current_scale = 3;
+static int fullscreen;
+
+/* ---- Controls --------------------------------------------------------------------
+ * One table says what does what. Each row is something that can be done: a
+ * button or stick direction of the N64 controller, or a shortcut (something
+ * the PC does rather than the game). Each row can be given a keyboard key,
+ * a mouse button and a gamepad button, all changeable in the menu. */
+
+enum { DEVICE_KEY, DEVICE_MOUSE, DEVICE_PAD, DEVICE_COUNT };
+static const char *device_names[DEVICE_COUNT] = {"key", "mouse", "pad"}; /* as written in the settings file */
+
+/* What can be chosen on a gamepad: SDL's numbered buttons, and after them
+ * the two triggers and the eight stick directions, which SDL counts as
+ * sticks ("axes") and we give numbers of our own. -1 means "nothing". */
+enum {
+    PAD_NONE = -1,
+    PAD_LEFT_TRIGGER = SDL_CONTROLLER_BUTTON_MAX, PAD_RIGHT_TRIGGER,
+    PAD_LSTICK_UP, PAD_LSTICK_DOWN, PAD_LSTICK_LEFT, PAD_LSTICK_RIGHT,
+    PAD_RSTICK_UP, PAD_RSTICK_DOWN, PAD_RSTICK_LEFT, PAD_RSTICK_RIGHT,
+    PAD_CODE_COUNT
+};
+#define PAD(name) SDL_CONTROLLER_BUTTON_##name
+
+enum {
+    NOT_A_SHORTCUT, SHORTCUT_FAST, SHORTCUT_SAVE, SHORTCUT_LOAD, SHORTCUT_LOOK, SHORTCUT_CAMERA_RESET,
+    SHORTCUT_CAMERA_NEARER, SHORTCUT_CAMERA_FARTHER, SHORTCUT_COUNT
+};
+
+typedef struct {
+    const char *name;
+    int button, x, y; /* the N64 button, or the stick direction, this row stands for */
+    int shortcut;     /* or which shortcut */
+    int now[DEVICE_COUNT], usual[DEVICE_COUNT]; /* key, mouse button, gamepad button: now, and to go back to */
+} Binding;
+
+/* key, mouse button (0: none; 1 left, 2 middle, 3 right), gamepad button */
+#define USUAL(key, mouse, pad) {SDL_SCANCODE_##key, mouse, pad}, {SDL_SCANCODE_##key, mouse, pad}
+static Binding bindings[] = {
+    {"Stick up", 0, 0, 1, 0, USUAL(W, 0, PAD_LSTICK_UP)},
+    {"Stick down", 0, 0, -1, 0, USUAL(S, 0, PAD_LSTICK_DOWN)},
+    {"Stick left", 0, -1, 0, 0, USUAL(A, 0, PAD_LSTICK_LEFT)},
+    {"Stick right", 0, 1, 0, 0, USUAL(D, 0, PAD_LSTICK_RIGHT)},
+    {"A", BTN_A, 0, 0, 0, USUAL(J, 0, PAD(A))},
+    {"B", BTN_B, 0, 0, 0, USUAL(K, 0, PAD(X))},
+    {"Z", BTN_Z, 0, 0, 0, USUAL(L, 0, PAD(LEFTSHOULDER))},
+    {"Start", BTN_START, 0, 0, 0, USUAL(RETURN, 0, PAD(START))},
+    {"C up", BTN_CUP, 0, 0, 0, USUAL(UP, 0, PAD_RSTICK_UP)},
+    {"C down", BTN_CDOWN, 0, 0, 0, USUAL(DOWN, 0, PAD_RSTICK_DOWN)},
+    {"C left", BTN_CLEFT, 0, 0, 0, USUAL(LEFT, 0, PAD_RSTICK_LEFT)},
+    {"C right", BTN_CRIGHT, 0, 0, 0, USUAL(RIGHT, 0, PAD_RSTICK_RIGHT)},
+    {"L", BTN_L, 0, 0, 0, USUAL(Q, 0, PAD(Y))},
+    {"R", BTN_R, 0, 0, 0, USUAL(E, 0, PAD(RIGHTSHOULDER))},
+    {"D-pad up", BTN_DUP, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_UP))},
+    {"D-pad down", BTN_DDOWN, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_DOWN))},
+    {"D-pad left", BTN_DLEFT, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_LEFT))},
+    {"D-pad right", BTN_DRIGHT, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_RIGHT))},
+    {"Fast forward", 0, 0, 0, SHORTCUT_FAST, USUAL(TAB, 0, PAD_RIGHT_TRIGGER)},
+    {"Save state", 0, 0, 0, SHORTCUT_SAVE, USUAL(F5, 0, PAD_NONE)},
+    {"Load state", 0, 0, 0, SHORTCUT_LOAD, USUAL(F7, 0, PAD_NONE)},
+    {"Look (hold)", 0, 0, 0, SHORTCUT_LOOK, USUAL(UNKNOWN, 3, PAD_NONE)},
+    {"Reset camera", 0, 0, 0, SHORTCUT_CAMERA_RESET, USUAL(UNKNOWN, 2, PAD(RIGHTSTICK))},
+    {"Camera nearer", 0, 0, 0, SHORTCUT_CAMERA_NEARER, USUAL(PAGEUP, 0, PAD(DPAD_UP))},
+    {"Camera farther", 0, 0, 0, SHORTCUT_CAMERA_FARTHER, USUAL(PAGEDOWN, 0, PAD(DPAD_DOWN))},
+};
+#define BINDING_COUNT ((int)(sizeof bindings / sizeof bindings[0]))
+
+/* With this on, the right stick turns the camera (see "Free camera" below)
+ * instead of being whatever the table says. */
+static int free_camera;
+/* With this on, the gamepad's D-pad pushes the control stick as well as
+ * being the N64's D-pad. Many N64 games ignore the D-pad altogether and
+ * want the stick even in their menus, where a D-pad feels more natural. It
+ * starts on for games whose file says they do not use the D-pad. */
+static int dpad_moves_stick;
+
+/* The names of gamepad buttons differ between makes, so we show the ones
+ * printed on the gamepad that is plugged in. */
+static int pad_is_playstation(void) {
+    if (!gamepad)
+        return 0;
+    SDL_GameControllerType type = SDL_GameControllerGetType(gamepad);
+    return type == SDL_CONTROLLER_TYPE_PS3 || type == SDL_CONTROLLER_TYPE_PS4 || type == SDL_CONTROLLER_TYPE_PS5;
+}
+static const char *pad_label(int pad) {
+    static const char *xbox[PAD_CODE_COUNT] = {
+        "A", "B", "X", "Y", "View", "Guide", "Menu", "LS click", "RS click", "LB", "RB",
+        "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Share", "Paddle 1", "Paddle 2", "Paddle 3",
+        "Paddle 4", "Touchpad",
+        [PAD_LEFT_TRIGGER] = "LT", "RT", "L stick up", "L stick down", "L stick left", "L stick right",
+        "R stick up", "R stick down", "R stick left", "R stick right"};
+    static const char *playstation[PAD_CODE_COUNT] = {
+        "Cross", "Circle", "Square", "Triangle", "Share", "PS", "Options", "L3", "R3", "L1", "R1",
+        [PAD_LEFT_TRIGGER] = "L2", "R2"};
+    if (pad < 0 || pad >= PAD_CODE_COUNT)
+        return "-";
+    const char *name = pad_is_playstation() && playstation[pad] ? playstation[pad] : xbox[pad];
+    return name ? name : "?";
+}
+/* The settings file uses names that do not depend on the gamepad's make. */
+static const char *pad_file_names[] = {"lefttrigger", "righttrigger", "lstick-up", "lstick-down", "lstick-left",
+                                       "lstick-right", "rstick-up", "rstick-down", "rstick-left", "rstick-right"};
+static const char *mouse_names[] = {"-", "Left", "Middle", "Right", "Back", "Forward"};
+
+/* A key, mouse button or gamepad button as text. for_file: the name used in
+ * the settings file rather than the one shown in the menu. */
+static const char *code_name(int device, int code, int for_file) {
+    const char *nothing = for_file ? "(none)" : "-"; /* ("-" in the file would be the minus key) */
+    if (device == DEVICE_KEY)
+        return code == SDL_SCANCODE_UNKNOWN ? nothing : SDL_GetScancodeName((SDL_Scancode)code);
+    if (device == DEVICE_MOUSE)
+        return code >= 1 && code <= 5 ? mouse_names[code] : nothing;
+    if (code < 0 || code >= PAD_CODE_COUNT)
+        return nothing;
+    if (!for_file)
+        return pad_label(code);
+    return code >= PAD_LEFT_TRIGGER ? pad_file_names[code - PAD_LEFT_TRIGGER] : SDL_GameControllerGetStringForButton(code);
+}
+static int code_from_name(int device, const char *name) {
+    if (device == DEVICE_KEY)
+        return (int)SDL_GetScancodeFromName(name); /* gives "no key" for anything it does not know */
+    if (device == DEVICE_MOUSE) {
+        for (int i = 1; i <= 5; i++)
+            if (!strcmp(name, mouse_names[i]))
+                return i;
+        return 0;
+    }
+    for (int i = 0; i < PAD_CODE_COUNT - PAD_LEFT_TRIGGER; i++)
+        if (!strcmp(name, pad_file_names[i]))
+            return PAD_LEFT_TRIGGER + i;
+    return (int)SDL_GameControllerGetButtonFromString(name); /* -1 for anything it does not know */
+}
+
+/* Give a row a new key or button. If another row was using it, the two
+ * change places, so that nothing ever does two things at once. */
+static void assign(int number, int device, int code) {
+    int nothing = device == DEVICE_PAD ? PAD_NONE : 0;
+    for (int i = 0; i < BINDING_COUNT; i++)
+        if (code != nothing && bindings[i].now[device] == code)
+            bindings[i].now[device] = bindings[number].now[device];
+    bindings[number].now[device] = code;
+}
+
+static int shortcut_held[SHORTCUT_COUNT]; /* which shortcuts are being held right now */
+
+/* A stick's position as two numbers from -1 to 1, with the small wobble of
+ * a stick at rest (the "dead zone") taken out. */
+static void stick_position(SDL_GameControllerAxis x_axis, float *x, float *y) {
+    *x = (float)SDL_GameControllerGetAxis(gamepad, x_axis) / 32767;
+    *y = (float)SDL_GameControllerGetAxis(gamepad, (SDL_GameControllerAxis)(x_axis + 1)) / 32767;
+    if (sqrtf(*x * *x + *y * *y) < 0.18f)
+        *x = *y = 0;
+}
+
+/* How far a gamepad button is pressed, 0 to 1. Real buttons are all or
+ * nothing; triggers and stick directions can be anywhere in between. */
+static float pad_amount(int pad) {
+    if (!gamepad || pad == PAD_NONE)
+        return 0;
+    if (pad < SDL_CONTROLLER_BUTTON_MAX)
+        return SDL_GameControllerGetButton(gamepad, (SDL_GameControllerButton)pad) ? 1 : 0;
+    if (pad == PAD_LEFT_TRIGGER || pad == PAD_RIGHT_TRIGGER)
+        return (float)SDL_GameControllerGetAxis(gamepad, pad == PAD_LEFT_TRIGGER ? SDL_CONTROLLER_AXIS_TRIGGERLEFT
+                                                                                 : SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767;
+    int right = pad >= PAD_RSTICK_UP, direction = (pad - PAD_LSTICK_UP) % 4; /* up, down, left, right */
+    if (right && (free_camera || shortcut_held[SHORTCUT_LOOK]))
+        return 0; /* the right stick is busy being the camera */
+    float x, y, amount;
+    stick_position(right ? SDL_CONTROLLER_AXIS_RIGHTX : SDL_CONTROLLER_AXIS_LEFTX, &x, &y);
+    amount = direction == 0 ? -y : direction == 1 ? y : direction == 2 ? -x : x; /* up is negative for SDL */
+    return amount > 0 ? amount : 0;
+}
+
+/* How far a row of the table is pressed, by any of its three means. */
+static float binding_amount(const Binding *b) {
+    float amount = pad_amount(b->now[DEVICE_PAD]);
+    if (b->now[DEVICE_KEY] != SDL_SCANCODE_UNKNOWN && SDL_GetKeyboardState(NULL)[b->now[DEVICE_KEY]])
+        amount = 1;
+    if (b->now[DEVICE_MOUSE] && (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(b->now[DEVICE_MOUSE])))
+        amount = 1;
+    return amount;
+}
 
 static void open_window(void) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
@@ -813,6 +1363,8 @@ static void open_window(void) {
         fatal(SDL_GetError(), 0);
     SDL_GL_SetSwapInterval(0); /* we keep time ourselves (wait_for_next_frame) */
     glb_init();
+    if (fullscreen) /* remembered from last time */
+        SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
 
     /* Controllers are opened as SDL announces them (see the event loop),
      * which covers ones already connected as well as ones that turn up later. */
@@ -830,7 +1382,12 @@ static int menu_open, menu_row, stats_shown;
 static int text_size(void) {
     int w, h;
     SDL_GL_GetDrawableSize(window, &w, &h);
-    return h >= 1300 ? 3 : h >= 650 ? 2 : 1;
+    /* About 22 lines of text fit the height of the window, whatever its
+     * size; the widest page of the menu is 60 characters and must fit too. */
+    int size = (h + 180) / 360;
+    while (size > 1 && 60 * 8 * size > w)
+        size--;
+    return size < 1 ? 1 : size > 6 ? 6 : size;
 }
 
 static void draw_box(int x, int y, int w, int h, int opacity) { glb_overlay_box(x, y, w, h, opacity); }
@@ -910,95 +1467,475 @@ static void update_stats(int showed_picture) {
     second_draw_ms = second_draw_worst = 0, second_pictures = 0;
 }
 
-enum { ROW_WIDE, ROW_SMOOTH, ROW_SCALE, ROW_STATS, ROW_SOUND, ROW_LIMIT, ROW_LOOK, ROW_COUNT };
+/* ---- The menu ---------------------------------------------------------------
+ * Esc (or F1, or Select on a gamepad) opens the main menu, which leads to a
+ * page for each group of settings. The game keeps running behind it, and
+ * every choice takes effect the moment it is made, so the result can be
+ * seen straight away.
+ *
+ * A page is a list of rows. Each row has the text to show and an "action":
+ * what to do when the player changes or selects it. menu_rows() builds the
+ * list for a page, and menu_act() carries an action out. */
 
+enum {
+    PAGE_MAIN, PAGE_GRAPHICS, PAGE_SOUND, PAGE_CONTROLS, PAGE_CHEATS, PAGE_FIXES, PAGE_SYSTEM,
+    PAGE_ASK_RESET, PAGE_ASK_QUIT, PAGE_STATES, PAGE_SHORTCUTS, PAGE_COUNT
+};
+/* The two pages of mods show one kind each (see mods.h). */
+static const int page_kind[PAGE_COUNT] = {[PAGE_CHEATS] = KIND_CHEAT, [PAGE_FIXES] = KIND_FIX};
+static const char *page_titles[PAGE_COUNT] = {
+    "MENU", "GRAPHICS", "SOUND", "CONTROLS", "CHEATS", "FIXES", "SYSTEM",
+    "RESET? UNSAVED PROGRESS WILL BE LOST", "QUIT? UNSAVED PROGRESS WILL BE LOST",
+    "SAVE STATES", "SHORTCUTS",
+};
+
+enum {
+    ACT_NONE, ACT_RESUME, ACT_BACK, ACT_OPEN, /* ACT_OPEN: go to page "number" */
+    ACT_WIDE, ACT_SMOOTH, ACT_SCALE, ACT_FULLSCREEN, ACT_TEXTURES, ACT_LOOK,
+    ACT_SOUND, ACT_VOLUME, ACT_SOUND_BUFFER,
+    ACT_BIND, ACT_USUAL_CONTROLS, /* ACT_BIND: choose a key or button for bindings[number] */
+    ACT_FREE_CAMERA, ACT_DPAD,
+    ACT_MOD, /* switch game_mods[number] */
+    ACT_SLOT, ACT_SAVE_STATE, ACT_LOAD_STATE, ACT_FAST_SPEED,
+    ACT_LIMIT, ACT_STATS, ACT_DEFAULTS,
+    ACT_RESET, ACT_QUIT,
+};
+
+typedef struct {
+    char text[64];
+    int action, number;
+    /* Rows of the controls table have three cells after the text, one for
+     * each of keyboard, mouse and gamepad. */
+    int has_cells;
+    char cells[DEVICE_COUNT][16];
+} Row;
+#define MAX_ROWS 80
+/* Where the cells start, counted in characters, and how wide the menu is
+ * on pages with and without them. */
+static const int cell_column[DEVICE_COUNT] = {17, 30, 39};
+#define MENU_WIDTH 46
+#define MENU_WIDTH_WITH_CELLS 58
+
+static int menu_page, main_row;
+static int menu_column;       /* which cell of a controls row is chosen */
+static int waiting_for_press; /* the chosen cell is waiting for its new key or button */
+static int mods_at_start[64]; /* which mods the game's file has on to begin with */
+
+/* Write the menu's choices to the settings file, so they are still there
+ * next time. Done after every change, so nothing is lost if the game stops
+ * unexpectedly. */
+static void save_settings(void) {
+    FILE *file = settings_path ? fopen(settings_path, "w") : NULL;
+    if (!file)
+        return;
+    fprintf(file, "# Choices made in the menu. 1 is on, 0 is off.\n");
+    fprintf(file, "wide = %d\n", current_aspect > 1.5f);
+    fprintf(file, "smooth = %d\n", smooth_motion);
+    fprintf(file, "scale = %d\n", current_scale);
+    fprintf(file, "fullscreen = %d\n", fullscreen);
+    fprintf(file, "smooth textures = %d\n", gfx_texture_smoothing);
+    fprintf(file, "stats = %d\n", stats_shown);
+    fprintf(file, "sound = %d\n", !sound_muted);
+    fprintf(file, "volume = %d\n", sound_volume);
+    fprintf(file, "sound buffer = %d\n", sound_cushion_ms);
+    fprintf(file, "speed limit = %d\n", speed_limit);
+    fprintf(file, "fast forward speed = %d\n", fast_speed);
+    fprintf(file, "state slot = %d\n", state_slot);
+    fprintf(file, "free camera = %d\n", free_camera);
+    fprintf(file, "dpad moves stick = %d\n", dpad_moves_stick);
+    for (int i = 0; i < BINDING_COUNT; i++)
+        for (int device = 0; device < DEVICE_COUNT; device++)
+            fprintf(file, "%s %s = %s\n", device_names[device], bindings[i].name,
+                    code_name(device, bindings[i].now[device], 1));
+    for (int i = 0; i < game_mod_count; i++)
+        fprintf(file, "mod %s = %d\n", game_mods[i].name, game_mods[i].on);
+    fclose(file);
+}
+
+/* Make the window and the picture match the settings. Safe at any moment
+ * the menu can be used: that is always between two of the game's pictures,
+ * never part-way through drawing one. */
 static void apply_picture_settings(void) {
     gfx_resize(current_scale, current_aspect);
     base_view_widen = current_aspect / (4.0f / 3);
-    shown_count = shown_next = 0;
-    int w, h, window_w, window_h;
-    gfx_picture(1, &w, &h);
-    SDL_GetWindowSize(window, &window_w, &window_h);
-    SDL_SetWindowSize(window, window_h * w / h, window_h); /* keep the height, fix the shape */
+    shown_count = shown_next = 0; /* pictures still waiting are the old size: drop them */
+    SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    if (!fullscreen) {
+        int w, h, window_w, window_h;
+        gfx_picture(1, &w, &h);
+        SDL_GetWindowSize(window, &window_w, &window_h);
+        SDL_SetWindowSize(window, window_h * w / h, window_h); /* keep the height, fix the shape */
+    }
 }
 
-static void menu_change(int direction) {
-    switch (menu_row) {
-    case ROW_WIDE:
+/* Start the game again from the beginning, like the console's reset button.
+ * The surest way to get everything back to how it starts is to start this
+ * whole program again, so that is what we do: "exec" replaces the running
+ * program with a fresh copy of itself. */
+static char **start_arguments;
+static void reset_game(void) {
+    char *arguments[64];
+    int count = 0;
+    for (int i = 0; start_arguments[i] && count < 63; i++) {
+        char *a = start_arguments[i];
+        /* Leave out options that the menu has since overruled; the settings
+         * file holds the current choices. */
+        if (settings_path && i >= 2) {
+            if (!strcmp(a, "--wide") || !strcmp(a, "--smooth") || !strcmp(a, "--stats"))
+                continue;
+            if (!strcmp(a, "--scale")) {
+                i++;
+                continue;
+            }
+        }
+        arguments[count++] = a;
+    }
+    arguments[count] = NULL;
+    save_settings();
+    SDL_Quit(); /* close the window and the sound first */
+    execvp(arguments[0], arguments);
+    fatal("could not start the game again", 0);
+}
+
+static void reset_camera(void) {
+    host_camera.on = 0; /* back to the game's own camera */
+    look_yaw = look_pitch = 0, look_zoom = 1;
+}
+
+static void usual_controls(int shortcuts) {
+    for (int i = 0; i < BINDING_COUNT; i++)
+        if (!bindings[i].shortcut == !shortcuts)
+            memcpy(bindings[i].now, bindings[i].usual, sizeof bindings[i].now);
+}
+
+static void restore_defaults(void) {
+    current_aspect = 4.0f / 3, current_scale = 3, smooth_motion = 0, fullscreen = 0;
+    gfx_texture_smoothing = 1, stats_shown = 0;
+    sound_muted = 0, sound_volume = 10, sound_cushion_ms = 100, speed_limit = 1, fast_speed = 4;
+    reset_camera(), free_camera = 0, dpad_moves_stick = game_ignores_dpad;
+    usual_controls(0), usual_controls(1);
+    for (int i = 0; i < game_mod_count && i < 64; i++)
+        game_mods[i].on = mods_at_start[i];
+    apply_picture_settings();
+}
+
+/* Build the rows of a page. Returns how many there are. */
+static int menu_rows(int page, Row *rows) {
+    int count = 0, w, h;
+    gfx_picture(1, &w, &h);
+/* Add a row: its action, a number that goes with the action, then the text. */
+#define ROW(act, n, ...) \
+    (rows[count].action = (act), rows[count].number = (n), rows[count].has_cells = 0, \
+     snprintf(rows[count].text, 64, __VA_ARGS__), count++)
+#define ON(value) ((value) ? "ON" : "off")
+    switch (page) {
+    case PAGE_MAIN:
+        ROW(ACT_RESUME, 0, "Resume");
+        ROW(ACT_OPEN, PAGE_STATES, "Save states");
+        ROW(ACT_OPEN, PAGE_GRAPHICS, "Graphics");
+        ROW(ACT_OPEN, PAGE_SOUND, "Sound");
+        ROW(ACT_OPEN, PAGE_CONTROLS, "Controls");
+        ROW(ACT_OPEN, PAGE_SHORTCUTS, "Shortcuts");
+        for (int kind_page = PAGE_CHEATS; kind_page <= PAGE_FIXES; kind_page++) {
+            int total = 0, on = 0;
+            for (int i = 0; i < game_mod_count; i++)
+                if (game_mods[i].kind == page_kind[kind_page])
+                    total++, on += game_mods[i].on;
+            if (total) /* a game with none of them does not get the page */
+                ROW(ACT_OPEN, kind_page, "%-26s%d of %d on", kind_page == PAGE_CHEATS ? "Cheats" : "Fixes", on, total);
+        }
+        ROW(ACT_OPEN, PAGE_SYSTEM, "System");
+        ROW(ACT_OPEN, PAGE_ASK_RESET, "Reset game");
+        ROW(ACT_OPEN, PAGE_ASK_QUIT, "Quit");
+        return count;
+    case PAGE_GRAPHICS:
+        ROW(ACT_WIDE, 0, "%-26s%s", "Widescreen (16:9)", ON(current_aspect > 1.5f));
+        ROW(ACT_SCALE, 0, "%-26s< %dx >  %dx%d", "Resolution", current_scale, w, h);
+        ROW(ACT_FULLSCREEN, 0, "%-26s%s", "Full screen (F11)", ON(fullscreen));
+        ROW(ACT_SMOOTH, 0, "%-26s%s", "Smooth motion (60 fps)", ON(smooth_motion));
+        ROW(ACT_TEXTURES, 0, "%-26s%s", "Smooth textures", ON(gfx_texture_smoothing));
+        ROW(ACT_LOOK, 0, "Reset camera");
+        break;
+    case PAGE_SOUND:
+        ROW(ACT_SOUND, 0, "%-26s%s", "Sound", ON(!sound_muted));
+        ROW(ACT_VOLUME, 0, "%-26s< %d%% >", "Volume", sound_volume * 10);
+        ROW(ACT_SOUND_BUFFER, 0, "%-26s< %d ms >", "Buffer (more: no crackle)", sound_cushion_ms);
+        break;
+    case PAGE_CONTROLS:
+    case PAGE_SHORTCUTS:
+        if (page == PAGE_CONTROLS)
+            ROW(ACT_FREE_CAMERA, 0, "%-17s%-5s%s", "Free camera", free_camera ? "ON" : "off",
+                "right stick turns the view");
+        if (page == PAGE_CONTROLS)
+            ROW(ACT_DPAD, 0, "%-17s%s", "D-pad", dpad_moves_stick ? "also moves the control stick" : "N64 D-pad only");
+        for (int i = 0; i < BINDING_COUNT; i++) {
+            if (!bindings[i].shortcut != (page == PAGE_CONTROLS))
+                continue;
+            int row = ROW(ACT_BIND, i, "%s", bindings[i].name);
+            rows[row].has_cells = 1;
+            for (int device = 0; device < DEVICE_COUNT; device++)
+                snprintf(rows[row].cells[device], sizeof rows[row].cells[device], "%s",
+                         waiting_for_press && row == menu_row && device == menu_column
+                             ? "press..." : code_name(device, bindings[i].now[device], 0));
+        }
+        ROW(ACT_USUAL_CONTROLS, page == PAGE_SHORTCUTS, "Put these back to usual");
+        break;
+    case PAGE_STATES:
+        ROW(ACT_SLOT, 0, "%-26s< %d >  %s", "Slot", state_slot, state_exists(state_slot) ? "in use" : "empty");
+        ROW(ACT_SAVE_STATE, 0, "Save state");
+        ROW(ACT_LOAD_STATE, 0, "Load state");
+        break;
+    case PAGE_CHEATS:
+    case PAGE_FIXES:
+        for (int i = 0; i < game_mod_count; i++)
+            if (game_mods[i].kind == page_kind[page])
+                ROW(ACT_MOD, i, "%-37.37s%s", game_mods[i].name, ON(game_mods[i].on));
+        break;
+    case PAGE_SYSTEM:
+        ROW(ACT_LIMIT, 0, "%-26s%s", "Speed limit (60 Hz)", ON(speed_limit));
+        if (fast_speed)
+            ROW(ACT_FAST_SPEED, 0, "%-26s< %dx >", "Fast forward speed", fast_speed);
+        else
+            ROW(ACT_FAST_SPEED, 0, "%-26s< no limit >", "Fast forward speed");
+        ROW(ACT_STATS, 0, "%-26s%s", "Statistics display (F3)", ON(stats_shown));
+        ROW(ACT_DEFAULTS, 0, "Put every setting back to usual");
+        break;
+    case PAGE_ASK_RESET:
+        ROW(ACT_BACK, 0, "No, go back");
+        ROW(ACT_RESET, 0, "Yes, reset the game");
+        return count;
+    case PAGE_ASK_QUIT:
+        ROW(ACT_BACK, 0, "No, go back");
+        ROW(ACT_QUIT, 0, "Yes, quit");
+        return count;
+    }
+    ROW(ACT_BACK, 0, "Back");
+#undef ROW
+#undef ON
+    return count;
+}
+
+static void menu_go(int page) {
+    if (menu_page == PAGE_MAIN)
+        main_row = menu_row; /* to come back to the same place */
+    menu_page = page;
+    menu_row = page == PAGE_MAIN ? main_row : 0;
+    waiting_for_press = 0;
+}
+
+static void menu_back(void) {
+    if (menu_page == PAGE_MAIN)
+        menu_open = 0;
+    else
+        menu_go(PAGE_MAIN);
+}
+
+/* Carry out a row's action. direction is -1 for Left and +1 for Right;
+ * selected says the row was chosen with Enter (or A on a gamepad). Rows
+ * that lead somewhere or do something drastic want Enter; rows that hold a
+ * setting change with Left, Right or Enter alike. */
+static void menu_act(int action, int number, int direction, int selected) {
+    switch (action) {
+    case ACT_RESUME: if (selected) menu_open = 0; return;
+    case ACT_BACK: if (selected) menu_back(); return;
+    case ACT_OPEN: if (selected || direction > 0) menu_go(number); return;
+    case ACT_RESET: if (selected) reset_game(); return;
+    case ACT_QUIT: if (selected) exit(0); return;
+    case ACT_BIND: if (selected) waiting_for_press = 1; return; /* the next press is the answer */
+    case ACT_USUAL_CONTROLS: if (!selected) return; usual_controls(number); break;
+    case ACT_DEFAULTS: if (!selected) return; restore_defaults(); break;
+    case ACT_LOOK: if (!selected) return; reset_camera(); break;
+    /* Saving and loading happen a moment later, between two steps of the
+     * game (see carry_out_state_request). */
+    case ACT_SAVE_STATE: if (selected) state_request = STATE_SAVE; return;
+    case ACT_LOAD_STATE: if (selected) state_request = STATE_LOAD, menu_open = 0; return;
+
+    case ACT_WIDE:
         current_aspect = current_aspect > 1.5f ? 4.0f / 3 : 16.0f / 9;
         apply_picture_settings();
         break;
-    case ROW_SMOOTH: smooth_motion = !smooth_motion; break;
-    case ROW_SCALE:
-        current_scale += direction;
-        current_scale = current_scale < 1 ? 1 : current_scale > 6 ? 6 : current_scale;
+    case ACT_SCALE: {
+        int scale = current_scale + direction;
+        scale = scale < 1 ? 1 : scale > 6 ? 6 : scale;
+        if (scale == current_scale)
+            return;
+        current_scale = scale;
         apply_picture_settings();
         break;
-    case ROW_STATS: stats_shown = !stats_shown; break;
-    case ROW_SOUND:
+    }
+    case ACT_FULLSCREEN: fullscreen = !fullscreen; apply_picture_settings(); break;
+    case ACT_SMOOTH:
+        smooth_motion = !smooth_motion;
+        shown_count = shown_next = 0; /* do not show a leftover in-between picture */
+        break;
+    case ACT_TEXTURES: gfx_texture_smoothing = !gfx_texture_smoothing; break;
+    case ACT_SOUND:
         sound_muted = !sound_muted;
         if (audio_device)
             SDL_ClearQueuedAudio(audio_device);
         break;
-    case ROW_LIMIT: speed_limit = !speed_limit; break;
-    case ROW_LOOK: look_yaw = look_pitch = 0, look_zoom = 1; break;
+    case ACT_VOLUME:
+        sound_volume += direction;
+        sound_volume = sound_volume < 0 ? 0 : sound_volume > 10 ? 10 : sound_volume;
+        break;
+    case ACT_SOUND_BUFFER:
+        sound_cushion_ms += 25 * direction;
+        sound_cushion_ms = sound_cushion_ms < 25 ? 25 : sound_cushion_ms > 200 ? 200 : sound_cushion_ms;
+        break;
+    case ACT_FREE_CAMERA:
+        free_camera = !free_camera;
+        if (!free_camera) /* back to the game's own view */
+            reset_camera();
+        break;
+    case ACT_DPAD: dpad_moves_stick = !dpad_moves_stick; break;
+    case ACT_MOD: game_mods[number].on ^= 1; break;
+    case ACT_SLOT: state_slot = (state_slot - 1 + direction + 9) % 9 + 1; break;
+    case ACT_FAST_SPEED: {
+        static const int speeds[] = {2, 3, 4, 8, 0}; /* 0: no limit */
+        int at = 0;
+        while (at < 4 && speeds[at] != fast_speed)
+            at++;
+        at += direction;
+        fast_speed = speeds[at < 0 ? 0 : at > 4 ? 4 : at];
+        break;
     }
+    case ACT_LIMIT: speed_limit = !speed_limit; break;
+    case ACT_STATS: stats_shown = !stats_shown; break;
+    default: return;
+    }
+    save_settings();
 }
 
 static void draw_overlay(void) {
-    int size = text_size(), line = 18 * size;
+    int size = text_size(), line = 18 * size, letter = 8 * size;
     if (stats_shown && stats.line_count) {
-        draw_box(4 * size, 4 * size, 49 * 8 * size, stats.line_count * line + 6 * size, 150);
+        draw_box(4 * size, 4 * size, 49 * letter, stats.line_count * line + 6 * size, 150);
         for (int i = 0; i < stats.line_count; i++)
             draw_text(8 * size, 7 * size + i * line, stats.lines[i], 120, 255, 120);
     }
-    if (!menu_open)
-        return;
-    int w, h;
-    gfx_picture(1, &w, &h);
-    char rows[ROW_COUNT][64];
-    snprintf(rows[ROW_WIDE], 64, "Widescreen (16:9)        %s", current_aspect > 1.5f ? "ON" : "off");
-    snprintf(rows[ROW_SMOOTH], 64, "Smooth motion (60 fps)   %s", smooth_motion ? "ON" : "off");
-    snprintf(rows[ROW_SCALE], 64, "Resolution             < %dx >  %dx%d", current_scale, w, h);
-    snprintf(rows[ROW_STATS], 64, "Statistics display       %s", stats_shown ? "ON" : "off");
-    snprintf(rows[ROW_SOUND], 64, "Sound                    %s", sound_muted ? "off" : "ON");
-    snprintf(rows[ROW_LIMIT], 64, "Speed limit (60 Hz)      %s", speed_limit ? "ON" : "off");
-    snprintf(rows[ROW_LOOK], 64, "Reset free look");
     int window_w, window_h;
     SDL_GL_GetDrawableSize(window, &window_w, &window_h);
-    int box_w = 46 * 8 * size, box_h = (ROW_COUNT + 4) * line;
-    int x = (window_w - box_w) / 2, y = (window_h - box_h) / 2;
-    draw_box(x, y, box_w, box_h, 235);
-    draw_text(x + 8 * size, y + 6 * size, "SETTINGS", 255, 255, 255);
-    for (int i = 0; i < ROW_COUNT; i++) {
-        int selected = i == menu_row;
-        draw_text(x + 8 * size, y + (i + 2) * line - 6 * size, selected ? ">" : " ", 255, 220, 60);
-        draw_text(x + 24 * size, y + (i + 2) * line - 6 * size, rows[i], selected ? 255 : 200,
-                  selected ? 220 : 200, selected ? 60 : 200);
+    if (frames < message_until) { /* "State 1 saved" and the like, bottom left */
+        draw_box(4 * size, window_h - line - 8 * size, ((int)strlen(message) + 2) * letter, line + 4 * size, 170);
+        draw_text(12 * size, window_h - line - 4 * size, message, 255, 255, 255);
+    } else if (fast_forward) {
+        draw_box(4 * size, window_h - line - 8 * size, 6 * letter, line + 4 * size, 170);
+        draw_text(12 * size, window_h - line - 4 * size, ">>", 255, 255, 255);
     }
-    draw_text(x + 8 * size, y + (ROW_COUNT + 2) * line + 2 * size,
-              "Up/Down choose  Left/Right change  F1/Select", 150, 150, 150);
+    if (!menu_open)
+        return;
+    Row rows[MAX_ROWS];
+    int row_count = menu_rows(menu_page, rows);
+    int table = menu_page == PAGE_CONTROLS || menu_page == PAGE_SHORTCUTS;
+    /* A page too long for the window shows a part of itself, moved along so
+     * that the chosen row is always in view. */
+    int visible = window_h / line - 5;
+    visible = visible < 3 ? 3 : visible > row_count ? row_count : visible;
+    int first = menu_row - visible / 2;
+    first = first > row_count - visible ? row_count - visible : first;
+    first = first < 0 ? 0 : first;
+
+    int box_w = (table ? MENU_WIDTH_WITH_CELLS : MENU_WIDTH) * letter, box_h = (visible + 4) * line;
+    int x = (window_w - box_w) / 2, y = (window_h - box_h) / 2, text_x = x + 3 * letter;
+    draw_box(x, y, box_w, box_h, 235);
+    draw_text(x + letter, y + 6 * size, page_titles[menu_page], 255, 255, 255);
+    if (table) { /* headings for the three cells */
+        const char *pad_heading = pad_is_playstation() ? "PlayStation" : gamepad ? "Controller" : "(no gamepad)";
+        draw_text(text_x + cell_column[DEVICE_KEY] * letter, y + 6 * size, "Keyboard", 150, 150, 150);
+        draw_text(text_x + cell_column[DEVICE_MOUSE] * letter, y + 6 * size, "Mouse", 150, 150, 150);
+        draw_text(text_x + cell_column[DEVICE_PAD] * letter, y + 6 * size, pad_heading, 150, 150, 150);
+    }
+    glb_overlay_bar(x + letter, y + line + 2 * size, box_w - 2 * letter, size, 255, 255, 255, 60); /* a rule under the title */
+    for (int i = 0; i < visible; i++) {
+        const Row *row = &rows[first + i];
+        int selected = first + i == menu_row, row_y = y + (i + 2) * line - 6 * size;
+        int bright = selected ? 255 : 200;
+        if (selected && !row->has_cells) /* a soft bar behind the chosen row */
+            glb_overlay_bar(x + letter / 2, row_y - size, box_w - letter, line, 255, 255, 255, 30);
+        draw_text(x + letter, row_y, selected ? ">" : " ", 255, 220, 60);
+        draw_text(text_x, row_y, row->text, bright, selected && !row->has_cells ? 220 : bright,
+                  selected && !row->has_cells ? 60 : bright);
+        for (int device = 0; row->has_cells && device < DEVICE_COUNT; device++) {
+            int chosen = selected && device == menu_column, cell_x = text_x + cell_column[device] * letter;
+            int next_x = device + 1 < DEVICE_COUNT ? text_x + cell_column[device + 1] * letter : x + box_w - letter / 2;
+            if (chosen) /* ...or behind the chosen cell */
+                glb_overlay_bar(cell_x - letter / 2, row_y - size, next_x - cell_x, line, 255, 255, 255, 45);
+            int dim = !strcmp(row->cells[device], "-");
+            draw_text(cell_x, row_y, row->cells[device], chosen ? 255 : dim ? 110 : 200, chosen ? 220 : dim ? 110 : 200,
+                      chosen ? 60 : dim ? 110 : 200);
+        }
+    }
+    const char *help = "Arrows: choose, change   Enter: select";
+    if (waiting_for_press)
+        help = menu_column == DEVICE_KEY ? "Press a key.  Backspace: none   Esc: cancel"
+               : menu_column == DEVICE_MOUSE ? "Press a mouse button.  Backspace: none   Esc: cancel"
+                                             : "Press a gamepad button.  Backspace: none   Esc: cancel";
+    else if (rows[menu_row].has_cells)
+        help = "Arrows: choose   Enter: change   Esc: back";
+    draw_text(x + letter, y + (visible + 2) * line + 2 * size, help, 150, 150, 150);
+    if (visible < row_count) { /* say where we are in the list */
+        char place[16];
+        snprintf(place, sizeof place, "%d/%d", menu_row + 1, row_count);
+        draw_text(x + box_w - ((int)strlen(place) + 1) * letter, y + (visible + 2) * line + 2 * size, place, 150, 150, 150);
+    }
+}
+
+/* The chosen cell was waiting for a press and got one. */
+static void finish_press(int device, int code) {
+    Row rows[MAX_ROWS];
+    menu_rows(menu_page, rows);
+    waiting_for_press = 0;
+    if (device != menu_column || !rows[menu_row].has_cells)
+        return; /* not the kind of press that was wanted: leave things as they are */
+    assign(rows[menu_row].number, device, code);
+    save_settings();
 }
 
 /* A key was pressed: is it one of ours? */
 static void overlay_key(SDL_Scancode key) {
-    if (key == SDL_SCANCODE_F1)
+    if (menu_open && waiting_for_press) {
+        if (key == SDL_SCANCODE_BACKSPACE) /* "nothing" for whichever cell is waiting */
+            finish_press(menu_column, menu_column == DEVICE_PAD ? PAD_NONE : 0);
+        else if (key == SDL_SCANCODE_ESCAPE || key == SDL_SCANCODE_F1 || key == SDL_SCANCODE_F3 || key == SDL_SCANCODE_F11)
+            waiting_for_press = 0; /* these keys have fixed jobs */
+        else if (menu_column == DEVICE_KEY)
+            finish_press(DEVICE_KEY, (int)key);
+        return;
+    }
+    Row rows[MAX_ROWS];
+    int row_count = menu_rows(menu_page, rows);
+    if (key == SDL_SCANCODE_F3)
+        menu_act(ACT_STATS, 0, 1, 0);
+    else if (key == SDL_SCANCODE_F11)
+        menu_act(ACT_FULLSCREEN, 0, 1, 0);
+    else if (key == SDL_SCANCODE_F1) { /* opens and closes the menu from anywhere */
         menu_open = !menu_open;
-    else if (key == SDL_SCANCODE_F3)
-        stats_shown = !stats_shown;
-    else if (menu_open && key == SDL_SCANCODE_UP)
-        menu_row = (menu_row + ROW_COUNT - 1) % ROW_COUNT;
-    else if (menu_open && key == SDL_SCANCODE_DOWN)
-        menu_row = (menu_row + 1) % ROW_COUNT;
-    else if (menu_open && (key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT || key == SDL_SCANCODE_RETURN))
-        menu_change(key == SDL_SCANCODE_LEFT ? -1 : 1);
+        menu_page = PAGE_MAIN, menu_row = main_row = 0, waiting_for_press = 0;
+    } else if (key == SDL_SCANCODE_ESCAPE) { /* opens the menu, then goes back a step at a time */
+        if (menu_open)
+            menu_back();
+        else
+            menu_open = 1, menu_page = PAGE_MAIN, menu_row = main_row = 0;
+    } else if (!menu_open)
+        return;
+    else if (key == SDL_SCANCODE_UP)
+        menu_row = (menu_row + row_count - 1) % row_count;
+    else if (key == SDL_SCANCODE_DOWN)
+        menu_row = (menu_row + 1) % row_count;
+    else if ((key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT) && rows[menu_row].has_cells) {
+        menu_column += key == SDL_SCANCODE_LEFT ? -1 : 1; /* in the table, Left and Right move between cells */
+        menu_column = menu_column < 0 ? 0 : menu_column >= DEVICE_COUNT ? DEVICE_COUNT - 1 : menu_column;
+    } else if (key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT)
+        menu_act(rows[menu_row].action, rows[menu_row].number, key == SDL_SCANCODE_LEFT ? -1 : 1, 0);
+    else if (key == SDL_SCANCODE_RETURN || key == SDL_SCANCODE_KP_ENTER)
+        menu_act(rows[menu_row].action, rows[menu_row].number, 1, 1);
 }
 
 static void read_keyboard_and_gamepad(void) {
     SDL_Event event;
+    float turn_right = 0, turn_down = 0; /* how far the player turns the camera this refresh */
     while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT ||
-            (event.type == SDL_KEYDOWN && event.key.keysym.scancode == SDL_SCANCODE_ESCAPE))
+        if (event.type == SDL_QUIT) /* the window's close button */
             exit(0);
         if (event.type == SDL_KEYDOWN && !event.key.repeat)
             overlay_key(event.key.keysym.scancode);
@@ -1019,80 +1956,163 @@ static void read_keyboard_and_gamepad(void) {
                 if (SDL_IsGameController(i))
                     gamepad = SDL_GameControllerOpen(i);
         }
-        /* On a controller, Select opens the menu; inside it the d-pad
-         * moves, A changes the setting and B closes. */
-        if (event.type == SDL_CONTROLLERBUTTONDOWN) {
+
+        if (menu_open && waiting_for_press) {
+            /* A cell of the controls table is waiting to be told its new
+             * mouse or gamepad button. (Keys arrive through overlay_key.) */
+            if (event.type == SDL_MOUSEBUTTONDOWN)
+                finish_press(DEVICE_MOUSE, event.button.button <= 5 ? event.button.button : 0);
+            else if (event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == PAD(BACK))
+                waiting_for_press = 0; /* Select is the menu button, and stays so */
+            else if (event.type == SDL_CONTROLLERBUTTONDOWN)
+                finish_press(DEVICE_PAD, event.cbutton.button);
+            else if (event.type == SDL_CONTROLLERAXISMOTION && abs(event.caxis.value) > 20000) {
+                /* A trigger pulled or a stick pushed: which one, which way? */
+                int positive = event.caxis.value > 0;
+                switch (event.caxis.axis) {
+                case SDL_CONTROLLER_AXIS_TRIGGERLEFT: finish_press(DEVICE_PAD, PAD_LEFT_TRIGGER); break;
+                case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: finish_press(DEVICE_PAD, PAD_RIGHT_TRIGGER); break;
+                case SDL_CONTROLLER_AXIS_LEFTX: finish_press(DEVICE_PAD, positive ? PAD_LSTICK_RIGHT : PAD_LSTICK_LEFT); break;
+                case SDL_CONTROLLER_AXIS_LEFTY: finish_press(DEVICE_PAD, positive ? PAD_LSTICK_DOWN : PAD_LSTICK_UP); break;
+                case SDL_CONTROLLER_AXIS_RIGHTX: finish_press(DEVICE_PAD, positive ? PAD_RSTICK_RIGHT : PAD_RSTICK_LEFT); break;
+                case SDL_CONTROLLER_AXIS_RIGHTY: finish_press(DEVICE_PAD, positive ? PAD_RSTICK_DOWN : PAD_RSTICK_UP); break;
+                }
+            }
+        } else if (event.type == SDL_CONTROLLERBUTTONDOWN) {
+            /* On a controller, Select opens the menu; inside it the d-pad
+             * moves and changes, A selects and B goes back. */
             switch (event.cbutton.button) {
             case SDL_CONTROLLER_BUTTON_BACK: overlay_key(SDL_SCANCODE_F1); break;
             case SDL_CONTROLLER_BUTTON_DPAD_UP: overlay_key(SDL_SCANCODE_UP); break;
             case SDL_CONTROLLER_BUTTON_DPAD_DOWN: overlay_key(SDL_SCANCODE_DOWN); break;
             case SDL_CONTROLLER_BUTTON_DPAD_LEFT: overlay_key(SDL_SCANCODE_LEFT); break;
-            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-            case SDL_CONTROLLER_BUTTON_A: overlay_key(SDL_SCANCODE_RIGHT); break;
+            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: overlay_key(SDL_SCANCODE_RIGHT); break;
+            case SDL_CONTROLLER_BUTTON_A:
+                if (menu_open)
+                    overlay_key(SDL_SCANCODE_RETURN);
+                break;
             case SDL_CONTROLLER_BUTTON_B:
                 if (menu_open)
-                    menu_open = 0;
+                    overlay_key(SDL_SCANCODE_ESCAPE);
                 break;
             }
         }
-        /* Free look: hold the right mouse button and move to turn the view,
-         * wheel to zoom, middle button to put it back. */
-        if (event.type == SDL_MOUSEMOTION && (event.motion.state & SDL_BUTTON_RMASK)) {
-            look_yaw += (float)event.motion.xrel * 0.004f;
-            look_pitch += (float)event.motion.yrel * 0.004f;
-            if (look_pitch > 1.4f) look_pitch = 1.4f;
-            if (look_pitch < -1.4f) look_pitch = -1.4f;
+        /* Looking around with the mouse: while the "Look" shortcut is held,
+         * moving the mouse turns the view. The wheel zooms. */
+        if (event.type == SDL_MOUSEMOTION && shortcut_held[SHORTCUT_LOOK]) {
+            turn_right += (float)event.motion.xrel * 0.004f;
+            turn_down += (float)event.motion.yrel * 0.004f;
         }
-        if (event.type == SDL_MOUSEWHEEL) {
+        if (event.type == SDL_MOUSEWHEEL && !menu_open && camera_paused()) {
+            /* nothing: the camera is fixed while the game is paused */
+        } else if (event.type == SDL_MOUSEWHEEL && !menu_open && host_camera.on) { /* the free camera: nearer or farther */
+            zoom_camera(event.wheel.y > 0 ? 1 / 1.1f : 1.1f);
+        } else if (event.type == SDL_MOUSEWHEEL && !menu_open) {
             look_zoom *= event.wheel.y > 0 ? 1.1f : 1 / 1.1f;
             if (look_zoom < 0.5f) look_zoom = 0.5f;
             if (look_zoom > 8) look_zoom = 8;
         }
-        if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_MIDDLE)
-            look_yaw = look_pitch = 0, look_zoom = 1;
     }
-    gfx_set_view(look_yaw, look_pitch, look_zoom);
-    /* While looking around, tell the game to keep far more in view. */
-    host_view_widen = (look_yaw != 0 || look_pitch != 0 || look_zoom < 1) ? 20 : base_view_widen;
 
-    const Uint8 *key = SDL_GetKeyboardState(NULL);
-    int buttons = 0, x = 0, y = 0;
-    static const struct { int scancode, button; } keys[] = {
-        {SDL_SCANCODE_J, BTN_A}, {SDL_SCANCODE_K, BTN_B}, {SDL_SCANCODE_L, BTN_Z},
-        {SDL_SCANCODE_LSHIFT, BTN_Z}, {SDL_SCANCODE_RETURN, BTN_START}, {SDL_SCANCODE_SPACE, BTN_A},
-        {SDL_SCANCODE_UP, BTN_CUP}, {SDL_SCANCODE_DOWN, BTN_CDOWN},
-        {SDL_SCANCODE_LEFT, BTN_CLEFT}, {SDL_SCANCODE_RIGHT, BTN_CRIGHT},
-        {SDL_SCANCODE_Q, BTN_L}, {SDL_SCANCODE_E, BTN_R},
-    };
-    for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++)
-        if (key[keys[i].scancode])
-            buttons |= keys[i].button;
-    x = (key[SDL_SCANCODE_D] ? STICK_MAX : 0) - (key[SDL_SCANCODE_A] ? STICK_MAX : 0);
-    y = (key[SDL_SCANCODE_W] ? STICK_MAX : 0) - (key[SDL_SCANCODE_S] ? STICK_MAX : 0);
-
-    if (gamepad) {
-        static const struct { SDL_GameControllerButton pad; int button; } pad_map[] = {
-            {SDL_CONTROLLER_BUTTON_A, BTN_A}, {SDL_CONTROLLER_BUTTON_X, BTN_B},
-            {SDL_CONTROLLER_BUTTON_B, BTN_B}, {SDL_CONTROLLER_BUTTON_START, BTN_START},
-            {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, BTN_Z}, {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, BTN_R},
-        };
-        for (size_t i = 0; i < sizeof pad_map / sizeof pad_map[0]; i++)
-            if (SDL_GameControllerGetButton(gamepad, pad_map[i].pad))
-                buttons |= pad_map[i].button;
-        if (SDL_GameControllerGetAxis(gamepad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000)
-            buttons |= BTN_Z;
-        int lx = SDL_GameControllerGetAxis(gamepad, SDL_CONTROLLER_AXIS_LEFTX);
-        int ly = SDL_GameControllerGetAxis(gamepad, SDL_CONTROLLER_AXIS_LEFTY);
-        if (abs(lx) > 6000 || abs(ly) > 6000)
-            x = lx * STICK_MAX / 32768, y = -ly * STICK_MAX / 32768;
-        int rx = SDL_GameControllerGetAxis(gamepad, SDL_CONTROLLER_AXIS_RIGHTX);
-        int ry = SDL_GameControllerGetAxis(gamepad, SDL_CONTROLLER_AXIS_RIGHTY);
-        buttons |= (rx > 16000 ? BTN_CRIGHT : 0) | (rx < -16000 ? BTN_CLEFT : 0);
-        buttons |= (ry > 16000 ? BTN_CDOWN : 0) | (ry < -16000 ? BTN_CUP : 0);
+    /* The table of controls: add up everything that is held. */
+    int buttons = 0;
+    float stick_x = 0, stick_y = 0;
+    int held_now[SHORTCUT_COUNT] = {0};
+    for (int i = 0; i < BINDING_COUNT; i++) {
+        const Binding *b = &bindings[i];
+        float amount = binding_amount(b);
+        if (b->shortcut)
+            held_now[b->shortcut] = amount > 0.4f && !menu_open;
+        else if (b->button)
+            buttons |= amount > 0.5f ? b->button : 0;
+        else
+            stick_x += (float)b->x * amount, stick_y += (float)b->y * amount;
     }
-    if (menu_open) /* while the menu is up, the keys are for the menu */
+    /* Two extra keys that many people expect, unless they have been given
+     * another job in the menu. */
+    static const struct { SDL_Scancode key; int button; } extras[] = {
+        {SDL_SCANCODE_SPACE, BTN_A}, {SDL_SCANCODE_LSHIFT, BTN_Z}};
+    for (int e = 0; e < 2; e++) {
+        int taken = 0;
+        for (int i = 0; i < BINDING_COUNT; i++)
+            taken |= bindings[i].now[DEVICE_KEY] == (int)extras[e].key;
+        if (!taken && SDL_GetKeyboardState(NULL)[extras[e].key])
+            buttons |= extras[e].button;
+    }
+    if (gamepad && dpad_moves_stick) {
+        static const struct { int pad, x, y; } directions[4] = {
+            {PAD(DPAD_UP), 0, 1}, {PAD(DPAD_DOWN), 0, -1}, {PAD(DPAD_LEFT), -1, 0}, {PAD(DPAD_RIGHT), 1, 0}};
+        for (int d = 0; d < 4; d++) {
+            /* ...unless that direction has been given some other job in the
+             * table. (Moving the camera in and out only counts as a job
+             * while there is a camera to move: in the game's menus and its
+             * pause screen the D-pad is free to work the menu.) */
+            int other_job = 0, camera_job;
+            for (int i = 0; i < BINDING_COUNT; i++) {
+                camera_job = bindings[i].shortcut == SHORTCUT_CAMERA_NEARER || bindings[i].shortcut == SHORTCUT_CAMERA_FARTHER;
+                if (bindings[i].now[DEVICE_PAD] == directions[d].pad &&
+                    !(bindings[i].button & (BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT)) &&
+                    !(camera_job && !camera_usable()))
+                    other_job = 1;
+            }
+            if (!other_job && SDL_GameControllerGetButton(gamepad, (SDL_GameControllerButton)directions[d].pad))
+                stick_x += (float)directions[d].x, stick_y += (float)directions[d].y;
+        }
+    }
+    stick_x = stick_x > 1 ? 1 : stick_x < -1 ? -1 : stick_x;
+    stick_y = stick_y > 1 ? 1 : stick_y < -1 ? -1 : stick_y;
+    int x = (int)(stick_x * STICK_MAX), y = (int)(stick_y * STICK_MAX);
+
+    /* While the menu is up, the keys are for the menu. And when it closes,
+     * the key that closed it is probably still down: the game must not see
+     * that as a press of its own (Enter is also Start), so it gets nothing
+     * until everything has been let go. */
+    static int wait_for_release;
+    if (menu_open)
+        wait_for_release = 1;
+    else if (buttons == 0 && x == 0 && y == 0)
+        wait_for_release = 0;
+    if (menu_open || wait_for_release)
         buttons = 0, x = y = 0;
     pad_buttons = (uint16_t)buttons, pad_x = (int8_t)x, pad_y = (int8_t)y;
+
+    /* Shortcuts. Fast forward and looking last as long as they are held;
+     * the others act once, on the press. */
+    if (getenv("FAST_TEST")) /* for testing: hold fast forward from one frame to another */
+        held_now[SHORTCUT_FAST] = frames >= atol(getenv("FAST_TEST")) && frames < atol(strchr(getenv("FAST_TEST"), ':') + 1);
+    for (int i = 1; i < SHORTCUT_COUNT; i++) {
+        int pressed = held_now[i] && !shortcut_held[i];
+        shortcut_held[i] = held_now[i];
+        if (pressed && i == SHORTCUT_SAVE)
+            state_request = STATE_SAVE;
+        if (pressed && i == SHORTCUT_LOAD)
+            state_request = STATE_LOAD;
+        if (pressed && i == SHORTCUT_CAMERA_RESET)
+            reset_camera();
+        /* Held: the camera slides in or out, about a third of the way a second. */
+        if (held_now[i] && i == SHORTCUT_CAMERA_NEARER)
+            zoom_camera(0.98f);
+        if (held_now[i] && i == SHORTCUT_CAMERA_FARTHER)
+            zoom_camera(1 / 0.98f);
+    }
+    fast_forward = shortcut_held[SHORTCUT_FAST];
+
+    /* The right stick turns the camera, a little every refresh for as long
+     * as it is pushed. It does so whenever the "Free camera" setting is on,
+     * and also while the "Look" shortcut is held. */
+    if (gamepad && (free_camera || shortcut_held[SHORTCUT_LOOK]) && !menu_open) {
+        float turn_x, turn_y;
+        stick_position(SDL_CONTROLLER_AXIS_RIGHTX, &turn_x, &turn_y);
+        turn_right += turn_x * 0.045f;
+        turn_down += turn_y * 0.03f;
+    }
+    if (!turn_camera(turn_right, turn_down)) { /* no character to circle: turn on the spot instead */
+        look_yaw += turn_right, look_pitch += turn_down;
+        if (look_pitch > 1.4f) look_pitch = 1.4f;
+        if (look_pitch < -1.4f) look_pitch = -1.4f;
+    }
+    simple_look_yaw = look_yaw, simple_look_pitch = look_pitch;
+    gfx_set_view(look_yaw, look_pitch, look_zoom);
 }
 
 static void show_picture(int which) {
@@ -1102,11 +2122,13 @@ static void show_picture(int which) {
     draw_overlay();
     glb_overlay_finish();
     /* For testing: WINDOW_SHOT=file.ppm saves what the window shows at frame
-     * WINDOW_SHOT_FRAME (default 300). */
+     * WINDOW_SHOT_FRAME (default 300), or the first time after that. */
+    static int shot_taken;
     const char *shot_frame = getenv("WINDOW_SHOT_FRAME");
-    const char *shot = frames == (shot_frame ? atol(shot_frame) : 300) ? getenv("WINDOW_SHOT") : NULL;
+    const char *shot = !shot_taken && frames >= (shot_frame ? atol(shot_frame) : 300) ? getenv("WINDOW_SHOT") : NULL;
     FILE *file = shot ? fopen(shot, "wb") : NULL;
     if (file) {
+        shot_taken = 1;
         uint8_t *pixels = malloc((size_t)w * (size_t)h * 3);
         glb_read_window(pixels, w, h);
         fprintf(file, "P6\n%d %d\n255\n", w, h);
@@ -1122,7 +2144,9 @@ static void show_picture(int which) {
  * the next; only if we fall well behind do we give up catching up. */
 static void wait_for_next_frame(void) {
     Uint64 frequency = SDL_GetPerformanceFrequency(), now = SDL_GetPerformanceCounter();
-    next_frame_time += frequency / 60;
+    /* Fast forward: the same wait, a few times shorter (or none at all). */
+    int speed = fast_forward ? fast_speed : 1;
+    next_frame_time += frequency / 60 / (Uint64)(speed ? speed : 1);
     if (now > next_frame_time) {
         double late = (double)(now - next_frame_time) * 1000 / (double)frequency;
         if (late > 4)
@@ -1132,7 +2156,7 @@ static void wait_for_next_frame(void) {
     }
     if (now > next_frame_time + frequency / 10)
         next_frame_time = now;
-    if (!speed_limit) { /* run as fast as the PC can go */
+    if (!speed_limit || speed == 0) { /* run as fast as the PC can go */
         next_frame_time = now;
         return;
     }
@@ -1145,6 +2169,106 @@ static void wait_for_next_frame(void) {
 }
 #endif
 
+/* ---- Mods -------------------------------------------------------------------
+ * See mods.h. The list itself (game_mods) is in the game's file in games/,
+ * or in games/none.c for a game that has no file of its own. */
+
+/* Once per screen refresh: the parts of the free camera that concern the
+ * game rather than the drawing (see "Free camera" near the top). */
+static void turn_stick(void) {
+    /* How far to the right of the game's own camera are we looking? */
+    float turned = host_camera.on ? camera_game_facing - host_camera.yaw : simple_look_yaw;
+    /* While the view is turned at all, the game is told to leave nothing out. */
+    host_view_widen = (host_camera.on || simple_look_yaw != 0 || simple_look_pitch != 0) ? 20 : base_view_widen;
+    /* (Not while the game is paused: in its menus up must stay up.) */
+    if (turned != 0 && !camera_paused()) {
+        float c = cosf(turned), s = sinf(turned), x = pad_x, y = pad_y;
+        float turned_x = x * c + y * s, turned_y = y * c - x * s;
+        pad_x = (int8_t)(turned_x > 127 ? 127 : turned_x < -127 ? -127 : turned_x);
+        pad_y = (int8_t)(turned_y > 127 ? 127 : turned_y < -127 ? -127 : turned_y);
+    }
+}
+
+/* Carry out the mods that are switched on. Once per screen refresh. */
+static void apply_mods(void) {
+    static Context ctx; /* mods use the same memory functions as the game's code */
+    ctx.ram = ram;
+    for (int i = 0; i < game_mod_count; i++) {
+        Mod *mod = &game_mods[i];
+        if (!mod->on)
+            continue;
+        for (int j = 0; j < 4; j++) {
+            Poke *poke = &mod->pokes[j];
+            if (poke->size == 1) wr8(&ctx, poke->address, (uint8_t)poke->value);
+            if (poke->size == 2) wr16(&ctx, poke->address, (uint16_t)poke->value);
+            if (poke->size == 4) wr32(&ctx, poke->address, poke->value);
+        }
+        if (mod->every_frame)
+            mod->every_frame(&ctx, pad_buttons);
+    }
+}
+
+/* Read the settings file written by the menu (see save_settings). Each line
+ * is "name = number". Anything we do not recognise is skipped, so a file
+ * from an older or newer version does no harm. */
+static void load_settings(int *scale, float *aspect) {
+    FILE *file = settings_path ? fopen(settings_path, "r") : NULL;
+    if (!file)
+        return;
+    char line[160];
+    while (fgets(line, sizeof line, file)) {
+        char *equals = strchr(line, '=');
+        if (line[0] == '#' || !equals)
+            continue;
+        char *text = equals + 1; /* what comes after the '=' */
+        int value = atoi(text);
+        /* End the name where the spaces before the '=' begin. */
+        while (equals > line && equals[-1] == ' ')
+            equals--;
+        *equals = 0;
+        if (!strcmp(line, "wide")) *aspect = value ? 16.0f / 9 : 4.0f / 3;
+        else if (!strcmp(line, "smooth")) smooth_motion = value != 0;
+        else if (!strcmp(line, "scale")) *scale = value < 1 ? 1 : value > 6 ? 6 : value;
+        else if (!strcmp(line, "stats")) start_with_stats = value != 0;
+        else if (!strcmp(line, "sound")) sound_muted = value == 0;
+        else if (!strcmp(line, "speed limit")) speed_limit = value != 0;
+        else if (!strcmp(line, "smooth textures")) gfx_texture_smoothing = value != 0;
+        else if (!strcmp(line, "volume")) sound_volume = value < 0 ? 0 : value > 10 ? 10 : value;
+        else if (!strcmp(line, "sound buffer")) sound_cushion_ms = value < 25 ? 25 : value > 200 ? 200 : value;
+        else if (!strcmp(line, "fast forward speed")) fast_speed = value < 0 || value > 8 ? 4 : value;
+        else if (!strcmp(line, "state slot")) state_slot = value < 1 || value > 9 ? 1 : value;
+        else if (!strncmp(line, "mod ", 4)) {
+            for (int i = 0; i < game_mod_count; i++)
+                if (!strcmp(line + 4, game_mods[i].name))
+                    game_mods[i].on = value != 0;
+        }
+#ifdef USE_SDL
+        else if (!strcmp(line, "fullscreen")) fullscreen = value != 0;
+        else if (!strcmp(line, "free camera")) free_camera = value != 0;
+        else if (!strcmp(line, "dpad moves stick")) dpad_moves_stick = value != 0;
+        else {
+            /* "key A = J", "pad A = a", "mouse Look (hold) = Right": cut off
+             * the spaces and line end around the name of the key or button. */
+            char *code = text + strspn(text, " "), *row = line;
+            code[strcspn(code, "\r\n")] = 0;
+            if (!strncmp(row, "shortcut ", 9)) /* how older versions wrote the shortcuts */
+                row += 9;
+            for (int device = 0; device < DEVICE_COUNT; device++) {
+                size_t length = strlen(device_names[device]);
+                if (strncmp(row, device_names[device], length) || row[length] != ' ')
+                    continue;
+                for (int i = 0; i < BINDING_COUNT; i++)
+                    if (!strcmp(row + length + 1, bindings[i].name) ||
+                        (row != line && bindings[i].shortcut && /* older names had more on the end */
+                         !strncmp(row + length + 1, bindings[i].name, strlen(bindings[i].name))))
+                        bindings[i].now[device] = code_from_name(device, code);
+            }
+        }
+#endif
+    }
+    fclose(file);
+}
+
 /* Once per screen refresh. */
 static void present_frame(void) {
     if (max_frames >= 0 && frames > max_frames)
@@ -1155,20 +2279,31 @@ static void present_frame(void) {
         static int on_screen = 1; /* which picture is currently displayed */
         read_keyboard_and_gamepad();
         if (getenv("MENU_SCRIPT")) { /* for testing: change settings with nobody at the keyboard */
-            static const struct { long frame; int row, direction; } steps[] = {
-                {200, ROW_WIDE, 1}, {260, ROW_SCALE, -1}, {320, ROW_SMOOTH, 1},
-                {380, ROW_SCALE, 1}, {440, ROW_SCALE, 1}, {500, ROW_WIDE, 1}, {520, ROW_WIDE, 1},
+            static const struct { long frame; int action, direction; } steps[] = {
+                {200, ACT_WIDE, 1}, {260, ACT_SCALE, -1}, {320, ACT_SMOOTH, 1},
+                {380, ACT_SCALE, 1}, {440, ACT_SCALE, 1}, {500, ACT_WIDE, 1}, {520, ACT_WIDE, 1},
             };
             for (size_t i = 0; i < sizeof steps / sizeof steps[0]; i++)
                 if (steps[i].frame == frames)
-                    menu_row = steps[i].row, menu_change(steps[i].direction);
+                    menu_act(steps[i].action, 0, steps[i].direction, 0);
+        }
+        if (getenv("MENU_STRESS") && frames % 3 == 0) { /* for testing: change things at random, all the time */
+            static const int actions[] = {ACT_WIDE, ACT_SCALE, ACT_SMOOTH, ACT_TEXTURES, ACT_SOUND,
+                                          ACT_VOLUME, ACT_LIMIT, ACT_STATS, ACT_MOD, ACT_SCALE};
+            int action = actions[rand() % 10];
+            if (action != ACT_MOD || game_mod_count)
+                menu_act(action, game_mod_count ? rand() % game_mod_count : 0, rand() % 2 ? 1 : -1, 0);
+        }
+        if (getenv("RESET_TEST") && frames == atol(getenv("RESET_TEST"))) { /* for testing: reset once */
+            unsetenv("RESET_TEST");
+            reset_game();
         }
         update_stats(which >= 0);
         if (which >= 0)
             on_screen = which;
         /* Redraw even without a new picture while the menu or statistics
          * are up, so they stay responsive. */
-        if (which >= 0 || menu_open || stats_shown)
+        if (which >= 0 || menu_open || stats_shown || frames <= message_until)
             show_picture(on_screen);
         wait_for_next_frame();
     }
@@ -1187,6 +2322,14 @@ static void present_frame(void) {
     if (screenshot_dir && which >= 0 && frames >= next_screenshot) {
         write_screenshot(which);
         next_screenshot = frames - frames % screenshot_every + screenshot_every;
+    }
+    turn_stick();
+    apply_mods();
+    if (getenv("WATCH")) { /* for testing: WATCH=address prints what is there, every frame */
+        uint32_t bits = g32((uint32_t)strtoul(getenv("WATCH"), NULL, 0));
+        float value;
+        memcpy(&value, &bits, 4);
+        fprintf(stderr, "watch %ld: 0x%08X %g\n", frames, bits, value);
     }
 }
 
@@ -1214,7 +2357,8 @@ static void print_summary(void) {
     if (sound_blocks)
         printf(", %ld played, %ld gaps, %ld skipped", sound_blocks, sound_gaps, sound_skipped);
     printf("\n");
-    printf("  frames cut short by the loop budget: %ld\n", forced_frames);
+    printf("  frames cut short by the loop budget: %ld (busiest refresh used %ld of %d)\n", forced_frames,
+           most_loops, LOOP_BUDGET_PER_FRAME);
     if (getenv("SHOW_THREADS")) /* for working out why a game is stuck */
         for (int i = 0; i < thread_count; i++)
             printf("  thread %d: priority %d, %s, queue 0x%08X (%u waiting), last call from 0x%08X\n",
@@ -1234,11 +2378,25 @@ int main(int argc, char **argv) {
     }
     int scale = 3;
     float aspect = 4.0f / 3;
+#ifdef USE_SDL
+    start_arguments = argv;
+    dpad_moves_stick = game_ignores_dpad;
+    for (int i = 0; i < game_mod_count && i < 64; i++)
+        mods_at_start[i] = game_mods[i].on;
+#endif
+    /* The remembered settings come first, so that anything given on the
+     * command line afterwards wins over them. */
+    for (int i = 2; i + 1 < argc; i++)
+        if (!strcmp(argv[i], "--settings"))
+            settings_path = argv[i + 1];
+    load_settings(&scale, &aspect);
     for (int i = 2; i < argc; i++) {
         const char *next = i + 1 < argc ? argv[i + 1] : "";
         if (!strcmp(argv[i], "--frames")) max_frames = atol(next), i++;
         else if (!strcmp(argv[i], "--scale")) scale = atoi(next), i++;
         else if (!strcmp(argv[i], "--save")) save_path = next, i++;
+        else if (!strcmp(argv[i], "--settings")) i++; /* dealt with above */
+        else if (!strcmp(argv[i], "--states")) states_path = next, i++;
         else if (!strcmp(argv[i], "--headless")) headless = 1;
         else if (!strcmp(argv[i], "--wide")) aspect = 16.0f / 9;
         else if (!strcmp(argv[i], "--stats")) start_with_stats = 1;
@@ -1292,7 +2450,7 @@ int main(int argc, char **argv) {
     /* What the console's boot code does before the game starts: copy the
      * first megabyte of game code into memory and leave a few facts about
      * the console at fixed addresses. */
-    ram = calloc(1, RAM_SIZE);
+    ram = memory_at(RAM_PLACE, RAM_SIZE); /* arrives filled with zeros */
     memcpy(guest(ENTRY_POINT, BOOT_LOAD_SIZE), rom + ENTRY_ROM_OFFSET, BOOT_LOAD_SIZE);
     w32(0x80000300, 1);          /* TV type: NTSC */
     w32(0x80000308, 0xB0000000); /* where the cartridge is mapped */
@@ -1303,9 +2461,14 @@ int main(int argc, char **argv) {
         fseek(wav_file, 44, SEEK_SET); /* leave room for the header, written at the end */
     gfx_init(ram, scale, aspect);
     host_view_widen = base_view_widen = aspect / (4.0f / 3);
-    if (look_test_yaw != 0) { /* for testing free look without a mouse */
+    if (look_test_yaw != 0 && game_focus) { /* for testing the free camera without a gamepad */
+        camera_test_turn = look_test_yaw;
+    } else if (look_test_yaw != 0) { /* ...or the simple look-around */
         gfx_set_view(look_test_yaw, 0, 1);
-        host_view_widen = base_view_widen = 20;
+        simple_look_yaw = look_test_yaw;
+#ifdef USE_SDL
+        look_yaw = look_test_yaw;
+#endif
     }
     atexit(print_summary);
 #ifdef USE_SDL
@@ -1313,6 +2476,10 @@ int main(int argc, char **argv) {
         current_scale = scale, current_aspect = aspect, stats_shown = start_with_stats;
     if (getenv("MENU_TEST")) /* for testing: start with the menu and statistics showing */
         menu_open = stats_shown = 1;
+    if (getenv("MENU_PAGE")) /* ...and on this page of it */
+        menu_page = atoi(getenv("MENU_PAGE")) % PAGE_COUNT;
+    if (getenv("MENU_ROW"))
+        menu_row = atoi(getenv("MENU_ROW"));
     if (!headless)
         open_window();
 #endif
@@ -1323,6 +2490,16 @@ int main(int argc, char **argv) {
 
     int idle_frames = 0;
     while (max_frames < 0 || frames < max_frames) {
+        /* For testing: STATE_TEST="save-frame:load-frame" saves and loads by itself. */
+        static long test_save = -1, test_load = -1;
+        if (test_save < 0 && getenv("STATE_TEST"))
+            sscanf(getenv("STATE_TEST"), "%ld:%ld", &test_save, &test_load);
+        if (frames == test_save && frames)
+            state_request = STATE_SAVE, test_save = 0;
+        if (frames == test_load && frames)
+            state_request = STATE_LOAD, test_load = 0;
+        if (state_request)
+            carry_out_state_request();
         Thread *t = pick_thread();
         if (t) {
             idle_frames = 0;

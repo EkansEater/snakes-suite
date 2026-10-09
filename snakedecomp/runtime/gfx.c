@@ -20,6 +20,7 @@
 #include "gfx_internal.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -45,6 +46,22 @@ static float wide_offset;           /* where the game's x = 0 lands */
 /* Free look: an extra turn and zoom applied on top of the game's camera. */
 static float look_yaw, look_pitch, look_zoom = 1;
 
+/* The free camera: a camera of our own that circles a point in the game's
+ * world (the player's character), looking at it from "distance" away in
+ * the direction given by yaw (round to the side) and pitch (up and over).
+ * We keep the setting the previous frame was drawn with as well, so that
+ * an in-between picture can use the halfway point. */
+typedef struct {
+    int on;
+    float yaw, pitch, distance, focus[3];
+} FreeCameraSetting;
+static FreeCameraSetting free_now, free_before;
+static float free_turn[4][4]; /* turns what the game's camera sees into what ours sees */
+static int free_turn_ready;
+static float last_camera[4][4]; /* the game's own camera, as of the last frame drawn */
+static int have_last_camera;
+static float view_back[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; /* undoes the last frame's turn */
+
 /* Smooth motion: the game moves things 30 times a second. For 60, we draw an
  * extra picture halfway between each pair of frames by blending the
  * position matrices of the previous frame with the current one's. */
@@ -68,6 +85,7 @@ static Tracked *tracked_now, *tracked_before;
 static int tracked_count, tracked_before_count;
 static float *depth_buffer;    /* 0 = nearest, 1 = farthest */
 long gfx_triangle_count;
+int gfx_texture_smoothing = 1;
 
 /* ---- Reading the game's memory -------------------------------------------- */
 
@@ -160,9 +178,42 @@ static void multiply(float out[4][4], float a[4][4], float b[4][4]) {
 
 static int is_perspective(float m[4][4]) { return m[3][3] == 0; }
 
+/* A camera cannot draw what is right in front of its nose: anything nearer
+ * than its "near plane" is cut away. The game sets that distance for its
+ * own camera, which keeps well back from walls, and it is generous (100
+ * units in Super Mario 64, about two thirds of Mario's height). Our free
+ * camera gets pressed up against walls and slopes, and with the game's
+ * setting it would cut holes in them and show what is behind. So for the
+ * free camera we bring the near plane in to a tenth of the distance.
+ *
+ * Two numbers in the projection matrix hold the near and far distances in
+ * a mixed-up form; we unmix them, change near, and mix them again. Fog is
+ * worked out from the depth those two numbers produce, so we also note how
+ * to get from the new depth back to the one the game expected. */
+static float fog_scale = 1, fog_shift;
+static void bring_near_plane_closer(float projection[4][4]) {
+    float a = projection[2][2], b = projection[3][2];
+    if (a >= -1 || b >= 0 || projection[0][2] != 0 || projection[1][2] != 0)
+        return; /* not the usual kind of projection: leave it alone */
+    float near = b / (a - 1), far = b / (a + 1);
+    near /= 10;
+    float new_a = (near + far) / (near - far), new_b = 2 * near * far / (near - far);
+    projection[2][2] = new_a, projection[3][2] = new_b;
+    fog_scale = a / new_a, fog_shift = b - new_b * a / new_a;
+}
+
 /* modelview * projection, slipping in the free-look turn between them
  * (only for 3D scenes, not for flat things like the HUD). */
 static void combine_with(float out[4][4], float modelview[4][4]) {
+    fog_scale = 1, fog_shift = 0;
+    if (is_perspective(rsp.projection) && free_turn_ready) { /* the free camera: see prepare_free_turn */
+        float through_ours[4][4], projection[4][4];
+        memcpy(projection, rsp.projection, sizeof projection);
+        bring_near_plane_closer(projection);
+        multiply(through_ours, free_turn, projection);
+        multiply(out, modelview, through_ours);
+        return;
+    }
     if (!is_perspective(rsp.projection) || (look_yaw == 0 && look_pitch == 0 && look_zoom == 1)) {
         multiply(out, modelview, rsp.projection);
         return;
@@ -178,6 +229,52 @@ static void combine_with(float out[4][4], float modelview[4][4]) {
 }
 
 static void update_combined(void) { combine_with(rsp.combined, rsp.modelview[rsp.modelview_top]); }
+
+static int invert(float out[4][4], float m[4][4]);
+static void direction(float out[3], float yaw, float pitch);
+
+/* Work out free_turn for the picture about to be drawn. Called as soon as
+ * we have seen the game's camera matrix for this frame (camera_blended).
+ *
+ * Everything the game draws arrives already worked out for the game's
+ * camera. So to see it through ours instead we first undo the game's
+ * camera, which gives positions in the world, and then apply our own:
+ *     free_turn = (undo the game's camera) x (our camera)                */
+static void prepare_free_turn(void) {
+    free_turn_ready = 0;
+    if (!free_now.on)
+        return;
+    /* An in-between picture (blend 0.5) uses a camera halfway between the
+     * last frame's and this one's, so that turning is as smooth as the rest. */
+    float t = free_before.on ? blend : 1;
+    float yaw = free_before.yaw + (free_now.yaw - free_before.yaw) * t;
+    float pitch = free_before.pitch + (free_now.pitch - free_before.pitch) * t;
+    float distance = free_before.distance + (free_now.distance - free_before.distance) * t;
+    float focus[3], eye[3], forward[3];
+    direction(forward, yaw, pitch);
+    for (int i = 0; i < 3; i++) {
+        focus[i] = free_before.focus[i] + (free_now.focus[i] - free_before.focus[i]) * t;
+        eye[i] = focus[i] - forward[i] * distance;
+    }
+    /* Our camera's matrix. Its three columns are the directions that
+     * become right, up and backwards on screen; the last row moves the
+     * camera's own position to the middle. */
+    float right[3] = {-forward[2], 0, forward[0]}; /* level, and square to forward */
+    float length = sqrtf(right[0] * right[0] + right[2] * right[2]);
+    right[0] /= length, right[2] /= length;
+    float up[3] = {right[1] * forward[2] - right[2] * forward[1], right[2] * forward[0] - right[0] * forward[2],
+                   right[0] * forward[1] - right[1] * forward[0]};
+    float ours[4][4] = {{0}}, undo[4][4];
+    for (int i = 0; i < 3; i++) {
+        ours[i][0] = right[i], ours[i][1] = up[i], ours[i][2] = -forward[i];
+        ours[3][0] -= eye[i] * right[i], ours[3][1] -= eye[i] * up[i], ours[3][2] += eye[i] * forward[i];
+    }
+    ours[3][3] = 1;
+    if (!invert(undo, camera_blended))
+        return;
+    multiply(free_turn, undo, ours);
+    free_turn_ready = 1;
+}
 
 /* The matrix that undoes another (so that m * inverse = no change).
  * Returns 0 if there is none. */
@@ -275,6 +372,7 @@ static void command_matrix(uint32_t w0, uint32_t w1) {
                 memcpy(camera_exact, exact, sizeof m);
                 memcpy(camera_blended, m, sizeof m);
                 have_camera = 1;
+                prepare_free_turn();
             }
         } else {
             multiply(top, m, top);
@@ -327,15 +425,21 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
         }
         if (blend < 1) {
             /* Find the same shape in the previous frame: same number of
-             * corners, and the nearest (but not far away). */
+             * corners, and the nearest (but not far away). Every corner is
+             * compared, not just the first: pieces of one surface often
+             * start from a corner they share, and going by that alone would
+             * pair a piece with its neighbour and draw it bent halfway
+             * into the neighbour's shape. */
             float nearest = 300;
             for (int j = 0; j < tracked_before_count; j++) {
                 const Tracked *t = &tracked_before[j];
                 if (t->count != count)
                     continue;
                 float distance = 0;
-                for (int k = 0; k < 3; k++)
-                    distance += fabsf(t->corner[0][k] - now->corner[0][k]);
+                for (int c = 0; c < count && distance < nearest * (float)count; c++)
+                    for (int k = 0; k < 3; k++)
+                        distance += fabsf(t->corner[c][k] - now->corner[c][k]);
+                distance /= (float)count; /* the average over the corners */
                 if (distance < nearest)
                     nearest = distance, before = t;
             }
@@ -412,7 +516,8 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
         v->fog = 0;
         if (rsp.geometry_mode & G_FOG) {
             float inverse = v->w > 0 ? 1.0f / v->w : 32767.0f;
-            float f = v->z * inverse * rsp.fog_multiply + rsp.fog_offset;
+            /* (fog_scale and fog_shift: see bring_near_plane_closer) */
+            float f = (v->z * fog_scale + fog_shift) * inverse * rsp.fog_multiply + rsp.fog_offset;
             v->fog = f < 0 ? 0 : f > 255 ? 255 : f;
         }
     }
@@ -478,7 +583,7 @@ static void capture_state(DrawState *d, int tile_index, int allow_depth) {
     d->depth_test = z && (rdp.other_mode_l & 0x10);
     d->depth_write = z && (rdp.other_mode_l & 0x20);
     d->decal = ((rdp.other_mode_l >> 10) & 3) == 3; /* drawn flat on another surface */
-    d->bilinear = BILINEAR;
+    d->bilinear = BILINEAR && gfx_texture_smoothing;
     /* One-cycle mode uses the second set of combiner choices; two-cycle mode
      * runs the first set and feeds its result into the second. */
     d->first_cycle = CYCLE_TYPE == CYCLE_2 ? 0 : 1;
@@ -1003,11 +1108,16 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
 
     /* Skip triangles facing away from the camera, if asked to. */
     if (rsp.geometry_mode & (G_CULL_FRONT | G_CULL_BACK)) {
-        float dx1 = v[0]->x / v[0]->w - v[1]->x / v[1]->w, dy1 = v[0]->y / v[0]->w - v[1]->y / v[1]->w;
-        float dx2 = v[2]->x / v[2]->w - v[1]->x / v[1]->w, dy2 = v[2]->y / v[2]->w - v[1]->y / v[1]->w;
-        float cross = dx1 * dy2 - dy1 * dx2;
-        if ((v[0]->w < 0) ^ (v[1]->w < 0) ^ (v[2]->w < 0))
-            cross = -cross;
+        /* Which way round the three corners go on screen says which side
+         * we are looking at. The obvious way to find out is to work out
+         * where each corner lands on screen and compare, but that goes
+         * wrong when a corner is behind the camera, where "on screen" has
+         * no meaning; big pieces of floor seen from above often have one
+         * there, and they would vanish and reappear. This sum gives the
+         * same answer without the division that causes the trouble. */
+        float cross = -(v[0]->x * (v[1]->y * v[2]->w - v[2]->y * v[1]->w) -
+                        v[0]->y * (v[1]->x * v[2]->w - v[2]->x * v[1]->w) +
+                        v[0]->w * (v[1]->x * v[2]->y - v[2]->x * v[1]->y));
         uint32_t cull = rsp.geometry_mode & (G_CULL_FRONT | G_CULL_BACK);
         if (cull == (G_CULL_FRONT | G_CULL_BACK) || (cull == G_CULL_FRONT && cross <= 0) ||
             (cull == G_CULL_BACK && cross >= 0))
@@ -1225,6 +1335,7 @@ static void run_list(uint32_t address) {
     matrix_index = 0;
     seen_perspective = 0;
     have_camera = 0;
+    free_turn_ready = 0;
     tracked_count = 0;
     int depth = 0;
     uint32_t pc = segmented(address);
@@ -1351,8 +1462,59 @@ int gfx_run(uint32_t address, int smooth) {
     tracked_before = tracked_now, tracked_now = swap, tracked_before_count = tracked_count;
     if (matrix_index <= MAX_MATRICES)
         memcpy(previous_matrices, current_matrices, (size_t)matrix_index * sizeof previous_matrices[0]);
+
+    /* Things the free camera wants to know about the frame just drawn. */
+    free_before = free_now;
+    have_last_camera = have_camera;
+    if (have_camera)
+        memcpy(last_camera, camera_exact, sizeof last_camera);
+    float cy = cosf(look_yaw), sy = sinf(look_yaw), cp = cosf(look_pitch), sp = sinf(look_pitch);
+    float turn[3][3] = {{cy, sy * sp, -sy * cp}, {0, cp, sp}, {sy, -cy * sp, cy * cp}};
+    /* For a pure turn, the matrix that undoes it is the same numbers with
+     * rows and columns swapped. */
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            view_back[i][j] = free_turn_ready ? free_turn[j][i] : turn[j][i];
     return count;
 }
+
+void gfx_set_free_camera(int on, float yaw, float pitch, float distance, const float focus[3]) {
+    free_now.on = on, free_now.yaw = yaw, free_now.pitch = pitch, free_now.distance = distance;
+    memcpy(free_now.focus, focus, sizeof free_now.focus);
+}
+
+/* The direction a camera looks in, from its two angles. Yaw 0 looks along
+ * the world's z; pitch above 0 looks downwards. */
+static void direction(float out[3], float yaw, float pitch) {
+    out[0] = sinf(yaw) * cosf(pitch), out[1] = -sinf(pitch), out[2] = cosf(yaw) * cosf(pitch);
+}
+
+int gfx_game_camera(const float focus[3], float *yaw, float *pitch, float *distance, float *facing) {
+    float inverse[4][4];
+    if (!have_last_camera || !invert(inverse, last_camera))
+        return 0;
+    /* Undoing the camera's matrix tells us where the camera is: the place
+     * that it turns into "right here". */
+    float to_focus[3], length = 0;
+    for (int i = 0; i < 3; i++) {
+        to_focus[i] = focus[i] - inverse[3][i];
+        length += to_focus[i] * to_focus[i];
+    }
+    length = sqrtf(length);
+    if (length < 1)
+        return 0;
+    *distance = length;
+    *yaw = atan2f(to_focus[0], to_focus[2]);
+    *pitch = asinf(-to_focus[1] / length);
+    /* Which way it is pointing (not quite the same thing: the game's camera
+     * does not always look straight at the character). A camera looks along
+     * its own -z, and the third column of its matrix says where z is. */
+    *facing = atan2f(-last_camera[0][2], -last_camera[2][2]);
+    return 1;
+}
+
+void gfx_view_back(float back[3][3]) { memcpy(back, view_back, sizeof view_back); }
+
 
 void gfx_set_extended(int is_f3dex) { extended = is_f3dex; }
 
@@ -1378,6 +1540,10 @@ void gfx_resize(int resolution_scale, float aspect) {
     previous_matrix_count = 0; /* nothing to blend the next frame with */
     if (backend)
         backend->resize(width, height);
+}
+
+void gfx_forget_last_frame(void) {
+    previous_matrix_count = 0; /* nothing to blend the next frame with */
 }
 
 void gfx_init(uint8_t *game_ram, int resolution_scale, float aspect) {

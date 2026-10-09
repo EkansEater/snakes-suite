@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Launcher for Snake's Decompiler: checks what is needed, then builds and
+# runs a game from your own ROM.
+#
+#   ./play                      choose from the ROMs in the roms/ folder
+#   ./play path/to/game.z64     play that ROM
+#   ./play game.z64 --wide --smooth    ...with options (see README.md)
+
+# A ROM path is relative to where you ran this from, so pin it down before
+# moving to the program's own folder.
+if [ -n "$1" ] && [ -f "$1" ]; then
+    set -- "$(readlink -f "$1")" "${@:2}"
+fi
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "usage: ./play [rom file] [options]"
+    echo
+    echo "With no ROM given, offers the ones in the roms/ folder."
+    echo "Options: --wide  --smooth  --scale N  --stats   (see README.md)"
+    exit 0
+fi
+
+# ---- Is everything we need installed? ---------------------------------------
+missing=()
+command -v python3 >/dev/null || missing+=("python3")
+command -v gcc >/dev/null || missing+=("gcc (a C compiler)")
+command -v pkg-config >/dev/null || missing+=("pkg-config")
+pkg-config --exists sdl2 2>/dev/null || missing+=("SDL2 development files")
+[ -f /usr/include/GL/gl.h ] || pkg-config --exists gl 2>/dev/null || missing+=("OpenGL development files")
+if command -v python3 >/dev/null && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+    missing+=("python 3.10 or newer (found $(python3 --version 2>&1))")
+fi
+
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "Some things this needs are not installed:"
+    printf '  - %s\n' "${missing[@]}"
+    echo
+    echo "Install them with your system's package manager, for example:"
+    echo "  Arch / CachyOS:   sudo pacman -S python gcc pkgconf sdl2-compat mesa"
+    echo "  Debian / Ubuntu:  sudo apt install python3 gcc pkg-config libsdl2-dev libgl-dev"
+    echo "  Fedora:           sudo dnf install python3 gcc pkgconf-pkg-config SDL2-devel mesa-libGL-devel"
+    exit 1
+fi
+
+# ---- Which ROM? ---------------------------------------------------------------
+if [ $# -gt 0 ] && [ -f "$1" ]; then
+    rom="$1"
+    shift
+else
+    mkdir -p roms
+    shopt -s nullglob
+    roms=(roms/*.z64 roms/*.n64 roms/*.v64)
+    if [ ${#roms[@]} -eq 0 ]; then
+        echo "No ROM given, and none found in the roms/ folder."
+        echo
+        echo "This program does not include any games. Put a ROM you own in roms/"
+        echo "(a .z64, .n64 or .v64 file), or run:  ./play path/to/your-game.z64"
+        exit 1
+    elif [ ${#roms[@]} -eq 1 ]; then
+        rom="${roms[0]}"
+    elif [ ! -t 0 ]; then
+        # Nobody is at the keyboard to answer a question.
+        echo "Several ROMs found; say which one:  ./play ${roms[0]}"
+        exit 1
+    else
+        echo "Which game?"
+        select rom in "${roms[@]}"; do
+            [ -n "$rom" ] && break
+        done
+        [ -n "$rom" ] || exit 1
+    fi
+fi
+
+echo "Starting $rom (the first run builds the game, which takes a minute or two)"
+echo "Esc, F1 or Select: menu.  Tab: fast forward.  F5/F7: save/load state.  F11: full screen."
+exec python3 -m snakedecomp run "$rom" "$@"

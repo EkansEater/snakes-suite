@@ -18,6 +18,18 @@ def game_source(game_code: str) -> str | None:
     return path if os.path.exists(path) else None
 
 
+def game_names(game_code: str) -> dict[str, int]:
+    """Names of functions and variables in one game that its changes rely on."""
+    path = os.path.join(RUNTIME_DIR, "games", game_code + ".txt")
+    names = {}
+    if os.path.exists(path):
+        for line in open(path):
+            if line.strip() and not line.startswith("#"):
+                name, address = line.split()
+                names[name] = int(address, 16)
+    return names
+
+
 def _host_sources(game_code: str) -> str:
     text = open(os.path.join(RUNTIME_DIR, "host.c")).read()
     special = game_source(game_code)
@@ -67,7 +79,8 @@ def build(
 
     def compile_one(source: str) -> str:
         obj = os.path.join(source_dir, os.path.basename(source)[:-2] + ".o")
-        command = ["gcc", *flags, "-w", "-ffp-contract=off", "-I", source_dir]
+        # -I says where to look for the files named in #include lines.
+        command = ["gcc", *flags, "-w", "-ffp-contract=off", "-I", source_dir, "-I", RUNTIME_DIR]
         if os.path.basename(source) in ("gfx.c", "gfx_gl.c", "audio.c"):
             # Drawing and sound are where the time goes: optimise for this CPU.
             command += ["-O3", "-march=native"]
