@@ -150,7 +150,8 @@
   "file": "Chameleon Twist (U) [!].zip",
   "findings": [
    "1780 blocks of sound were thrown away because the sound chip was full",
-   "The game's sound program made 88306 samples a second but 43775 reached the sound chip"
+   "The game's sound program made 88306 samples a second but 43775 reached the sound chip",
+   "It ran slowly: under 90% speed for 32 of 51 seconds (worst 49%)"
   ],
   "frames": 3600,
   "heard": {
@@ -225,7 +226,7 @@
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
    "The game sends 27506 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 23 of 33 seconds (worst 56%)"
+   "It ran slowly: under 90% speed for 49 of 52 seconds (worst 33%)"
   ],
   "frames": 3600,
   "heard": {
@@ -301,7 +302,7 @@
   "file": "Duke Nukem - ZER0 H0UR (U) [!].zip",
   "findings": [
    "3123 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 5 of 15 seconds (worst 76%)"
+   "It ran slowly: under 90% speed for 37 of 42 seconds (worst 48%)"
   ],
   "frames": 3600,
   "heard": {
@@ -414,7 +415,7 @@
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 13%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 16%)"
   ],
   "frames": 3600,
   "heard": {
@@ -452,7 +453,8 @@
   "file": "F-1 World Grand Prix (U) [!].zip",
   "findings": [
    "6868 drawing commands were skipped because we do not handle them",
-   "The game sends 20433 samples of sound a second but asked to play 22050"
+   "The game sends 20433 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 44 of 46 seconds (worst 52%)"
   ],
   "frames": 3600,
   "heard": {
@@ -488,14 +490,12 @@
   "checked": "2026-10-10",
   "code": "NFXE",
   "file": "Star Fox 64 (U) (V1.1) [!].zip",
-  "findings": [
-   "8294 sound commands were not understood"
-  ],
+  "findings": [],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.004,
-   "quiet": 0.164,
+   "quiet": 0.162,
    "seconds": 59.9
   },
   "pace": 30,
@@ -510,12 +510,12 @@
    "shots": 13
   },
   "sheet": "build/check/Star Fox 64 (U) (V1.1) [!]/sheet.png",
-  "sound": "8294 commands not understood",
+  "sound": "ok",
   "sound numbers": {
    "made": 31702,
    "refused": 1,
    "sent": 31990,
-   "unknown": 8294,
+   "unknown": 0,
    "wants": 32000
   },
   "title": "Star Fox 64"
@@ -565,12 +565,12 @@
   "code": "NKTE",
   "file": "mk64.us.z64",
   "findings": [
-   "10446 sound commands were not understood"
+   "It ran slowly: under 90% speed for 13 of 31 seconds (worst 79%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
-   "noise": 0.007,
+   "noise": 0.006,
    "quiet": 0.118,
    "seconds": 59.9
   },
@@ -586,12 +586,12 @@
    "shots": 13
   },
   "sheet": "build/check/mk64.us/sheet.png",
-  "sound": "10446 commands not understood",
+  "sound": "ok",
   "sound numbers": {
    "made": 26609,
    "refused": 0,
    "sent": 26764,
-   "unknown": 10446,
+   "unknown": 0,
    "wants": 26800
   },
   "title": "Mario Kart 64"
@@ -641,7 +641,7 @@
   "code": "NN6E",
   "file": "Dr. Mario 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 15%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 8%)"
   ],
   "frames": 3600,
   "heard": {
@@ -787,7 +787,7 @@
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
    "The game's sound program made 17144 samples a second but 20813 reached the sound chip",
    "The game sends 20813 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 15%)"
+   "It ran slowly: under 90% speed for 11 of 11 seconds (worst 9%)"
   ],
   "frames": 3600,
   "heard": {
@@ -826,7 +826,7 @@
   "findings": [
    "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
    "1685 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 29%)"
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 18%)"
   ],
   "frames": 3600,
   "heard": {
@@ -902,7 +902,9 @@
   "checked": "2026-10-10",
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
-  "findings": [],
+  "findings": [
+   "It ran slowly: under 90% speed for 39 of 41 seconds (worst 38%)"
+  ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -938,7 +940,8 @@
   "code": "NRPE",
   "file": "Rampage - World Tour (U) [!].zip",
   "findings": [
-   "The game sends 18792 samples of sound a second but asked to play 32000"
+   "The game sends 18792 samples of sound a second but asked to play 32000",
+   "It ran slowly: under 90% speed for 26 of 39 seconds (worst 61%)"
   ],
   "frames": 3600,
   "heard": {
@@ -974,7 +977,9 @@
   "checked": "2026-10-10",
   "code": "NSME",
   "file": "sm64.us.z64",
-  "findings": [],
+  "findings": [
+   "It ran slowly: under 90% speed for 30 of 45 seconds (worst 65%)"
+  ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -1011,7 +1016,7 @@
   "file": "NFL Blitz - Special Edition (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 27%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 12%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1049,7 +1054,7 @@
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
    "94580 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 42 of 42 seconds (worst 17%)"
+   "It ran slowly: under 90% speed for 44 of 44 seconds (worst 12%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1088,7 +1093,7 @@
   "findings": [
    "20954 drawing commands were skipped because we do not handle them",
    "The game sends 21182 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 19%)"
+   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 14%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1126,15 +1131,14 @@
   "file": "wr64.us.z64",
   "findings": [
    "18409 drawing commands were skipped because we do not handle them",
-   "The game sends 28605 samples of sound a second but asked to play 26900",
-   "It ran slowly: under 90% speed for 3 of 10 seconds (worst 85%)"
+   "It ran slowly: under 90% speed for 17 of 47 seconds (worst 68%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.014,
    "quiet": 0.088,
-   "seconds": 63.8
+   "seconds": 59.9
   },
   "pace": 20,
   "pace verdict": "ok",
@@ -1148,13 +1152,13 @@
    "shots": 12
   },
   "sheet": "build/check/wr64.us/sheet.png",
-  "sound": "sends 28605 a second, wants 26900 (+6%)",
+  "sound": "ok",
   "sound numbers": {
    "made": 28431,
    "refused": 0,
    "sent": 28605,
    "unknown": 0,
-   "wants": 26900
+   "wants": 28652
   },
   "title": "Wave Race 64"
  },

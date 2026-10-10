@@ -310,6 +310,35 @@ static void mix(int gain, uint32_t in_offset, uint32_t out_offset, uint32_t coun
     }
 }
 
+/* ---- Three small commands only the newer dialect has ------------------------------ */
+
+/* Add one scratch buffer into another as it is, with no gain: how the echo
+ * is laid over the finished sound. */
+static void add(uint32_t in_offset, uint32_t out_offset, uint32_t count) {
+    uint8_t *in = at(in_offset), *out = at(out_offset);
+    for (int remaining = (int)round_up(count, 16); remaining > 0; remaining -= 2, in += 2, out += 2)
+        put16(out, clamp16(get16(out) + get16(in)));
+}
+
+/* Keep every second sample: the same sound at half the length, so an
+ * octave higher. Games use it on notes too high for the pitch change to
+ * reach in one step, and to make the echo's memory half the size. */
+static void take_every_second(uint32_t in_offset, uint32_t out_offset, uint32_t samples) {
+    uint8_t *in = at(in_offset), *out = at(out_offset);
+    for (uint32_t i = 0; i < samples && i < SCRATCH_SIZE / 2; i++, in += 4, out += 2)
+        memmove(out, in, 2);
+}
+
+/* Lay the same 128 bytes down several times in a row: a short wave
+ * repeated, for notes made from one cycle of a sound. */
+static void repeat(uint32_t in_offset, uint32_t out_offset, uint32_t times) {
+    uint8_t wave[128];
+    memcpy(wave, at(in_offset), sizeof wave);
+    uint8_t *out = at(out_offset);
+    for (uint32_t i = 0; i < times && i < 32; i++, out += sizeof wave)
+        memcpy(out, wave, sizeof wave);
+}
+
 /* Weave separate left and right buffers into left, right, left, right... */
 static void interleave(uint32_t left_offset, uint32_t right_offset) {
     uint8_t *left = at(left_offset), *right = at(right_offset), *out = at(state.out);
@@ -377,9 +406,19 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
         case 1: decode_adpcm(flags, w1); break;
         case 2: memset(at(w0 & 0xFFFF), 0, round_up(w1 & 0xFFFF, 16)); break;
         case 3: envelope_mix(flags, w1); break;
-        case 4: memcpy(at(state.in), game(w1), round_up(state.count, 8)); break;
+        case 4:
+            if (newer) /* (the two dialects use this number for different things) */
+                add(w1 >> 16, w1 & 0xFFFF, ((w0 >> 16) & 255) << 4);
+            else
+                memcpy(at(state.in), game(w1), round_up(state.count, 8));
+            break;
         case 5: resample(flags, w0 & 0xFFFF, w1); break;
-        case 6: memcpy(game(w1), at(state.out), round_up(state.count, 8)); break;
+        case 6:
+            if (newer) /* a rougher pitch change, which no game we have tried has used yet */
+                audio_commands_unknown++;
+            else
+                memcpy(game(w1), at(state.out), round_up(state.count, 8));
+            break;
         case 8: /* choose which scratch buffers the next commands use */
             if (flags & FLAG_AUX) {
                 state.dry_right = w0 & 0xFFFF, state.wet_left = w1 >> 16, state.wet_right = w1 & 0xFFFF;
@@ -426,6 +465,8 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
         case 0x13: envelope_mix_new(w0, w1); break;
         case 0x14: memcpy(at(w0 & 0xFFFF), game(w1), ((w0 >> 16) & 255) << 4); break; /* load */
         case 0x15: memcpy(game(w1), at(w0 & 0xFFFF), ((w0 >> 16) & 255) << 4); break; /* save */
+        case 0x11: take_every_second(w1 >> 16, w1 & 0xFFFF, w0 & 0xFFFF); break;
+        case 0x1A: repeat(w0 & 0xFFFF, w1 >> 16, (w0 >> 16) & 255); break;
         case 13: interleave(w1 >> 16, w1 & 0xFFFF); break;
         case 14: pole_filter(flags, (int)(w0 & 0xFFFF), w1); break;
         case 15: state.loop_state = w1; break;

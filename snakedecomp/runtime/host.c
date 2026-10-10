@@ -1040,6 +1040,11 @@ static struct {
 static void set_register(int group, int offset, uint32_t v); /* (further down, with the other hardware registers) */
 static uint32_t sound_length_shown; /* what we last put in the chip's "length" register */
 static long sound_taken, sound_refused; /* samples the chip was given; blocks it had no room for */
+/* How long the samples given to the chip last, at the rate each block was
+ * given at. Games change rate as they go, so "how many samples a second
+ * does the game want" has no one answer; but a game keeping up always
+ * gives the chip one second of sound for each second it runs. */
+static uint64_t sound_taken_ticks;
 
 /* How many bytes of the block now playing are still to be played. */
 static uint32_t sound_chip_left(void) {
@@ -1078,6 +1083,7 @@ static int sound_chip_take(uint32_t address, uint32_t size) {
         return 0;
     }
     sound_taken += size / 4;
+    sound_taken_ticks += (uint64_t)(size / 4) * TICKS_PER_SECOND / (uint64_t)sound_chip.frequency;
     /* This block starts when the one before it ends (or now, if the chip
      * was idle) and lasts as long as its samples take to play. */
     uint64_t start = sound_chip.count ? sound_chip.ends[sound_chip.count - 1] : ticks;
@@ -1108,8 +1114,24 @@ static SDL_AudioDeviceID audio_device;
 #endif
 static int headless;
 
+/* Games change the rate their sound plays at as they go (Wave Race 64 uses
+ * 32,000 samples a second in its menus and 26,900 in a race). The sound
+ * card is opened for one rate, so when the rate changes it is closed and
+ * opened again; otherwise everything after the change would play at the
+ * old speed, too fast or too slow and at the wrong pitch. */
+static int sound_card_rate;
+
 static void open_sound(int frequency) {
 #ifdef USE_SDL
+    if (frequency < 4000 || frequency > 96000)
+        return;
+    if (audio_device && frequency != sound_card_rate) {
+        SDL_CloseAudioDevice(audio_device); /* (a moment of sound still waiting is lost with it) */
+        audio_device = 0;
+        if (run_log)
+            fprintf(stderr, "event %ld: sound rate changed from %d to %d\n", frames_now(), sound_card_rate, frequency);
+    }
+    sound_card_rate = frequency;
     if (!headless && !audio_device && SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
         SDL_AudioSpec want = {0};
         want.freq = frequency, want.format = AUDIO_S16SYS, want.channels = 2, want.samples = 512;
@@ -1142,6 +1164,7 @@ static void play_sound(uint32_t address, uint32_t size) {
     if (wav_file)
         wav_bytes += (long)fwrite(samples, 1, size, wav_file);
 #ifdef USE_SDL
+    open_sound(sound_chip.frequency); /* (does nothing unless the rate has changed, as after loading a state) */
     /* If far too much is waiting (the game ran ahead), skip this block
      * rather than let the sound fall further and further behind. */
     if (audio_device && !sound_muted && !fast_forward) { /* fast forward is silent */
@@ -3275,7 +3298,7 @@ static void present_frame(void) {
 static void print_summary(void) {
     if (wav_file) { /* finish the recording: a WAV file is a header plus raw samples */
         uint32_t header[11] = {0x46464952, (uint32_t)wav_bytes + 36, 0x45564157, 0x20746D66, 16,
-                               0x00020001, 32000, 32000 * 4, 0x00100004, 0x61746164, (uint32_t)wav_bytes};
+                               0x00020001, (uint32_t)sound_chip.frequency, (uint32_t)sound_chip.frequency * 4, 0x00100004, 0x61746164, (uint32_t)wav_bytes};
         rewind(wav_file);
         fwrite(header, 4, 11, wav_file);
         fclose(wav_file);
@@ -3299,8 +3322,10 @@ static void print_summary(void) {
      * program made, and what reached the chip. Where they do not, sound is
      * being lost or invented, and it will crackle. */
     if (frames > 0)
+        /* ("wants" is the rate the game asked for, averaged over the sound it sent if it changed rate) */
         printf("  sound rate:        wants %d a second; made %ld, sent to the chip %ld; %ld blocks refused (chip full), %ld commands not known\n",
-               sound_chip.frequency, audio_samples_made * 60 / frames, sound_taken * 60 / frames, sound_refused,
+               sound_taken_ticks ? (int)((uint64_t)sound_taken * TICKS_PER_SECOND / sound_taken_ticks) : sound_chip.frequency,
+               audio_samples_made * 60 / frames, sound_taken * 60 / frames, sound_refused,
                audio_commands_unknown);
     if (audio_lists_silent)
         printf("  SILENT:            %ld sound lists were not carried out (this sound program is not understood)\n", audio_lists_silent);
