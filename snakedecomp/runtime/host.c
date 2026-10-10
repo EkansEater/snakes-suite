@@ -1039,6 +1039,7 @@ static struct {
 
 static void set_register(int group, int offset, uint32_t v); /* (further down, with the other hardware registers) */
 static uint32_t sound_length_shown; /* what we last put in the chip's "length" register */
+static long sound_taken, sound_refused; /* samples the chip was given; blocks it had no room for */
 
 /* How many bytes of the block now playing are still to be played. */
 static uint32_t sound_chip_left(void) {
@@ -1072,8 +1073,11 @@ static void play_sound(uint32_t address, uint32_t size);
  * (the game must wait and try again). */
 static int sound_chip_take(uint32_t address, uint32_t size) {
     sound_chip_update();
-    if (sound_chip.count == 2)
+    if (sound_chip.count == 2) {
+        sound_refused++;
         return 0;
+    }
+    sound_taken += size / 4;
     /* This block starts when the one before it ends (or now, if the chip
      * was idle) and lasts as long as its samples take to play. */
     uint64_t start = sound_chip.count ? sound_chip.ends[sound_chip.count - 1] : ticks;
@@ -3290,6 +3294,20 @@ static void print_summary(void) {
     printf("  sound:             %ld blocks made", audio_tasks);
     if (sound_blocks)
         printf(", %ld played, %ld gaps, %ld skipped", sound_blocks, sound_gaps, sound_skipped);
+    printf("\n");
+    /* These three should agree: what the game asked for, what its sound
+     * program made, and what reached the chip. Where they do not, sound is
+     * being lost or invented, and it will crackle. */
+    if (frames > 0)
+        printf("  sound rate:        wants %d a second; made %ld, sent to the chip %ld; %ld blocks refused (chip full), %ld commands not known\n",
+               sound_chip.frequency, audio_samples_made * 60 / frames, sound_taken * 60 / frames, sound_refused,
+               audio_commands_unknown);
+    if (audio_lists_silent)
+        printf("  SILENT:            %ld sound lists were not carried out (this sound program is not understood)\n", audio_lists_silent);
+    printf("  sound commands:   "); /* which command numbers the game's sound lists use, and how often (in thousands) */
+    for (int i = 0; i < 32; i++)
+        if (audio_command_counts[i])
+            printf(" %02X:%ldk", i, (audio_command_counts[i] + 999) / 1000);
     printf("\n");
     printf("  frames cut short by the loop budget: %ld (busiest refresh used %ld of %d)\n", forced_frames,
            most_loops, LOOP_BUDGET_PER_FRAME);

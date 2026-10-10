@@ -16,24 +16,28 @@ from .rom import Rom
 from .libsigs import recognise_library
 from .signatures import learn, load_database, recognise, save_database
 from .survey import describe, survey
-from .symbols import Symbols, load_map
+from .symbols import Symbols, find_names, load_list, load_map
 from .verify import verify
 
 
 def load_program(rom: Rom, args: argparse.Namespace) -> Program:
     """Analyse the ROM and name as many functions as we can.
 
-    With a linker map for this ROM (by default symbols/<rom name>.map) every
+    With a list of names for this ROM (a linker map or a decompilation
+    project's list; by default looked for in symbols/, see find_names) every
     function gets its real name. Without one, the OS library functions are
     recognised from the fingerprints that come with this tool, and a few
     game-specific names come from the game's file in runtime/games/.
     """
-    path = args.symbols
-    if path is None:
-        name = os.path.splitext(os.path.basename(args.rom))[0]
-        path = os.path.join("symbols", name + ".map")
-    if os.path.exists(path):
-        return analyse(rom, load_map(path))
+    if args.symbols is None:
+        # Names we have been given for this ROM (symbols/<rom name or game code>.map or .txt).
+        given = find_names(args.rom, rom.header.game_code)
+    elif os.path.exists(args.symbols):
+        given = (load_list if args.symbols.endswith(".txt") else load_map)(args.symbols)
+    else:
+        given = None
+    if given is not None:
+        return analyse(rom, given)
 
     program = analyse(rom)
     # Two ways of recognising the library: fingerprints we learned ourselves

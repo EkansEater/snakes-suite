@@ -28,6 +28,8 @@
 #define GUARD 0x100         /* some commands read a little before their input */
 
 static uint8_t *ram;
+long audio_samples_made, audio_commands_unknown, audio_lists_silent;
+long audio_command_counts[32]; /* how often each command number has been seen (31: any above 30) */
 /* A game whose sound program we do not know sends commands that mean
  * something else to us, with lengths far beyond anything real. Rather than
  * check every one, the working memory has room after it for the longest
@@ -311,6 +313,7 @@ static void mix(int gain, uint32_t in_offset, uint32_t out_offset, uint32_t coun
 /* Weave separate left and right buffers into left, right, left, right... */
 static void interleave(uint32_t left_offset, uint32_t right_offset) {
     uint8_t *left = at(left_offset), *right = at(right_offset), *out = at(state.out);
+    audio_samples_made += state.count / 2;
     for (int remaining = (int)round_up(state.count, 16); remaining > 0; remaining -= 2) {
         memcpy(out, left, 2), memcpy(out + 2, right, 2);
         left += 2, right += 2, out += 4;
@@ -347,12 +350,16 @@ static void find_filter(uint32_t data_address, uint32_t data_size) {
 void audio_init(uint8_t *game_ram) { ram = game_ram; }
 
 void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t chip_data_size) {
+    const uint8_t *p = game(commands);
+    for (uint32_t i = 0; i + 8 <= size; i += 8)
+        audio_command_counts[p[i] < 31 ? p[i] : 31]++;
     if (!filter_found) {
         find_filter(chip_data, chip_data_size);
-        if (!filter_found)
+        if (!filter_found) {
+            audio_lists_silent++;
             return; /* without it we cannot change pitch; stay silent */
+        }
     }
-    const uint8_t *p = game(commands);
     /* Two dialects of these commands exist. The newer one is recognised by
      * commands the older one does not have; a few shared command numbers
      * then pack their details differently. */
@@ -422,6 +429,8 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
         case 13: interleave(w1 >> 16, w1 & 0xFFFF); break;
         case 14: pole_filter(flags, (int)(w0 & 0xFFFF), w1); break;
         case 15: state.loop_state = w1; break;
+        case 0: case 7: break; /* "do nothing", and a table of addresses we have no need of */
+        default: audio_commands_unknown++; break;
         }
     }
 }

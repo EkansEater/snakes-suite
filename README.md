@@ -97,8 +97,11 @@ log. If the fault happens again there, it can be worked on without anyone
 having to play the game to that point again. (A replay starts from a copy
 of the save you had; it cannot follow a loaded save state or a reset.)
 
-A log cannot see wrong colours, garbled text or bad sound. For those, press
-F12 at the bad moment: the screenshot goes to `screenshots/`.
+A log cannot see wrong colours or garbled text. For those, press F12 at the
+bad moment: the screenshot goes to `screenshots/`. It can see one kind of
+bad sound: every run ends with a "sound rate" line saying how much sound the
+game asked to play, how much its sound program made and how much reached
+the sound chip. Those should agree; where they do not, the report says so.
 
 ## Requirements
 
@@ -373,6 +376,17 @@ game sets up its camera, `SHOW_THREADS=1` the threads when it stops.
 Two more switch on parts of the console's own start-up that are normally
 left out, which gets some stubborn games further: `OS_INIT=1` and
 `VI_INIT=1`.
+
+### Names from a decompilation project
+
+Where people have decompiled a game, their project usually publishes a list
+of every function's name and address. Given that list, this tool no longer
+has to guess which parts of the game are the console's library, and the
+disassembly and reports show real names. Put the list in `symbols/`, named
+after the ROM file or its four-letter game code (`info` shows it): a linker
+map as `name.map`, or a list in the form the splat tool uses
+(`symbol_addrs.txt`) as `name.txt`. Such lists belong to their projects;
+`symbols/` is not shared with this tool's code.
 
 ## Known limits
 

@@ -95,6 +95,7 @@ class Session:
     summary: dict = field(default_factory=dict)  # the numbers printed at the end
     threads: list = field(default_factory=list)  # the threads at the end
     other: list = field(default_factory=list)  # anything else the game said
+    sound: tuple = ()  # samples a second wanted, made, sent to the chip; blocks refused; commands not known
 
     @property
     def frames(self) -> int:
@@ -140,6 +141,9 @@ def read_log(path: str) -> Session:
             session.unhandled.append(line[5:])
         elif found := re.match(r"ran (\d+) frames", line):
             session.summary["frames"] = int(found[1])
+        elif found := re.match(r"  sound rate:\s+wants (\d+) a second; made (\d+), sent to the chip (\d+); (\d+) blocks refused.*?(\d+) commands not known", line):
+            session.summary["sound rate"] = line.split(":", 1)[1].strip()
+            session.sound = tuple(int(found[i]) for i in range(1, 6))
         elif found := re.match(r"  (pictures drawn|interpreted|late refreshes|sound|frames cut short[\w ]*):\s+(.*)", line):
             session.summary[found[1]] = found[2]
         elif line.startswith("  thread ") and "priority" in line and "frames" in session.summary:
@@ -300,6 +304,24 @@ def find_problems(session: Session) -> list:
         findings.append(Finding(f"{skipped} drawing commands were skipped because we do not handle them",
                                 session.unhandled[:12], ["Each is named by its first byte; add them in run_list() in runtime/gfx.c. "
                                                          "Harmless ones can be ignored on purpose there."], serious=skipped > 100))  # fmt: skip
+
+    # Sound that is lost or invented on the way: it crackles, and music plays at the wrong speed.
+    if session.sound and session.frames > 600:
+        wants, made, sent, refused, unknown = session.sound
+        if refused > 3:
+            findings.append(Finding(f"{refused} blocks of sound were thrown away because the sound chip was full", [session.summary["sound rate"]], [
+                "The game is not being told the chip is full, or does not wait when told (runtime/host.c, 'Sound output'). "
+                "TRACE_OS=1 shows whether it asks the library (osAiGetStatus, osAiGetLength) or reads the chip itself."]))  # fmt: skip
+        if made and abs(made - sent) > sent * 0.02 + 50:
+            findings.append(Finding(f"The game's sound program made {made} samples a second but {sent} reached the sound chip", [session.summary["sound rate"]], [
+                "Sound is being lost (or played twice) between being made and being played: hiccups."]))  # fmt: skip
+        if sent and abs(sent - wants) > wants * 0.03:
+            findings.append(Finding(f"The game sends {sent} samples of sound a second but asked to play {wants}", [session.summary["sound rate"]], [
+                "Too few: gaps and crackle. Too many: sound is dropped, and music runs fast. Look at how the game "
+                "decides how much to make each frame (the length the chip reports, or its own count of frames)."]))  # fmt: skip
+        if unknown:
+            findings.append(Finding(f"{unknown} sound commands were not understood", [], [
+                "The game's sound program speaks a dialect runtime/audio.c does not know (SHOW_SOUND=<list number> prints a list)."]))  # fmt: skip
 
     # Choppy: pictures reaching the window unevenly, or a screen they do not fit.
     steady = [h for h in health[2:] if not h["menu"] and h["speed"] <= 110 and h["pictures"] >= 10 and h.get("longest")]

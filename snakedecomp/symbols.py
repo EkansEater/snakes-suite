@@ -12,6 +12,14 @@ The parts of the file we care about look like this:
 
 The first line says a 0x30-byte block of code (".text") from osSetTime.o
 was placed at 0x803223B0; the second names a function inside it.
+
+A decompilation project may publish a plainer list instead ("symbol_addrs",
+one name per line, as the splat tool reads it), which load_list reads:
+
+mainLoop = 0x80002548; // type:func size:0xCB0 (global, .text, src/code0/main.c)
+
+The same facts, differently written: the name, where it is, that it is a
+function, how long it is and which source file it came from.
 """
 
 import re
@@ -59,3 +67,44 @@ def load_map(path: str) -> Symbols:
             elif not symbol and not line.startswith("  "):
                 in_code = False
     return symbols
+
+
+LISTED = re.compile(r"^(\w+)\s*=\s*0x([0-9A-Fa-f]+);\s*(?://(.*))?$")
+
+
+def load_list(path: str) -> Symbols:
+    """Read a decompilation project's list of names (see the top of this file)."""
+    symbols = Symbols()
+    with open(path) as lines:
+        for line in lines:
+            found = LISTED.match(line.strip())
+            if not found:
+                continue
+            name, address, notes = found[1], int(found[2], 16), found[3] or ""
+            if "ignore:true" in notes or address < 0x80000000:
+                continue  # not a place in the running game's memory
+            symbols.addresses.setdefault(name, address)
+            size = re.search(r"size:0x([0-9A-Fa-f]+)", notes)
+            source = re.search(r"\.text,\s*([^)\s]+)\)", notes)
+            if "type:func" in notes:
+                symbols.functions.setdefault(address, name)
+                if size and source:
+                    symbols.code_blocks.append((address, address + int(size[1], 16), source[1]))
+    return symbols
+
+
+def find_names(rom_path: str, game_code: str, folder: str = "symbols") -> Symbols | None:
+    """The names for a ROM, if we have been given any.
+
+    Looked for in the symbols folder under the ROM's file name or its
+    four-letter game code: a linker map (.map) or a list of names (.txt).
+    """
+    import os
+
+    stem = os.path.splitext(os.path.basename(rom_path))[0]
+    for name in (stem, game_code):
+        for ending, reader in ((".map", load_map), (".txt", load_list)):
+            path = os.path.join(folder, name + ending)
+            if os.path.exists(path):
+                return reader(path)
+    return None
