@@ -17,8 +17,8 @@ two observations:
 """
 
 import struct
-from collections import Counter
-from dataclasses import dataclass
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
 
 from .functions import RETURN, Function, FunctionFinder
 from .mips import Instruction, disassemble
@@ -30,6 +30,21 @@ ISLAND_MIN_RETURNS = 8
 RAM_START = 0x80000000
 RAM_END = 0x80800000  # 8 MB, the most memory an N64 can have
 
+# Overlays
+# --------
+# An N64 has little memory, so many games keep only part of their code
+# loaded: the menu's code while in the menu, a level's code while in that
+# level. The pieces ("overlays") take turns at the same memory addresses.
+# For us that means one address can be the start of two different
+# functions, depending on which piece is loaded just then.
+#
+# Program.functions keeps one function per address, which is all most of
+# the tools need. Program.alternatives lists every function for the
+# addresses that have more than one, and the recompiler uses it: a call
+# from inside an overlay goes to that overlay's own function, and any other
+# call to such an address is decided while the game runs, by looking at
+# which code is actually in memory (see LOOKUP_FUNCTION in recomp.py).
+
 
 @dataclass
 class Program:
@@ -38,6 +53,8 @@ class Program:
     functions: dict[int, Function]  # by start address
     unresolved_calls: set[int]  # call targets we found no function for
     symbols: Symbols | None = None
+    alternatives: dict[int, list[Function]] = field(default_factory=dict)
+    all_functions: list[Function] = field(default_factory=list)
 
     def segment_for(self, address: int) -> Segment | None:
         for segment in self.segments:
@@ -45,15 +62,15 @@ class Program:
                 return segment
         return None
 
-    def decode(self, address: int) -> Instruction:
-        segment = self.segment_for(address)
+    def decode(self, address: int, segment: Segment | None = None) -> Instruction:
+        segment = segment or self.segment_for(address)
         if segment is None:
             raise ValueError(f"0x{address:08X} is not in any known segment")
         return disassemble(self.rom.word(segment.to_rom(address)), address)
 
-    def describe(self, address: int) -> str:
+    def describe(self, address: int, segment: Segment | None = None) -> str:
         """Disassemble one instruction, naming the function it calls if known."""
-        ins = self.decode(address)
+        ins = self.decode(address, segment)
         target = self.functions.get(ins.target)
         if target is not None and target.symbol:
             return f"{ins}  <{target.symbol}>"
@@ -108,10 +125,31 @@ def _find_extra_segments(rom: Rom, search_from: int, call_targets: set[int]) -> 
     words = struct.unpack(f">{len(rom.data) // 4}I", rom.data)
     # Neighbouring islands with the same load offset are one segment.
     merged: dict[int, list[int]] = {}
+    undecided = []
     for _, _, returns in _find_islands(words, search_from):
         load_offset = _vote_load_offset(words, returns)
         if load_offset is not None:
             merged.setdefault(load_offset, []).extend(returns)
+        else:
+            undecided.append(returns)
+    # An island too small to vote convincingly is often a further piece of a
+    # segment we did place, loaded along with it. Test that: with the same
+    # load offset, do calls made elsewhere land in this island?
+    targets = set(call_targets)
+    for returns in merged.values():
+        targets |= {
+            RAM_START | ((w & 0x03FFFFFF) << 2)
+            for w in words[returns[0] // 4 : returns[-1] // 4]
+            if w >> 26 == 3
+        }
+    for returns in undecided:
+        landing = Counter()
+        for load_offset in merged:
+            low, high = returns[0] - ISLAND_MAX_GAP + load_offset, returns[-1] + load_offset
+            landing[load_offset] = sum(1 for t in targets if low <= t <= high)
+        if landing and landing.most_common(1)[0][1] >= 2:
+            load_offset = landing.most_common(1)[0][0]
+            merged[load_offset] = sorted(merged[load_offset] + returns)
 
     segments = []
     for load_offset, returns in merged.items():
@@ -135,6 +173,8 @@ def _find_extra_segments(rom: Rom, search_from: int, call_targets: set[int]) -> 
         ]
         start = min(candidates, default=first)
         name = f"seg_{start + load_offset:08X}"
+        if any(s.name == name for s in segments):  # two overlays loaded at one address
+            name += f"_rom{start:X}"
         segments.append(Segment(name, start, start + load_offset, end - start))
     return segments
 
@@ -147,15 +187,28 @@ def analyse(rom: Rom, symbols: Symbols | None = None) -> Program:
 
     segments = [main] + _find_extra_segments(rom, main_code_end, call_targets)
     # Segments call each other, so look again with every call target known.
+    # (Except between overlays that share addresses: a call made inside one
+    # says nothing about where functions start in the other.)
+    def overlap(a: Segment, b: Segment) -> bool:
+        return a is not b and a.vram_start < b.vram_end and b.vram_start < a.vram_end
+
     for _ in range(2):
-        functions = []
+        found = []
         for segment in segments:
+            starts = {t for f in functions if not overlap(f.segment, segment) for t in f.calls}
             finder = FunctionFinder(rom, segment, has_entry_stub=segment is main)
             sweep_to = 0 if segment is main else segment.vram_end - 8
-            functions += finder.find(call_targets, sweep_to)
-        call_targets = {t for f in functions for t in f.calls}
+            found += finder.find(starts, sweep_to)
+        functions = found
 
-    by_start = {f.start: f for f in functions}
+    groups: dict[int, list[Function]] = defaultdict(list)
+    for f in functions:
+        groups[f.start].append(f)
+    by_start = {start: group[0] for start, group in groups.items()}
+    alternatives = {start: group for start, group in groups.items() if len(group) > 1}
+    for group in alternatives.values():
+        for f in group:
+            f.variant = "_" + f.segment.name
     unresolved = set()
     for f in functions:
         for target in f.calls:
@@ -166,4 +219,4 @@ def analyse(rom: Rom, symbols: Symbols | None = None) -> Program:
     if symbols is not None:
         for f in functions:
             f.symbol = symbols.functions.get(f.start)
-    return Program(rom, segments, by_start, unresolved, symbols)
+    return Program(rom, segments, by_start, unresolved, symbols, alternatives, functions)

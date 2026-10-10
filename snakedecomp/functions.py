@@ -32,10 +32,13 @@ class Function:
     jump_tables: dict[int, list[int]] = field(default_factory=dict)
     callers: int = 0  # how many functions call this one
     symbol: str | None = None  # its real name, if we have a list of names
+    # Set when another segment has a function at this same address (see
+    # "Overlays" in program.py): something to tell the two apart by.
+    variant: str = ""
 
     @property
     def name(self) -> str:
-        return f"func_{self.start:08X}"
+        return f"func_{self.start:08X}{self.variant}"
 
     @property
     def label(self) -> str:
@@ -94,7 +97,13 @@ class FunctionFinder:
                 address += 4  # skip zero padding between functions
             function = self._walk_function(address, starts)
             if function is None:
-                break  # ran into something that is not code
+                # Ran into something that is not code: data in between two
+                # blocks of code. Carry on at the next place somebody calls.
+                later = [s for s in starts if s > address]
+                if not later:
+                    break
+                address = min(later)
+                continue
             functions.append(function)
             last_known = max([last_known, *filter(self.segment.contains, function.calls)])
             address = function.end
@@ -111,7 +120,9 @@ class FunctionFinder:
         """
         registers: dict[int, int] = {}
         start = address = self.segment.vram_start
-        while True:
+        # Some games do more here first (clear memory, set up the CPU), and
+        # some end with a plain "jal main" or "j main" instead.
+        for _ in range(512):
             word = self.decode(address).word
             opcode, rs, rt, imm = word >> 26, (word >> 21) & 0x1F, (word >> 16) & 0x1F, word & 0xFFFF
             if opcode == 15:  # lui
@@ -121,10 +132,16 @@ class FunctionFinder:
                 registers[rt] = (registers[rs] + signed) & 0xFFFFFFFF
             elif opcode == 13 and rs in registers:  # ori
                 registers[rt] = registers[rs] | imm
-            elif opcode == 0 and word & 0x3F == 8:  # jr
+            elif opcode in (8, 9, 13):
+                registers.pop(rt, None)
+            elif opcode == 0 and word & 0x3F == 8 and rs in registers:  # jr
                 main = registers[rs]
                 return Function(start, address + 8, self.segment, calls={main}), main
+            elif opcode in (2, 3):  # j, jal
+                main = (address & 0xF0000000) | (word & 0x03FFFFFF) << 2
+                return Function(start, address + 8, self.segment, calls={main}), main
             address += 4
+        raise ValueError("could not follow this game's start-up code")
 
     def _read_jump_table(self, jr_address: int) -> list[int] | None:
         """Read the list of destinations for a "switch" statement.

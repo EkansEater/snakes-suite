@@ -18,11 +18,12 @@ typedef struct {
     int uls, ult, lrs, lrt; /* corners, in quarter texels */
 } Tile;
 
-/* What is in each part of texture memory: we do not copy textures, we
- * remember where in the game's RAM they came from. */
+/* What is in each part of texture memory: where the texture is (address;
+ * see "Texture copies" in gfx.c) and where in the game's RAM it came from
+ * (source). */
 typedef struct {
     int tmem;
-    uint32_t address, row_bytes;
+    uint32_t address, source, row_bytes;
     uint32_t bytes;  /* total size, when a whole texture was loaded as one strip */
     int fixed_rows;  /* a rectangle cut from a larger picture: row length is the picture's */
 } Loaded;

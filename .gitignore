@@ -13,3 +13,5 @@ states/
 # Packages made for sharing.
 dist/
 __pycache__/
+# Pictures taken with the screenshot shortcut.
+screenshots/

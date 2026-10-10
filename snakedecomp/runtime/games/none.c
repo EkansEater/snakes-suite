@@ -11,4 +11,5 @@ Mod game_mods[1];
 int game_mod_count = 0;
 int (*game_focus)(Context *ctx, float position[3]) = NULL;
 int game_ignores_dpad = 0;
+int game_stick_follows_camera = 0;
 int (*game_paused)(Context *ctx) = NULL;

@@ -58,6 +58,7 @@ typedef struct {
 static FreeCameraSetting free_now, free_before;
 static float free_turn[4][4]; /* turns what the game's camera sees into what ours sees */
 static int free_turn_ready;
+static long gfx_frame_number; /* how many frames have been drawn */
 static float last_camera[4][4]; /* the game's own camera, as of the last frame drawn */
 static int have_last_camera;
 static float view_back[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; /* undoes the last frame's turn */
@@ -71,7 +72,7 @@ static int previous_matrix_count, matrix_index;
 static float blend = 1;      /* 1 = this frame as is, 0.5 = halfway from the previous */
 static int measuring;        /* a dry run: read the matrices, draw nothing */
 static int seen_perspective; /* has this frame started its 3D scene yet? */
-static int extended;         /* is the game using F3DEX rather than plain Fast3D? */
+static int dialect;          /* which set of drawing commands the game uses: GFX_FAST3D, ... (gfx.h) */
 /* The camera's own matrix this frame, as the game gave it and as blended for
  * an in-between picture. Used to place shadows; see command_vertices. */
 static float camera_exact[4][4], camera_blended[4][4];
@@ -89,7 +90,37 @@ int gfx_texture_smoothing = 1;
 
 /* ---- Reading the game's memory -------------------------------------------- */
 
-static uint32_t rd8(uint32_t a) { return ram[a & RAM_MASK]; }
+/* Texture copies
+ * --------------
+ * "Load texture" on the console copies the texture out of the game's memory
+ * into the graphics chip's own. The game is then free to reuse that piece
+ * of its memory, and some do so at once: Mario Kart 64 unpacks every letter
+ * of its results screen into the same small buffer, loading each in turn.
+ * We draw a frame's shapes together at the end, by which time such a
+ * buffer holds only the last thing put in it. So we take a copy at load
+ * time too, into a block that is emptied for each frame, and give the copy
+ * an "address" with COPY_FLAG set, which the reading functions below
+ * understand. */
+#define COPY_FLAG 0x40000000u
+#define COPY_ROOM 0x2000000u /* 32 MB: far more than a frame's textures */
+static uint8_t *copies;
+static uint32_t copies_used;
+
+static uint32_t rd8(uint32_t a) { return a & COPY_FLAG ? copies[a & (COPY_ROOM - 1)] : ram[a & RAM_MASK]; }
+
+/* Copy a texture's bytes and return the copy's address (or the original, if
+ * there is no room left). */
+static uint32_t keep_copy(uint32_t address, uint32_t bytes) {
+    address &= RAM_MASK;
+    if (!copies)
+        copies = malloc(COPY_ROOM + 16);
+    if (!copies || bytes == 0 || bytes > COPY_ROOM - copies_used - 16 || bytes > RAM_MASK + 1 - address)
+        return address;
+    uint32_t at = copies_used;
+    memcpy(copies + at, ram + address, bytes);
+    copies_used += (bytes + 15) & ~15u;
+    return COPY_FLAG | at;
+}
 static uint32_t rd16(uint32_t a) { return rd8(a) << 8 | rd8(a + 1); }
 static uint32_t rd32(uint32_t a) { return rd16(a) << 16 | rd16(a + 2); }
 
@@ -115,10 +146,15 @@ enum {
     G_TEXTURE_GEN = 0x40000,
 };
 
+/* How many matrices can be kept to come back to. The game chooses the real
+ * limit when it starts a list (10 in the earliest games, more later); ours
+ * is simply bigger than any of them. */
+#define MATRIX_STACK 32
+
 static struct {
     uint32_t segments[16];
-    float modelview[11][4][4]; /* a stack: objects are positioned relative to others */
-    float modelview_exact[11][4][4]; /* the same, never blended (see "smooth motion") */
+    float modelview[MATRIX_STACK + 1][4][4]; /* a stack: objects are positioned relative to others */
+    float modelview_exact[MATRIX_STACK + 1][4][4]; /* the same, never blended (see "smooth motion") */
     int modelview_top;
     float projection[4][4];
     float combined[4][4]; /* modelview * projection */
@@ -128,6 +164,7 @@ static struct {
     int light_count;
     float fog_multiply, fog_offset;
     float texture_scale_s, texture_scale_t;
+    int texture_tile; /* which of the eight tile settings triangles are drawn with */
     float viewport_scale[3], viewport_translate[3];
 } rsp;
 
@@ -176,7 +213,127 @@ static void multiply(float out[4][4], float a[4][4], float b[4][4]) {
     memcpy(out, result, sizeof result);
 }
 
-static int is_perspective(float m[4][4]) { return m[3][3] == 0; }
+/* A perspective matrix makes far things small: the fourth number it works
+ * out for a point (w, which everything is then divided by) depends on
+ * where the point is. For a flat picture like the HUD, w is always 1. */
+static int is_perspective(float m[4][4]) { return m[0][3] != 0 || m[1][3] != 0 || m[2][3] != 0; }
+
+/* ---- Finding the game's camera ------------------------------------------------
+ * Games hand the graphics chip two matrices: "modelview" (where a thing is)
+ * and "projection" (the camera's lens). Where the camera itself goes is up
+ * to the game, and there are two habits:
+ *
+ *   - Super Mario 64 puts the camera in the modelview: the first one it
+ *     loads for the 3D scene is the camera alone, and every object's is
+ *     "object, then camera".
+ *   - Mario Kart 64, Wave Race 64 and many others fold the camera into the
+ *     projection: "camera, then lens" as one matrix.
+ *
+ * To put a camera of our own in, we need the game's camera on its own.
+ * A lens matrix has a very particular shape (mostly zeros), so a "camera,
+ * then lens" matrix can be split back into its two parts: proj_view (the
+ * camera part, or "no change" if there was none) and proj_pure (the lens). */
+static float proj_view[4][4], proj_pure[4][4];
+static float proj_w_scale = 1; /* how many units of w one unit of distance from the camera is */
+static int proj_has_view;
+static const float no_change[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+
+static void multiply(float out[4][4], float a[4][4], float b[4][4]);
+static void split_projection(void) {
+    float (*m)[4] = rsp.projection;
+    memcpy(proj_view, no_change, sizeof proj_view);
+    memcpy(proj_pure, m, sizeof proj_pure);
+    proj_has_view = 0, proj_w_scale = 1;
+    if (!is_perspective(m))
+        return;
+    /* The lens: x' = a*x + kx*z, y' = b*y + ky*z, z' = c*z + d, w = e*z.
+     * (kx and ky are zero for an ordinary lens; a game can use them to
+     * move the middle of the view off-centre, as Wave Race 64 does.)
+     * Behind the lens, the camera part V is a turn and a move. Multiplying
+     * the two out shows that the matrix's fourth column is V's third
+     * column times e, and that its first two columns are V's first two
+     * times a and b, plus kx and ky times that third column. */
+    float e = -sqrtf(m[0][3] * m[0][3] + m[1][3] * m[1][3] + m[2][3] * m[2][3]);
+    if (e > -1e-6f)
+        return;
+    float v[4][4] = {{0}};
+    for (int i = 0; i < 4; i++)
+        v[i][2] = m[i][3] / e;
+    float kx = m[0][0] * v[0][2] + m[1][0] * v[1][2] + m[2][0] * v[2][2];
+    float ky = m[0][1] * v[0][2] + m[1][1] * v[1][2] + m[2][1] * v[2][2];
+    for (int i = 0; i < 4; i++)
+        v[i][0] = m[i][0] - kx * v[i][2], v[i][1] = m[i][1] - ky * v[i][2];
+    float a = sqrtf(v[0][0] * v[0][0] + v[1][0] * v[1][0] + v[2][0] * v[2][0]);
+    float b = sqrtf(v[0][1] * v[0][1] + v[1][1] * v[1][1] + v[2][1] * v[2][1]);
+    if (a < 1e-6f || b < 1e-6f)
+        return;
+    for (int i = 0; i < 4; i++)
+        v[i][0] /= a, v[i][1] /= b;
+    v[3][3] = 1;
+    /* Is V really a turn (its directions square to each other)? If not,
+     * this is some unusual projection: leave it whole. */
+    if (fabsf(v[0][0] * v[0][1] + v[1][0] * v[1][1] + v[2][0] * v[2][1]) > 0.02f)
+        return;
+    float c = m[0][2] * v[0][2] + m[1][2] * v[1][2] + m[2][2] * v[2][2];
+    float d = m[3][2] - v[3][2] * c;
+    float pure[4][4] = {{a, 0, 0, 0}, {0, b, 0, 0}, {kx, ky, c, e}, {0, 0, d, 0}};
+    proj_w_scale = -e;
+    /* Only worth calling a camera if it differs from "no change". */
+    float differs = 0;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 3; j++)
+            differs += fabsf(v[i][j] - no_change[i][j]);
+    if (differs < 1e-3f)
+        return;
+    memcpy(proj_view, v, sizeof v);
+    memcpy(proj_pure, pure, sizeof pure);
+    proj_has_view = 1;
+}
+
+/* Which way is up in this game's world? Most use y; some use z. Our camera
+ * is worked out for a y-up world, and world_fix turns the game's world
+ * into one (and is "no change" when it already is). We find out by
+ * watching the game's own camera: its "up" points mostly along the
+ * world's up. */
+static float world_fix[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+static int up_votes; /* above 0: z is up; below: y is up */
+static void notice_world_up(float camera[4][4]) {
+    float up_y = camera[1][1], up_z = camera[2][1];
+    if (fabsf(up_z) > fabsf(up_y) + 0.2f && fabsf(up_z) > fabsf(camera[0][1]))
+        up_votes += up_votes < 60;
+    else if (fabsf(up_y) > fabsf(up_z) + 0.2f)
+        up_votes -= up_votes > -60;
+    static const float z_up[4][4] = {{1, 0, 0, 0}, {0, 0, -1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
+    if (up_votes > 20)
+        memcpy(world_fix, z_up, sizeof world_fix);
+    else if (up_votes < -20)
+        memcpy(world_fix, no_change, sizeof world_fix);
+}
+
+/* How far in front of the game's camera is whatever it is looking at?
+ * (Usually the player's character.) We note the distance of everything
+ * drawn in the middle of the picture and a little below, where games put
+ * the character, and take a typical near one. For games
+ * we know nothing else about, the free camera circles the point that far
+ * along the game camera's line of sight. */
+#define MAX_DEPTH_SAMPLES 4096
+static float depth_samples[MAX_DEPTH_SAMPLES];
+static int depth_sample_count;
+static float guess_depth;
+
+static int compare_floats(const void *a, const void *b) {
+    float x = *(const float *)a, y = *(const float *)b;
+    return x < y ? -1 : x > y;
+}
+static void update_guess_depth(void) {
+    if (depth_sample_count < 12)
+        return;
+    qsort(depth_samples, (size_t)depth_sample_count, sizeof(float), compare_floats);
+    /* One of the nearer ones: the character is in front of the scenery
+     * behind it, and may be only a few points among the scenery's many. */
+    float typical = depth_samples[depth_sample_count * 15 / 100];
+    guess_depth = guess_depth > 0 ? guess_depth * 0.8f + typical * 0.2f : typical;
+}
 
 /* A camera cannot draw what is right in front of its nose: anything nearer
  * than its "near plane" is cut away. The game sets that distance for its
@@ -208,9 +365,10 @@ static void combine_with(float out[4][4], float modelview[4][4]) {
     fog_scale = 1, fog_shift = 0;
     if (is_perspective(rsp.projection) && free_turn_ready) { /* the free camera: see prepare_free_turn */
         float through_ours[4][4], projection[4][4];
-        memcpy(projection, rsp.projection, sizeof projection);
+        memcpy(projection, proj_pure, sizeof projection);
         bring_near_plane_closer(projection);
         multiply(through_ours, free_turn, projection);
+        multiply(through_ours, proj_view, through_ours);
         multiply(out, modelview, through_ours);
         return;
     }
@@ -221,10 +379,11 @@ static void combine_with(float out[4][4], float modelview[4][4]) {
     float cy = cosf(look_yaw), sy = sinf(look_yaw), cp = cosf(look_pitch), sp = sinf(look_pitch);
     float turn[4][4] = {{cy, sy * sp, -sy * cp, 0}, {0, cp, sp, 0}, {sy, -cy * sp, cy * cp, 0}, {0, 0, 0, 1}};
     float zoomed[4][4];
-    memcpy(zoomed, rsp.projection, sizeof zoomed);
+    memcpy(zoomed, proj_pure, sizeof zoomed);
     for (int i = 0; i < 4; i++)
         zoomed[i][0] *= look_zoom, zoomed[i][1] *= look_zoom;
     multiply(turn, turn, zoomed);
+    multiply(turn, proj_view, turn); /* (the turn goes after the game's camera, wherever that is) */
     multiply(out, modelview, turn);
 }
 
@@ -250,10 +409,13 @@ static void prepare_free_turn(void) {
     float yaw = free_before.yaw + (free_now.yaw - free_before.yaw) * t;
     float pitch = free_before.pitch + (free_now.pitch - free_before.pitch) * t;
     float distance = free_before.distance + (free_now.distance - free_before.distance) * t;
-    float focus[3], eye[3], forward[3];
+    float focus[3], eye[3], forward[3], game_focus[3];
     direction(forward, yaw, pitch);
+    for (int i = 0; i < 3; i++)
+        game_focus[i] = free_before.focus[i] + (free_now.focus[i] - free_before.focus[i]) * t;
     for (int i = 0; i < 3; i++) {
-        focus[i] = free_before.focus[i] + (free_now.focus[i] - free_before.focus[i]) * t;
+        /* (into a y-up world, where the rest of this is worked out) */
+        focus[i] = game_focus[0] * world_fix[0][i] + game_focus[1] * world_fix[1][i] + game_focus[2] * world_fix[2][i];
         eye[i] = focus[i] - forward[i] * distance;
     }
     /* Our camera's matrix. Its three columns are the directions that
@@ -272,6 +434,7 @@ static void prepare_free_turn(void) {
     ours[3][3] = 1;
     if (!invert(undo, camera_blended))
         return;
+    multiply(ours, world_fix, ours);
     multiply(free_turn, undo, ours);
     free_turn_ready = 1;
 }
@@ -310,11 +473,18 @@ static int invert(float out[4][4], float m[4][4]) {
     return 1;
 }
 
-static void command_matrix(uint32_t w0, uint32_t w1) {
+/* projection: for the camera's lens rather than for placing things.
+ * load: replace the current matrix rather than combine with it.
+ * push: keep a copy of the current one first, to come back to. */
+static void command_matrix(int projection, int load, int push, uint32_t w1) {
     float m[4][4], exact[4][4];
-    int projection = (w0 >> 16) & 1, load = (w0 >> 16) & 2, push = (w0 >> 16) & 4;
     load_matrix(segmented(w1), m);
     memcpy(exact, m, sizeof exact);
+    if (getenv("SHOW_MATRICES") && !measuring && gfx_frame_number == atol(getenv("SHOW_MATRICES"))) /* for testing */
+        fprintf(stderr, "matrix #%d %s%s%s top %d at %08X: %8.3f %8.3f %8.3f | %8.3f %8.3f %8.3f | %8.3f %8.3f %8.3f | move %9.2f %9.2f %9.2f | w %.3f %.3f %.3f %.3f\n",
+                matrix_index, projection ? "PROJ " : "", load ? "load" : "mul", push ? " push" : "", rsp.modelview_top, w1,
+                m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2], m[3][0], m[3][1], m[3][2],
+                m[0][3], m[1][3], m[2][3], m[3][3]);
 
     /* Matrices arrive in much the same order every frame (the game walks
      * its scene the same way), so this one's counterpart in the previous
@@ -354,10 +524,18 @@ static void command_matrix(uint32_t w0, uint32_t w1) {
             memcpy(rsp.projection, m, sizeof m);
         else
             multiply(rsp.projection, m, rsp.projection);
-        if (is_perspective(rsp.projection))
+        split_projection();
+        if (is_perspective(rsp.projection)) {
             seen_perspective = 1;
+            if (proj_has_view && !have_camera) { /* the camera came with the lens */
+                memcpy(camera_exact, proj_view, sizeof m);
+                memcpy(camera_blended, proj_view, sizeof m);
+                have_camera = 1;
+                prepare_free_turn();
+            }
+        }
     } else {
-        if (push && rsp.modelview_top < 10) {
+        if (push && rsp.modelview_top < MATRIX_STACK) {
             rsp.modelview_top++;
             memcpy(rsp.modelview[rsp.modelview_top], rsp.modelview[rsp.modelview_top - 1], sizeof m);
             memcpy(rsp.modelview_exact[rsp.modelview_top], rsp.modelview_exact[rsp.modelview_top - 1], sizeof m);
@@ -368,7 +546,7 @@ static void command_matrix(uint32_t w0, uint32_t w1) {
             memcpy(top_exact, exact, sizeof m);
             /* The first matrix of the 3D scene is the camera on its own:
              * the game draws the level itself before the objects in it. */
-            if (!have_camera && is_perspective(rsp.projection)) {
+            if (!have_camera && is_perspective(rsp.projection) && !proj_has_view) {
                 memcpy(camera_exact, exact, sizeof m);
                 memcpy(camera_blended, m, sizeof m);
                 have_camera = 1;
@@ -387,11 +565,20 @@ static void command_matrix(uint32_t w0, uint32_t w1) {
  * what colour the lights make it. Triangles then just refer to vertices. */
 
 static void command_vertices(uint32_t w0, uint32_t w1) {
-    int count = (int)((w0 >> 20) & 15) + 1, first = (int)((w0 >> 16) & 15);
-    if (extended) /* F3DEX packs the same two numbers differently, and holds more vertices */
-        count = (int)((w0 >> 10) & 63), first = (int)((w0 >> 16) & 255) / 2;
-    if (first + count > 64)
+    /* "Load count vertices into the list, starting at position first." Each
+     * dialect packs those two numbers into the command differently. */
+    int count, first;
+    switch (dialect) {
+    case GFX_F3DEX: count = (int)((w0 >> 10) & 63), first = (int)((w0 >> 16) & 255) / 2; break;
+    case GFX_F3DEX2: count = (int)((w0 >> 12) & 255), first = (int)((w0 >> 1) & 127) - count; break;
+    case GFX_F3DWAVE: count = (int)((w0 >> 9) & 127), first = (int)((w0 >> 16) & 255) / 5; break;
+    default: count = (int)((w0 >> 20) & 15) + 1, first = (int)((w0 >> 16) & 15); break;
+    }
+    if (first < 0 || first + count > 64) {
+        if (getenv("SHOW_GRAPHICS")) /* for testing: a vertex load we cannot hold */
+            fprintf(stderr, "gfx: vertex load of %d at %d does not fit (command %08X)\n", count, first, w0);
         return;
+    }
     uint32_t address = segmented(w1);
     float (*mv)[4] = rsp.modelview[rsp.modelview_top];
 
@@ -469,6 +656,11 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
             v->z = p[0] * world_to_screen[0][2] + p[1] * world_to_screen[1][2] + p[2] * world_to_screen[2][2] + world_to_screen[3][2];
             v->w = p[0] * world_to_screen[0][3] + p[1] * world_to_screen[1][3] + p[2] * world_to_screen[2][3] + world_to_screen[3][3];
         }
+
+        /* (see update_guess_depth) */
+        if (!measuring && blend == 1 && !free_turn_ready && v->w > 0 && depth_sample_count < MAX_DEPTH_SAMPLES &&
+            fabsf(v->x) < 0.15f * v->w && v->y > -0.5f * v->w && v->y < 0.2f * v->w && is_perspective(rsp.projection))
+            depth_samples[depth_sample_count++] = v->w / proj_w_scale;
 
         /* In widescreen the left and right edges are further out. */
         float side = v->w * wide_units / SCREEN_W;
@@ -568,10 +760,31 @@ static const Loaded *find_loaded(int tmem) {
 /* Take a snapshot of the current settings. */
 static void capture_state(DrawState *d, int tile_index, int allow_depth) {
     memset(d, 0, sizeof *d); /* so that two identical states compare equal byte for byte */
-    const Loaded *loaded = find_loaded(rdp.tiles[tile_index].tmem);
-    d->tile = rdp.tiles[tile_index];
-    if (loaded)
+    const Tile *tile = &rdp.tiles[tile_index];
+    const Loaded *loaded = find_loaded(tile->tmem);
+    d->tile = *tile;
+    if (loaded) {
         d->loaded = *loaded;
+    } else {
+        /* Nothing was loaded at exactly this tile's place in texture memory,
+         * but it may lie inside something bigger that was: games load
+         * several pictures as one block and point a tile at each. Texture
+         * memory is counted in 8-byte units. */
+        for (int i = 0; i < 8; i++) {
+            const Loaded *whole = &rdp.loaded[i];
+            uint32_t offset = (uint32_t)(tile->tmem - whole->tmem) * 8;
+            if (whole->address && !whole->fixed_rows && tile->tmem > whole->tmem && offset < whole->bytes) {
+                d->loaded = *whole;
+                d->loaded.address += offset, d->loaded.source += offset, d->loaded.bytes -= offset;
+                loaded = whole;
+                break;
+            }
+        }
+    }
+    /* A texture loaded as one long strip is cut into rows by the tile it
+     * is drawn with, whichever of the eight that is. */
+    if (loaded && !d->loaded.fixed_rows && tile->line)
+        d->loaded.row_bytes = (uint32_t)tile->line * 8 * (tile->size == 3 ? 2 : 1);
     d->use_texture = loaded != NULL && combiner_uses_texture();
     /* How the pixel meets what is already on screen ("blender"). Bit 18 says
      * the new pixel simply replaces the old; otherwise they are mixed. */
@@ -885,6 +1098,11 @@ static void rasterize(const Shape *shape, Pixel *p, int strip_top, int strip_bot
     if (min_y < d->scissor[1]) min_y = d->scissor[1];
     if (max_x > d->scissor[2]) max_x = d->scissor[2];
     if (max_y > d->scissor[3]) max_y = d->scissor[3];
+    /* Whatever the game asked for, never outside the picture itself. */
+    if (min_x < 0) min_x = 0;
+    if (min_y < 0) min_y = 0;
+    if (max_x > width) max_x = width;
+    if (max_y > height) max_y = height;
     if (min_y < strip_top) min_y = strip_top;
     if (max_y > strip_bottom) max_y = strip_bottom;
     if (min_y >= max_y || min_x >= max_x)
@@ -956,6 +1174,11 @@ static void draw_rectangle(const Shape *shape, Pixel *p, int strip_top, int stri
     if (y0 < d->scissor[1]) y0 = d->scissor[1];
     if (x1 > d->scissor[2]) x1 = d->scissor[2];
     if (y1 > d->scissor[3]) y1 = d->scissor[3];
+    /* Whatever the game asked for, never outside the picture itself. */
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > width) x1 = width;
+    if (y1 > height) y1 = height;
     if (y0 < strip_top) y0 = strip_top;
     if (y1 > strip_bottom) y1 = strip_bottom;
     if (y0 >= y1 || x0 >= x1)
@@ -1095,9 +1318,10 @@ static void to_screen(const Vertex *v, ScreenVertex *s) {
 }
 
 /* Triangle commands name their corners by position in the vertex list,
- * multiplied by 10 in Fast3D and by 2 in its successor F3DEX. */
+ * multiplied by 10 in Fast3D, by 2 in its successors F3DEX and F3DEX2, and
+ * by 5 in Wave Race 64's own variant. */
 static void triangle(uint32_t a, uint32_t b, uint32_t c) {
-    uint32_t unit = extended ? 2 : 10;
+    uint32_t unit = dialect == GFX_FAST3D ? 10 : dialect == GFX_F3DWAVE ? 5 : 2;
     const Vertex *v[3] = {
         &rsp.vertices[(a & 255) / unit & 63],
         &rsp.vertices[(b & 255) / unit & 63],
@@ -1155,7 +1379,14 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
     }
     for (int i = 1; i + 1 < count; i++) {
         Shape *shape = new_shape(TRIANGLE);
-        capture_state(&shape->state, 0, 1);
+        capture_state(&shape->state, rsp.texture_tile, 1);
+        if (getenv("SHOW_RECTANGLES") && !is_perspective(rsp.projection) && shape->state.use_texture) /* for testing */
+            fprintf(stderr, "flat tri u %.1f %.1f %.1f v %.1f %.1f %.1f x %.0f %.0f %.0f tile %d..%d,%d..%d clamp %d%d mask %d%d size %d fmt %d line %u scale %.3f q %.3f %.3f %.3f y %.0f %.0f %.0f\n",
+                    s[0].u, s[i].u, s[i + 1].u, s[0].v, s[i].v, s[i + 1].v, s[0].x, s[i].x, s[i + 1].x,
+                    shape->state.tile.uls / 4, shape->state.tile.lrs / 4, shape->state.tile.ult / 4, shape->state.tile.lrt / 4,
+                    shape->state.tile.clamp_s, shape->state.tile.clamp_t, shape->state.tile.mask_s, shape->state.tile.mask_t,
+                    shape->state.tile.size, shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes, rsp.texture_scale_s, s[0].q, s[i].q, s[i + 1].q,
+                    s[0].y, s[i].y, s[i + 1].y);
         /* The rasteriser wants a consistent winding; flip if needed. */
         float area = (s[i].x - s[0].x) * (s[i + 1].y - s[0].y) - (s[i].y - s[0].y) * (s[i + 1].x - s[0].x);
         shape->v[0] = s[0];
@@ -1217,6 +1448,19 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
         shape->ds /= 4; /* copy mode steps four texels at a time */
         right += 4, bottom += 4;
     }
+    /* Flat art drawn dot for dot (text, HUD numbers, portraits made of
+     * several pieces side by side) is not smoothed. Smoothing blends each
+     * dot with its neighbours, which at the edge of a piece means dots that
+     * are not part of the picture: on the console's small blurry screen
+     * that did not show, but enlarged it smears letters into each other
+     * and draws thin lines where the pieces meet. */
+    if (fabsf(shape->ds) == 1 && fabsf(shape->dt) == 1)
+        shape->state.bilinear = 0;
+    if (getenv("SHOW_RECTANGLES") && fabsf(shape->ds) != 1) /* for testing */
+        fprintf(stderr, "rect x %d..%d y %d..%d s %.2f t %.2f ds %.4f dt %.4f tile %d..%d clamp %d mask %d size %d fmt %d line %u\n",
+                left / 4, right / 4, top / 4, bottom / 4, shape->s, shape->t, shape->ds, shape->dt, shape->state.tile.uls / 4,
+                shape->state.tile.lrs / 4, shape->state.tile.clamp_s, shape->state.tile.mask_s, shape->state.tile.size,
+                shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes);
     shape->left = (float)left / 4 + wide_offset, shape->top = (float)top / 4, shape->flip = flip;
     shape->x0 = (int)(shape->left * (float)scale), shape->y0 = top * scale / 4;
     shape->x1 = shape->x0 + (right - left) * scale / 4, shape->y1 = bottom * scale / 4;
@@ -1236,6 +1480,8 @@ static void remember_loaded(int tmem, uint32_t address, uint32_t row_bytes, int 
         slot = &rdp.loaded[rdp.next_loaded++ & 7];
     slot->tmem = tmem, slot->address = address, slot->row_bytes = row_bytes, slot->fixed_rows = fixed_rows;
     slot->bytes = bytes;
+    if (!(address & COPY_FLAG))
+        slot->source = address;
 }
 
 /* How many bytes one row of a tile takes, from its "line" setting (which
@@ -1269,6 +1515,11 @@ static void command_load_block(uint32_t w1) {
     /* the command gives the number of texels loaded, less one */
     uint32_t bytes = (((w1 >> 12) & 0xFFF) + 1) * (4u << tile->size) / 8;
     remember_loaded(tile->tmem, rdp.texture_image, row, 0, bytes);
+    /* (remembered first under its real address, which is noted as where it
+     * came from; then pointed at the copy) */
+    Loaded *loaded = (Loaded *)find_loaded(tile->tmem);
+    if (loaded && !measuring)
+        loaded->address = keep_copy(rdp.texture_image, bytes);
 }
 
 static void command_load_tile(uint32_t w0, uint32_t w1) {
@@ -1277,6 +1528,11 @@ static void command_load_tile(uint32_t w0, uint32_t w1) {
     uint32_t row = rdp.texture_width * bits / 8;
     uint32_t start = rdp.texture_image + ((w0 & 0xFFF) / 4) * row + (((w0 >> 12) & 0xFFF) / 4) * bits / 8;
     remember_loaded(tile->tmem, start, row, 1, 0);
+    /* The rows from the first to the last asked for, whole. */
+    uint32_t rows = ((w1 & 0xFFF) / 4) - ((w0 & 0xFFF) / 4) + 1;
+    Loaded *loaded = (Loaded *)find_loaded(tile->tmem);
+    if (loaded && !measuring && rows < 2048)
+        loaded->address = keep_copy(start, rows * row);
 }
 
 /* ---- The command loop -------------------------------------------------------- */
@@ -1297,27 +1553,130 @@ static void set_color(int color[4], uint32_t w1) {
     color[2] = (int)((w1 >> 8) & 255), color[3] = (int)(w1 & 255);
 }
 
+/* The viewport: where on screen the 3D view goes. */
+static void set_viewport(uint32_t address) {
+    for (int i = 0; i < 3; i++) {
+        rsp.viewport_scale[i] = (float)(int16_t)rd16(address + (uint32_t)i * 2) / 4.0f;
+        rsp.viewport_translate[i] = (float)(int16_t)rd16(address + 8 + (uint32_t)i * 2) / 4.0f;
+    }
+}
+
+static void set_light(int n, uint32_t address) {
+    float d[3], length;
+    if (n < 0 || n > 7)
+        return;
+    for (int i = 0; i < 3; i++) {
+        rsp.lights[n].color[i] = (float)rd8(address + (uint32_t)i);
+        d[i] = (float)(int8_t)rd8(address + 8 + (uint32_t)i);
+    }
+    length = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    for (int i = 0; i < 3; i++)
+        rsp.lights[n].direction[i] = length > 0 ? d[i] / length : 0;
+}
+
 static void command_move_memory(uint32_t w0, uint32_t w1) {
     uint32_t index = (w0 >> 16) & 255, address = segmented(w1);
-    if (index == 0x80) { /* viewport: where on screen the 3D view goes */
-        for (int i = 0; i < 3; i++) {
-            rsp.viewport_scale[i] = (float)(int16_t)rd16(address + (uint32_t)i * 2) / 4.0f;
-            rsp.viewport_translate[i] = (float)(int16_t)rd16(address + 8 + (uint32_t)i * 2) / 4.0f;
+    if (index == 0x80)
+        set_viewport(address);
+    else if (index >= 0x86 && index <= 0x94)
+        set_light((int)(index - 0x86) / 2, address);
+}
+
+/* ---- F3DEX2 ---------------------------------------------------------------------
+ * The third dialect does what F3DEX does, but every command has a new
+ * number and most pack their details differently. This turns each one into
+ * the same actions as its older counterpart. */
+
+/* F3DEX2 moved the two "do not draw this side" settings to other bits. */
+static uint32_t geometry_mode_ex2;
+static void set_geometry_mode_ex2(uint32_t mode) {
+    geometry_mode_ex2 = mode;
+    rsp.geometry_mode = (mode & ~0x3600u) | (mode & 0x200 ? G_CULL_FRONT : 0) | (mode & 0x400 ? G_CULL_BACK : 0);
+}
+
+static void triangle(uint32_t a, uint32_t b, uint32_t c);
+static void update_combined(void);
+static uint32_t half_word; /* a number handed over ahead of the command that uses it */
+
+/* Returns the address of a display list to go to, or 0. */
+static void command_ex2(uint32_t w0, uint32_t w1) {
+    switch (w0 >> 24) {
+    case 0x01: command_vertices(w0, w1); break;
+    case 0x02: { /* change one thing about a vertex already loaded */
+        Vertex *v = &rsp.vertices[((w0 & 0xFFFF) / 2) & 63];
+        uint32_t what = (w0 >> 16) & 255;
+        if (what == 0x10)
+            v->r = (float)(w1 >> 24), v->g = (float)((w1 >> 16) & 255), v->b = (float)((w1 >> 8) & 255),
+            v->a = (float)(w1 & 255);
+        else if (what == 0x14)
+            v->u = (float)(int16_t)(w1 >> 16) / 32.0f, v->v = (float)(int16_t)w1 / 32.0f;
+        break;
+    }
+    case 0x05: triangle(w0 >> 16, w0 >> 8, w0); break;
+    case 0x06: case 0x07: /* two triangles (0x07: the two halves of a four-cornered shape) */
+        triangle(w0 >> 16, w0 >> 8, w0);
+        triangle(w1 >> 16, w1 >> 8, w1);
+        break;
+    case 0xD7: /* texture coordinate scale, and which tile */
+        rsp.texture_tile = (int)((w0 >> 8) & 7);
+        rsp.texture_scale_s = (float)(w1 >> 16) / 65536.0f;
+        rsp.texture_scale_t = (float)(w1 & 0xFFFF) / 65536.0f;
+        break;
+    case 0xD8: /* pop the matrix stack, possibly several levels */
+        for (uint32_t i = 0; i < w1 / 64 && rsp.modelview_top > 0; i++)
+            rsp.modelview_top--;
+        update_combined();
+        break;
+    case 0xD9: set_geometry_mode_ex2((geometry_mode_ex2 & w0 & 0xFFFFFF) | w1); break;
+    case 0xDA: {
+        uint32_t flags = (w0 & 255) ^ 1; /* (the "push" bit is stored upside down) */
+        command_matrix(flags & 4, flags & 2, flags & 1, w1);
+        break;
+    }
+    case 0xDB: { /* set one number */
+        uint32_t index = (w0 >> 16) & 255, offset = w0 & 0xFFFF;
+        if (index == 0x02)
+            rsp.light_count = (int)(w1 / 24);
+        else if (index == 0x06)
+            rsp.segments[offset / 4 & 15] = w1 & 0xFFFFFF;
+        else if (index == 0x08)
+            rsp.fog_multiply = (float)(int16_t)(w1 >> 16), rsp.fog_offset = (float)(int16_t)w1;
+        if (rsp.light_count < 0 || rsp.light_count > 7)
+            rsp.light_count = 0;
+        break;
+    }
+    case 0xDC: { /* hand over a block of numbers */
+        uint32_t index = w0 & 255, offset = ((w0 >> 8) & 255) * 8;
+        if (index == 8)
+            set_viewport(segmented(w1));
+        else if (index == 10 && offset >= 48) /* (the first two slots are not lights) */
+            set_light((int)(offset / 24) - 2, segmented(w1));
+        break;
+    }
+    case 0xE1: half_word = w1; break;
+    case 0xE2: case 0xE3: { /* change some bits of the pixel settings */
+        uint32_t length = (w0 & 255) + 1, shift = (32 - ((w0 >> 8) & 255) - length) & 31;
+        uint32_t mask = (length >= 32 ? 0xFFFFFFFFu : ((1u << length) - 1)) << shift;
+        uint32_t *mode = (w0 >> 24) == 0xE2 ? &rdp.other_mode_l : &rdp.other_mode_h;
+        *mode = (*mode & ~mask) | (w1 & mask);
+        break;
+    }
+    default:
+        if (getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
+            static long seen[256];
+            if (seen[w0 >> 24]++ < 3)
+                fprintf(stderr, "gfx: F3DEX2 command %08X %08X not handled\n", w0, w1);
         }
-    } else if (index >= 0x86 && index <= 0x94) { /* a light */
-        int n = (int)(index - 0x86) / 2;
-        float d[3], length;
-        for (int i = 0; i < 3; i++) {
-            rsp.lights[n].color[i] = (float)rd8(address + (uint32_t)i);
-            d[i] = (float)(int8_t)rd8(address + 8 + (uint32_t)i);
-        }
-        length = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        for (int i = 0; i < 3; i++)
-            rsp.lights[n].direction[i] = length > 0 ? d[i] / length : 0;
+        break;
     }
 }
 
 static void command_move_word(uint32_t w0, uint32_t w1) {
+    if (getenv("SHOW_GRAPHICS")) { /* for testing: which kinds a game uses */
+        static long seen[256];
+        if (seen[w0 & 255]++ < 2)
+            fprintf(stderr, "gfx: set-one-number command %08X %08X\n", w0, w1);
+    }
     switch (w0 & 255) {
     case 0x02: rsp.light_count = (int)((w1 - 0x80000000u) / 32) - 1; break;
     case 0x06: rsp.segments[((w0 >> 8) & 0xFFFF) / 4 & 15] = w1 & 0xFFFFFF; break;
@@ -1332,6 +1691,17 @@ static void command_move_word(uint32_t w0, uint32_t w1) {
 
 static void run_list(uint32_t address) {
     uint32_t return_stack[18];
+    /* The chip starts every list with its stack of matrices empty. Games
+     * rely on that: Wave Race 64 leaves matrices on the stack at the end of
+     * a frame, and if they were still there for the next one the stack
+     * would soon be full and later objects (its dolphins) come out built on
+     * the wrong matrices, the wrong size and shape. */
+    copies_used = 0;
+    if (rsp.modelview_top > 0) {
+        memcpy(rsp.modelview[0], rsp.modelview[rsp.modelview_top], sizeof rsp.modelview[0]);
+        memcpy(rsp.modelview_exact[0], rsp.modelview_exact[rsp.modelview_top], sizeof rsp.modelview_exact[0]);
+        rsp.modelview_top = 0;
+    }
     matrix_index = 0;
     seen_perspective = 0;
     have_camera = 0;
@@ -1343,8 +1713,29 @@ static void run_list(uint32_t address) {
     for (long guard = 0; guard < 2000000; guard++) {
         uint32_t w0 = rd32(pc), w1 = rd32(pc + 4);
         pc += 8;
+        if (dialect == GFX_F3DEX2 && (w0 >> 24) < 0xE4) {
+            switch (w0 >> 24) {
+            case 0x04: /* "the detailed version, if it is near enough": always take it */
+                pc = segmented(half_word);
+                break;
+            case 0xDE: /* run another display list */
+                if (((w0 >> 16) & 255) == 0 && depth < 18)
+                    return_stack[depth++] = pc;
+                pc = segmented(w1);
+                break;
+            case 0xDF: /* end of this display list */
+                if (depth == 0) {
+                    draw_all_shapes();
+                    return;
+                }
+                pc = return_stack[--depth];
+                break;
+            default: command_ex2(w0, w1); break;
+            }
+            continue;
+        }
         switch (w0 >> 24) {
-        case 0x01: command_matrix(w0, w1); break;
+        case 0x01: command_matrix((w0 >> 16) & 1, (w0 >> 16) & 2, (w0 >> 16) & 4, w1); break;
         case 0x03: command_move_memory(w0, w1); break;
         case 0x04: command_vertices(w0, w1); break;
         case 0x06: /* run another display list */
@@ -1368,7 +1759,8 @@ static void run_list(uint32_t address) {
             *mode = (*mode & ~mask) | (w1 & mask);
             break;
         }
-        case 0xBB: /* texture coordinate scale */
+        case 0xBB: /* texture coordinate scale, and which tile */
+            rsp.texture_tile = (int)((w0 >> 8) & 7);
             rsp.texture_scale_s = (float)(w1 >> 16) / 65536.0f;
             rsp.texture_scale_t = (float)(w1 & 0xFFFF) / 65536.0f;
             break;
@@ -1380,10 +1772,15 @@ static void run_list(uint32_t address) {
             break;
         case 0xBF: triangle(w1 >> 16, w1 >> 8, w1); break;
         case 0xB1: /* F3DEX: two triangles in one command */
-            if (extended) {
+            if (dialect != GFX_FAST3D) {
                 triangle(w0 >> 16, w0 >> 8, w0);
                 triangle(w1 >> 16, w1 >> 8, w1);
             }
+            break;
+        case 0xB4: half_word = w1; break;
+        case 0xB0: /* F3DEX: "the detailed version, if it is near enough": always take it */
+            if (dialect == GFX_F3DEX)
+                pc = segmented(half_word);
             break;
         case 0xB5: /* a four-cornered shape, as two triangles */
             triangle(w1 >> 24, w1 >> 16, w1 >> 8);
@@ -1401,6 +1798,8 @@ static void run_list(uint32_t address) {
             rdp.scissor[3] = (int)(w1 & 0xFFF) * scale / 4;
             if (rdp.scissor[2] > width) rdp.scissor[2] = width;
             if (rdp.scissor[3] > height) rdp.scissor[3] = height;
+            if (rdp.scissor[0] < 0) rdp.scissor[0] = 0;
+            if (rdp.scissor[1] < 0) rdp.scissor[1] = 0;
             break;
         case 0xEF: rdp.other_mode_h = w0 & 0xFFFFFF, rdp.other_mode_l = w1; break;
         case 0xF0: rdp.palette_address = rdp.texture_image; break;
@@ -1427,6 +1826,13 @@ static void run_list(uint32_t address) {
             break;
         case 0xFE: rdp.depth_image = segmented(w1); break;
         case 0xFF: rdp.color_image = segmented(w1); break;
+        default:
+            if (getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
+                static long seen[256];
+                if (seen[w0 >> 24]++ < 3)
+                    fprintf(stderr, "gfx: command %08X %08X not handled\n", w0, w1);
+            }
+            break;
         }
     }
     draw_all_shapes();
@@ -1466,8 +1872,22 @@ int gfx_run(uint32_t address, int smooth) {
     /* Things the free camera wants to know about the frame just drawn. */
     free_before = free_now;
     have_last_camera = have_camera;
-    if (have_camera)
+    if (have_camera) {
         memcpy(last_camera, camera_exact, sizeof last_camera);
+        notice_world_up(camera_exact);
+        update_guess_depth();
+    }
+    if (getenv("SHOW_CAMERA") && gfx_frame_number % 60 == 0) { /* for working out how a game does its camera */
+        fprintf(stderr, "gfx: camera %s (%s), z-up votes %d, %d depth samples, guess %.1f, matrices %d\n",
+                have_camera ? "found" : "NOT found", proj_has_view ? "in the projection" : "in the modelview",
+                up_votes, depth_sample_count, guess_depth, matrix_index);
+        for (int i = 0; i < 4; i++)
+            fprintf(stderr, "   proj %10.3f %10.3f %10.3f %10.3f   cam %10.3f %10.3f %10.3f %10.3f\n", rsp.projection[i][0],
+                    rsp.projection[i][1], rsp.projection[i][2], rsp.projection[i][3], camera_exact[i][0],
+                    camera_exact[i][1], camera_exact[i][2], camera_exact[i][3]);
+    }
+    gfx_frame_number++;
+    depth_sample_count = 0;
     float cy = cosf(look_yaw), sy = sinf(look_yaw), cp = cosf(look_pitch), sp = sinf(look_pitch);
     float turn[3][3] = {{cy, sy * sp, -sy * cp}, {0, cp, sp}, {sy, -cy * sp, cy * cp}};
     /* For a pure turn, the matrix that undoes it is the same numbers with
@@ -1501,22 +1921,47 @@ int gfx_game_camera(const float focus[3], float *yaw, float *pitch, float *dista
         length += to_focus[i] * to_focus[i];
     }
     length = sqrtf(length);
-    if (length < 1)
+    if (length < 1e-3f)
         return 0;
+    /* Angles are worked out in a y-up world (see world_fix). A camera looks
+     * along its own -z, and the third column of its matrix says where z is. */
+    float fixed[3], looking[3];
+    for (int i = 0; i < 3; i++) {
+        fixed[i] = to_focus[0] * world_fix[0][i] + to_focus[1] * world_fix[1][i] + to_focus[2] * world_fix[2][i];
+        looking[i] = -(last_camera[0][2] * world_fix[0][i] + last_camera[1][2] * world_fix[1][i] +
+                       last_camera[2][2] * world_fix[2][i]);
+    }
     *distance = length;
-    *yaw = atan2f(to_focus[0], to_focus[2]);
-    *pitch = asinf(-to_focus[1] / length);
+    *yaw = atan2f(fixed[0], fixed[2]);
+    *pitch = asinf(-fixed[1] / length);
     /* Which way it is pointing (not quite the same thing: the game's camera
-     * does not always look straight at the character). A camera looks along
-     * its own -z, and the third column of its matrix says where z is. */
-    *facing = atan2f(-last_camera[0][2], -last_camera[2][2]);
+     * does not always look straight at the character). */
+    *facing = atan2f(looking[0], looking[2]);
+    return 1;
+}
+
+int gfx_game_camera_place(float place[3]) {
+    float inverse[4][4];
+    if (!have_last_camera || !invert(inverse, last_camera))
+        return 0;
+    memcpy(place, inverse[3], 3 * sizeof(float));
+    return 1;
+}
+
+int gfx_guess_focus(float focus[3]) {
+    float inverse[4][4];
+    if (!have_last_camera || guess_depth <= 0 || !invert(inverse, last_camera))
+        return 0;
+    /* From where the camera is, guess_depth along the way it looks. */
+    for (int i = 0; i < 3; i++)
+        focus[i] = inverse[3][i] - last_camera[i][2] * guess_depth;
     return 1;
 }
 
 void gfx_view_back(float back[3][3]) { memcpy(back, view_back, sizeof view_back); }
 
 
-void gfx_set_extended(int is_f3dex) { extended = is_f3dex; }
+void gfx_set_dialect(int which) { dialect = which; }
 
 void gfx_set_view(float yaw, float pitch, float zoom) {
     look_yaw = yaw, look_pitch = pitch, look_zoom = zoom;

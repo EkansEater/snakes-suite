@@ -24,9 +24,16 @@ int gfx_run(uint32_t display_list_address, int smooth);
  * value per pixel. */
 const uint32_t *gfx_picture(int which, int *width, int *height);
 
-/* Games use one of two dialects of the drawing commands: the original
- * Fast3D (Super Mario 64) or the later F3DEX (most other games). */
-void gfx_set_extended(int is_f3dex);
+/* The drawing commands come in dialects. A game's graphics chip runs a
+ * small program ("microcode") supplied by the game, and Nintendo revised
+ * that program over the years:
+ *   Fast3D   the original (Super Mario 64)
+ *   F3DEX    more vertices at once, two triangles per command (Mario Kart 64)
+ *   F3DEX2   the same abilities with every command renumbered (most later games)
+ *   F3DWAVE  Wave Race 64's own in-between version
+ * Can change from one frame to the next: some games use two. */
+enum { GFX_FAST3D, GFX_F3DEX, GFX_F3DEX2, GFX_F3DWAVE };
+void gfx_set_dialect(int which);
 
 /* Free look: turn (radians) and zoom applied on top of the game's camera. */
 void gfx_set_view(float yaw, float pitch, float zoom);
@@ -41,6 +48,15 @@ void gfx_set_free_camera(int on, float yaw, float pitch, float distance, const f
  * terms: the angles and distance from which it saw "focus", and the
  * direction it was facing. Returns 0 if there was no 3D scene. */
 int gfx_game_camera(const float focus[3], float *yaw, float *pitch, float *distance, float *facing);
+
+/* For a game we know nothing about: a guess at the place the game's camera
+ * is looking at, for the free camera to circle. Returns 0 if there is no
+ * 3D scene to guess from. */
+int gfx_guess_focus(float focus[3]);
+
+/* Where the game's own camera was in the last frame drawn. Returns 0 if
+ * there was no 3D scene. */
+int gfx_game_camera_place(float place[3]);
 
 /* The turn that undoes whatever turn the last frame was drawn with (the
  * free camera's, or gfx_set_view's). Games use it to keep flat things

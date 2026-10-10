@@ -417,6 +417,8 @@ class Cpu:
         # System control registers are not modelled yet: they read as zero.
         if rs in (0, 1):
             self.r[rt] = 0
+        elif rs >= 16 and word & 0x3F in (1, 2, 6, 8):
+            pass  # the four address-mapping instructions: not modelled here either
         elif rs not in (4, 5):
             raise Trap("system instruction")
 

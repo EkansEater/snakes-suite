@@ -28,6 +28,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE /* for a few Linux-only things: mmap's options, REG_RSP */
 #endif
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -41,11 +42,13 @@
 #endif
 
 #include "audio.h"
+#include "cheats.h"
 #include "gfx.h"
 #include "functions.h"
 #include "mods.h"
 
 static uint8_t *ram, *rom;
+const uint8_t *host_rom;
 static size_t rom_size;
 
 static void fatal(const char *what, uint32_t value) {
@@ -58,6 +61,7 @@ static void fatal(const char *what, uint32_t value) {
  * Save states (further down) store pointers into the game's memory and the
  * threads' stacks, and those are only right if both are in the same place
  * every time. */
+#define RAM_SLACK 0x200000
 #define RAM_PLACE 0x100000000000ull
 #define STACKS_PLACE 0x110000000000ull
 static void *memory_at(unsigned long long place, size_t size) {
@@ -124,7 +128,8 @@ static void w16(uint32_t a, uint16_t v) {
  * its own set of CPU registers (a Context) and its own stack on the PC, and
  * a scheduler switches between them with swapcontext(). */
 
-typedef enum { STOPPED, RUNNABLE, WAITING, DEAD } State;
+/* IDLE: going round an empty loop for ever; see host_time_slice. */
+typedef enum { STOPPED, RUNNABLE, WAITING, DEAD, IDLE } State;
 
 typedef struct Thread {
     uint32_t guest_address; /* the game's own record of this thread */
@@ -134,6 +139,8 @@ typedef struct Thread {
     int wait_to_send;
     uint32_t entry;
     uint64_t turn; /* threads of equal priority take turns, oldest first */
+    long calls, calls_seen; /* library calls it has made: so far, and when it last used up its time */
+    int quiet_slices;       /* how many times running it has used up its time without making one */
     Context ctx;
     ucontext_t uc;
 } Thread;
@@ -165,14 +172,11 @@ static void make_runnable(Thread *t) {
 /* Give control back to the scheduler. The thread resumes here later. */
 static void switch_away(void) { swapcontext(&current->uc, &scheduler); }
 
-/* A priority-0 thread is the game's "idle thread": an endless empty loop
- * for the CPU to sit in when there is nothing to do. We never run it; when
- * nothing else can run, the scheduler moves time forward instead. */
 static Thread *pick_thread(void) {
     Thread *best = NULL;
     for (int i = 0; i < thread_count; i++) {
         Thread *t = &threads[i];
-        if (t->state != RUNNABLE || t->priority <= 0)
+        if (t->state != RUNNABLE)
             continue;
         if (!best || t->priority > best->priority ||
             (t->priority == best->priority && t->turn < best->turn))
@@ -184,8 +188,13 @@ static Thread *pick_thread(void) {
 /* If a more important thread just became ready, let it run right away. */
 static void preempt_check(void) {
     Thread *best = pick_thread();
-    if (best && best != current && best->priority > current->priority)
+    if (best && best != current && best->priority > current->priority) {
+        /* The start-up code is not a real thread. Once the first real one
+         * takes over, the console never goes back to it. */
+        if (current == &threads[0])
+            current->state = DEAD;
         switch_away();
+    }
 }
 
 static void thread_main(int index) {
@@ -219,8 +228,19 @@ static Thread *find_thread(uint32_t guest_address) {
     for (int i = 0; i < thread_count; i++)
         if (threads[i].guest_address == guest_address && threads[i].state != DEAD)
             return &threads[i];
-    fatal("unknown thread", guest_address);
-    return NULL;
+    /* A thread we were not asked to create: the game set it up with a
+     * function of its own. Everything we need is in the game's record of
+     * it, where a real console would also look when first running it:
+     * priority at +4, id at +0x14, and the registers it starts with from
+     * +0x20 on (a0 at +0x38, the stack pointer at +0xF0, where it begins
+     * at +0x11C). */
+    uint32_t entry = g32(guest_address + 0x11C);
+    if (entry < 0x80000000u || entry >= 0x80800000u || (entry & 3))
+        fatal("unknown thread", guest_address);
+    Thread *t = new_thread(guest_address, (int)g32(guest_address + 0x14), (int)g32(guest_address + 4), entry);
+    t->ctx.a0 = S32(g32(guest_address + 0x3C));
+    t->ctx.sp = S32(g32(guest_address + 0xF4));
+    return t;
 }
 
 /* The game's OSThread record: priority at +4, id at +0x14. */
@@ -294,6 +314,9 @@ static void wait_on(uint32_t queue, int to_send) {
     switch_away();
 }
 
+static uint32_t pi_command_queue; /* see run_pi_manager, further down */
+static void run_pi_manager(void);
+
 /* Put a message on a queue if there is room. front: jump the queue. */
 static int queue_put(uint32_t queue, uint32_t message, int front) {
     uint32_t valid = g32(MQ_VALID(queue)), capacity = g32(MQ_CAPACITY(queue));
@@ -309,7 +332,10 @@ static int queue_put(uint32_t queue, uint32_t message, int front) {
     }
     w32(g32(MQ_MESSAGES(queue)) + 4 * slot, message);
     w32(MQ_VALID(queue), valid + 1);
-    wake_one(queue, 0);
+    if (queue == pi_command_queue && queue)
+        run_pi_manager();
+    else
+        wake_one(queue, 0);
     return 1;
 }
 
@@ -351,7 +377,7 @@ void hle_osRecvMesg(Context *ctx) {
  * graphics chip is done") through interrupts, which the OS turns into
  * messages on whichever queue the game registered for that event. */
 
-enum { EVENT_SP = 4, EVENT_SI = 5, EVENT_DP = 9, EVENT_COUNT = 15 };
+enum { EVENT_SP = 4, EVENT_SI = 5, EVENT_DP = 9, EVENT_COUNT = 32 }; /* (later library versions have more kinds) */
 static struct { uint32_t queue, message; } events[EVENT_COUNT];
 
 static void post_event(int event) {
@@ -367,7 +393,29 @@ void hle_osSetEventMesg(Context *ctx) {
 
 /* ---- Start-up -------------------------------------------------------------- */
 
-void hle_osInitialize(Context *ctx) { (void)ctx; }
+/* Some of our stand-ins also let the library's own version of the function
+ * run (it is kept, translated, as original_<name>). That version only
+ * exists in games where we recognised the function, and this file is
+ * built for every game; "weak" lets us mention a function that may not be
+ * there and find out when the program starts whether it is. */
+#define MAY_EXIST(name) void original_##name(Context *ctx) __attribute__((weak))
+#define RUN_ORIGINAL(name) do { if (original_##name) original_##name(ctx); } while (0)
+MAY_EXIST(osInitialize);
+MAY_EXIST(osViSetMode);
+MAY_EXIST(osViBlack);
+MAY_EXIST(osViSetSpecialFeatures);
+MAY_EXIST(osViSetEvent);
+MAY_EXIST(osViSwapBuffer);
+
+/* The library's own start-up: we leave it out. Most of what it does is to
+ * the hardware, which is not there. It also sets up a few variables that
+ * other library functions rely on (the clock's speed, the list of timers),
+ * which matters if those functions are ones we do not stand in for; so for
+ * trying things out, OS_INIT=1 lets it run after all. */
+void hle_osInitialize(Context *ctx) {
+    if (getenv("OS_INIT"))
+        RUN_ORIGINAL(osInitialize);
+}
 
 /* ---- Video -----------------------------------------------------------------
  * Nothing is drawn yet. We keep track of which picture the game wants shown
@@ -375,14 +423,64 @@ void hle_osInitialize(Context *ctx) { (void)ctx; }
 
 static uint32_t vi_queue, vi_message, framebuffer;
 static long frames;
+static long max_frames = -1; /* stop after this many (--frames), for testing */
+static int cheat_button_held; /* see cheats.c: some cheats wait for a button */
+static const char *pictures_path; /* where screenshots go: folder and start of the name (--pictures) */
+static int picture_wanted;        /* the screenshot shortcut was pressed */
 static long frames_now(void) { return frames; }
 
-void hle_osCreateViManager(Context *ctx) { (void)ctx; }
-void hle_osViSetMode(Context *ctx) { (void)ctx; }
-void hle_osViBlack(Context *ctx) { (void)ctx; }
-void hle_osViSetSpecialFeatures(Context *ctx) { (void)ctx; }
-void hle_osViSetEvent(Context *ctx) { vi_queue = ARG0, vi_message = ARG1; }
-void hle_osViSwapBuffer(Context *ctx) { framebuffer = ARG0; }
+/* The library keeps two records of the video settings, "current" and
+ * "next", and swaps them at every refresh. We do not need them ourselves,
+ * but library functions we do not stand in for read and write them. With
+ * VI_INIT=1 we run the library's function that sets them up, and from then
+ * on let its own video functions keep them up to date alongside ours.
+ * That is for trying things out: it gets some games further and stops
+ * others (NFL Blitz Special Edition, for one), so it is off unless asked for. */
+static int video_records; /* have they been set up? */
+void hle_osCreateViManager(Context *ctx) {
+    (void)ctx;
+#ifdef ADDR___osViInit
+    if (!getenv("VI_INIT"))
+        return;
+    uint64_t ra = ctx->ra;
+    call_indirect(ctx, ADDR___osViInit);
+    ctx->ra = ra;
+    video_records = 1;
+#endif
+}
+void hle_osViSetMode(Context *ctx) {
+    if (video_records)
+        RUN_ORIGINAL(osViSetMode);
+}
+void hle_osViBlack(Context *ctx) {
+    if (video_records)
+        RUN_ORIGINAL(osViBlack);
+}
+void hle_osViSetSpecialFeatures(Context *ctx) {
+    if (video_records)
+        RUN_ORIGINAL(osViSetSpecialFeatures);
+}
+void hle_osViSetEvent(Context *ctx) {
+    vi_queue = ARG0, vi_message = ARG1;
+    if (video_records)
+        RUN_ORIGINAL(osViSetEvent);
+}
+void hle_osViSwapBuffer(Context *ctx) {
+    framebuffer = ARG0;
+    if (video_records)
+        RUN_ORIGINAL(osViSwapBuffer);
+}
+/* What the console does to the two records at each refresh, as far as it
+ * matters: the picture that was "next" (at +4) is now the one showing. */
+static void swap_video_records(void) {
+#if defined(ADDR___osViCurr) && defined(ADDR___osViNext)
+    if (video_records) {
+        uint32_t showing = g32(ADDR___osViCurr), next = g32(ADDR___osViNext);
+        if (showing >= 0x80000000u && showing < 0x80800000u - 8 && next >= 0x80000000u && next < 0x80800000u - 8)
+            w32(showing + 4, g32(next + 4));
+    }
+#endif
+}
 void hle_osViGetCurrentFramebuffer(Context *ctx) { RETURN(framebuffer); }
 void hle_osViGetNextFramebuffer(Context *ctx) { RETURN(framebuffer); }
 
@@ -396,6 +494,8 @@ static void present_frame(void); /* further down: window, input, screenshots */
 static void run_timers(void);
 
 static long forced_frames;
+long host_calls;
+static long calls_at_switch; /* host_calls when the running thread was last given the CPU */
 static long most_loops; /* the most of the loop budget any one refresh has used */
 
 static void next_frame(void) {
@@ -406,6 +506,7 @@ static void next_frame(void) {
     loop_budget = LOOP_BUDGET_PER_FRAME;
     present_frame();
     run_timers();
+    swap_video_records();
     if (vi_queue)
         queue_put(vi_queue, vi_message, 0);
 }
@@ -414,8 +515,29 @@ static void next_frame(void) {
  * frame's worth of work without ever waiting. */
 void host_time_slice(Context *ctx) {
     (void)ctx;
+    /* Games have an "idle thread": an endless empty loop for the CPU to sit
+     * in when there is nothing else to do. One shows itself here: lowest
+     * priority, and a whole refresh's worth of looping without asking the
+     * library for anything. We stop running it, and let the scheduler move
+     * time forward when nothing else can run. */
+    if (current) {
+        long calls = current->calls + (host_calls - calls_at_switch);
+        /* (Half a second of it, to be sure: start-up code also loops for
+         * a long time without calls, clearing and unpacking memory. And
+         * never the start-up code itself, which is dealt with in
+         * preempt_check.) */
+        current->quiet_slices = current->calls_seen == calls ? current->quiet_slices + 1 : 0;
+        if (current->priority <= 0 && current != &threads[0] && current->quiet_slices >= 30) {
+            current->state = IDLE;
+            loop_budget = LOOP_BUDGET_PER_FRAME;
+            switch_away();
+        }
+        current->calls_seen = calls;
+    }
     forced_frames++;
     next_frame();
+    if (max_frames >= 0 && frames >= max_frames)
+        exit(0); /* (a test run of so many frames: the thread that is looping would never let main() notice) */
     preempt_check();
 }
 
@@ -469,19 +591,104 @@ void hle_osGetCount(Context *ctx) {
 
 static long dma_count, dma_bytes;
 
-void hle_osCreatePiManager(Context *ctx) { (void)ctx; }
-void hle_osPiStartDma(Context *ctx) {
-    uint32_t request = ARG0, rom_address = ARG3;
-    uint32_t destination = STACK_ARG(4), size = STACK_ARG(5), reply_queue = STACK_ARG(6);
-    if (ARG2 != 0)
-        fatal("game tried to write to the cartridge", rom_address);
+/* Besides the game itself, a cartridge can hold a small battery-backed
+ * memory for saved games ("SRAM", 32 KB), which the console reaches through
+ * the same port at another address. Unlike the game, it can be written. */
+#define SRAM_SIZE 0x8000
+#define SRAM_PLACE 0x08000000u
+static uint8_t sram[SRAM_SIZE];
+static void save_sram(void);
+
+/* Copy between the cartridge and memory. "device" is the cartridge-side
+ * address as the hardware numbers it: the game from 0x10000000, the save
+ * memory from 0x08000000. */
+static void cart_copy(uint32_t device, uint32_t memory, uint32_t size, int to_cartridge) {
+    device &= 0x1FFFFFFF;
+    if (device < 0x08000000) /* (given as a distance from the start of the game) */
+        device += 0x10000000;
+    if (device >= SRAM_PLACE && device < SRAM_PLACE + 0x08000000) {
+        uint32_t offset = (device - SRAM_PLACE) & (SRAM_SIZE - 1);
+        if (size > SRAM_SIZE - offset)
+            size = SRAM_SIZE - offset;
+        if (to_cartridge) {
+            memcpy(sram + offset, guest(memory, size), size);
+            save_sram();
+        } else {
+            memcpy(guest(memory, size), sram + offset, size);
+        }
+        return;
+    }
+    uint32_t rom_address = device - 0x10000000;
+    if (to_cartridge)
+        return; /* the game itself cannot be written to */
     if (rom_address > rom_size || size > rom_size - rom_address)
         fatal("read past the end of the ROM", rom_address);
-    memcpy(guest(destination, size), rom + rom_address, size);
+    memcpy(guest(memory, size), rom + rom_address, size);
     dma_count++, dma_bytes += size;
+    if (getenv("SHOW_READS")) /* for working out where a game keeps its code */
+        fprintf(stderr, "read %ld: ROM 0x%06X -> 0x%08X, 0x%X bytes\n", frames, rom_address, memory, size);
+}
+
+void hle_osPiStartDma(Context *ctx) {
+    uint32_t request = ARG0, reply_queue = STACK_ARG(6);
+    cart_copy(ARG3, STACK_ARG(4), STACK_ARG(5), ARG2 != 0);
     queue_put(reply_queue, request, 0);
     RETURN(0);
     preempt_check();
+}
+
+/* On the console a "PI manager" thread does the copying: the functions
+ * games call only post a request on its queue and it answers when done.
+ * We do not run that thread, and usually stand in for the functions
+ * instead (above). But there are several of them, in several versions,
+ * and we do not recognise every one; an unrecognised one runs as the
+ * game's own code and posts its request as on the console. So we also
+ * stand in for the manager: whatever lands on its queue is carried out on
+ * the spot. A request is a small record: its kind at +0, the queue to
+ * answer on at +4, the memory address at +8, the cartridge address at +0xC,
+ * the size at +0x10, and for the newer kinds which part of the cartridge
+ * (a "handle", whose own address is at its +0xC) at +0x14. */
+void hle_osCreatePiManager(Context *ctx) {
+    pi_command_queue = ARG1;
+#ifdef ADDR___osPiDevMgr
+    /* The library's own note that the manager exists: "running" at +0, its
+     * queue at +8. The cartridge functions give up if it says not running. */
+    w32(ADDR___osPiDevMgr, 1);
+    w32(ADDR___osPiDevMgr + 8, ARG1);
+#endif
+}
+
+/* One request record, carried out at once; see run_pi_manager. */
+static void do_pi_request(uint32_t request, uint32_t handle, int to_cartridge) {
+    uint32_t device = g32(request + 0xC);
+    if (handle >= 0x80000000u && handle < 0x80800000u - 0x10)
+        device = (g32(handle + 0xC) | device) & 0x1FFFFFFF;
+    cart_copy(device, g32(request + 8), g32(request + 0x10), to_cartridge);
+    queue_put(g32(request + 4), request, 0);
+}
+/* osEPiStartDma(handle, request, direction): the newer way to ask. */
+void hle_osEPiStartDma(Context *ctx) {
+    do_pi_request(ARG1, ARG0, ARG2 != 0);
+    RETURN(0);
+    preempt_check();
+}
+
+static void run_pi_manager(void) {
+    while (g32(MQ_VALID(pi_command_queue)) > 0) {
+        uint32_t first = g32(MQ_FIRST(pi_command_queue)), capacity = g32(MQ_CAPACITY(pi_command_queue));
+        uint32_t request = g32(g32(MQ_MESSAGES(pi_command_queue)) + 4 * first);
+        w32(MQ_FIRST(pi_command_queue), (first + 1) % capacity);
+        w32(MQ_VALID(pi_command_queue), g32(MQ_VALID(pi_command_queue)) - 1);
+        if (request < 0x80000000u || request >= 0x80800000u)
+            continue;
+        uint32_t kind = g32(request) >> 16;
+        if (kind == 15 || kind == 16) /* the newer kinds: relative to a handle */
+            do_pi_request(request, g32(request + 0x14), kind == 16);
+        else if (kind == 11 || kind == 12)
+            do_pi_request(request, 0, kind == 12);
+        else
+            queue_put(g32(request + 4), request, 0);
+    }
 }
 
 /* ---- Free camera ----------------------------------------------------------------
@@ -514,11 +721,24 @@ static float camera_distance_now; /* how far away it actually is: host_camera.di
 static float camera_game_facing;  /* the direction the game's own camera faces */
 static float camera_test_turn;    /* for testing: start turned this far to the right (--look) */
 
-/* Where the character is, if the game's file can tell us. */
+/* For games whose file does not say where the character is: 1 = circle
+ * whatever the game's camera is looking at (a guess, see gfx_guess_focus);
+ * 0 = just turn the view on the spot. A setting under Controls. */
+static int camera_circles = 1;
+/* Should "up" on the stick mean "away from me as I now see it"? Right for
+ * games where you steer a character relative to the camera; wrong for ones
+ * where you steer a vehicle, or look through the character's eyes. */
+static int stick_follows_camera;
+static float camera_nearest = 300, camera_farthest = 2500;
+
+/* Where the character is: from the game's file if it can tell us, and
+ * otherwise our best guess. */
 static int camera_focus(float focus[3]) {
     static Context ctx;
     ctx.ram = ram;
-    return game_focus && game_focus(&ctx, focus);
+    if (game_focus)
+        return game_focus(&ctx, focus);
+    return camera_circles && gfx_guess_focus(focus);
 }
 
 /* Is the game paused, or showing a menu of its own? Then the sticks are for
@@ -529,8 +749,8 @@ static int camera_paused(void) {
     return game_paused && game_paused(&ctx);
 }
 
-#define CAMERA_NEAREST 300
-#define CAMERA_FARTHEST 2500
+#define CAMERA_NEAREST camera_nearest
+#define CAMERA_FARTHEST camera_farthest
 
 /* Make the free camera the one in use, if it is not already. It starts
  * from exactly where the game's camera is, so that the picture does not
@@ -540,6 +760,11 @@ static int camera_take_over(const float focus[3]) {
         return 1;
     if (!gfx_game_camera(focus, &host_camera.yaw, &host_camera.pitch, &host_camera.distance, &camera_game_facing))
         return 0;
+    if (!game_focus) {
+        /* Games measure their worlds in different units, so how near and
+         * far the camera may go is set from where the game had it. */
+        camera_nearest = host_camera.distance / 4, camera_farthest = host_camera.distance * 6;
+    }
     host_camera.distance = host_camera.distance < CAMERA_NEAREST ? CAMERA_NEAREST
                            : host_camera.distance > CAMERA_FARTHEST ? CAMERA_FARTHEST : host_camera.distance;
     camera_distance_now = host_camera.distance;
@@ -551,7 +776,7 @@ static int camera_take_over(const float focus[3]) {
 /* Can the player move the free camera at this moment? */
 static int camera_usable(void) {
     float focus[3];
-    return game_focus && !camera_paused() && camera_focus(focus);
+    return !camera_paused() && camera_focus(focus);
 }
 
 /* The player moved the camera nearer (a factor below 1) or farther. */
@@ -569,7 +794,7 @@ static void zoom_camera(float factor) {
  * the simple look-around). */
 static int turn_camera(float right, float down) {
     float focus[3];
-    if (!game_focus)
+    if (!game_focus && !camera_circles)
         return 0;
     if (camera_paused())
         return 1; /* stays exactly as it is */
@@ -607,10 +832,11 @@ static void camera_before_drawing(void) {
         /* Come in at once when a wall is in the way; drift back out
          * gently when it no longer is, so the view does not lurch. */
         float wanted = host_camera.distance < host_camera.room ? host_camera.distance : host_camera.room;
+        float step = game_focus ? 25 : host_camera.distance * 0.03f;
         if (wanted < camera_distance_now)
             camera_distance_now += (wanted - camera_distance_now) * 0.6f;
         else
-            camera_distance_now = wanted < camera_distance_now + 25 ? wanted : camera_distance_now + 25;
+            camera_distance_now = wanted < camera_distance_now + step ? wanted : camera_distance_now + step;
     }
     gfx_set_free_camera(on, host_camera.yaw, host_camera.pitch, camera_distance_now, focus);
     if (on && getenv("CAMERA_TEST")) /* for testing: say what the camera is doing */
@@ -621,6 +847,25 @@ static void camera_before_drawing(void) {
 /* ...and afterwards, collect what the game's file needs for the next one. */
 static void camera_after_drawing(void) {
     float focus[3], unused;
+    /* In a game we know nothing about, we cannot tell when it starts a
+     * scene of its own (a replay, a results screen). What we can see is
+     * its camera suddenly being somewhere else: a "cut", as in a film. Our
+     * camera was set up for the shot before, so at a cut we hand the
+     * camera back to the game, until the player next moves it. */
+    static float before[3];
+    static int have_before;
+    float place[3];
+    if (gfx_game_camera_place(place)) {
+        float moved = 0;
+        for (int i = 0; i < 3; i++)
+            moved += (place[i] - before[i]) * (place[i] - before[i]);
+        if (!game_focus && host_camera.on && have_before && sqrtf(moved) > host_camera.distance * 1.5f)
+            host_camera.on = 0;
+        memcpy(before, place, sizeof before);
+        have_before = 1;
+    } else {
+        have_before = 0;
+    }
     gfx_view_back(host_view_back);
     if (camera_focus(focus))
         gfx_game_camera(focus, &unused, &unused, &unused, &camera_game_facing);
@@ -646,26 +891,88 @@ static int sound_volume = 10; /* 0 to 10: tenths of full volume */
 static int fast_forward;      /* is the fast-forward button held? */
 static int fast_speed = 4;    /* how many times normal speed that is; 0 = as fast as the PC can go */
 
+/* Which dialect of drawing commands does this chip program understand?
+ * Programs from F3DEX onwards carry their name and version as text in
+ * their data, like "RSP Gfx ucode F3DEX       fifo 2.08". The earliest say
+ * only "RSP SW Version: 2.0D", and those we tell apart by a checksum of the
+ * program itself. A game may switch between programs, so we look every
+ * time, but remember the answer for each. */
+#define WAVE_RACE_PROGRAM 0xE3AF6C41u /* Wave Race 64 (USA) */
+static int graphics_dialect(uint32_t program, uint32_t data) {
+    static struct { uint32_t program, data; int dialect; } known[8];
+    static int count;
+    for (int i = 0; i < count; i++)
+        if (known[i].program == program && known[i].data == data)
+            return known[i].dialect;
+
+    int dialect = GFX_FAST3D;
+    char name[64] = "(no name)";
+    const char *text = (const char *)guest(data, 0x800);
+    for (int i = 0; i + 40 < 0x800; i++) {
+        if (memcmp(text + i, "RSP Gfx ucode ", 14))
+            continue;
+        memcpy(name, text + i + 14, 40), name[40] = 0;
+        /* The version number is the first thing that looks like "N.NN". */
+        double version = 0;
+        for (const char *p = name; *p; p++)
+            if (p[0] >= '0' && p[0] <= '9' && p[1] == '.' && p[2] >= '0' && p[2] <= '9') {
+                version = atof(p);
+                break;
+            }
+        dialect = version >= 2 ? GFX_F3DEX2 : GFX_F3DEX;
+        break;
+    }
+    uint32_t sum = 0;
+    const uint8_t *code = guest(program, 0x1000);
+    for (int i = 0; i < 0x1000; i++)
+        sum = sum * 31 + code[i];
+    if (sum == WAVE_RACE_PROGRAM)
+        dialect = GFX_F3DWAVE;
+    if (getenv("SHOW_GRAPHICS"))
+        fprintf(stderr, "graphics program at 0x%08X: \"%s\", checksum 0x%08X, dialect %d\n", program, name, sum,
+                dialect);
+    if (count < 8)
+        known[count].program = program, known[count].data = data, known[count++].dialect = dialect;
+    return dialect;
+}
+
+
 void hle_osSpTaskLoad(Context *ctx) { (void)ctx; }
-void hle_osSpTaskStartGo(Context *ctx) {
-    uint32_t type = g32(ARG0); /* 1 = graphics, 2 = audio */
+/* An address inside a task may be given as the CPU sees it (0x80...) or as
+ * the chips see it (counted from the start of memory). */
+static uint32_t as_cpu_address(uint32_t address) { return address < RAM_SIZE ? address | 0x80000000u : address; }
+
+/* Carry out a task for the signal chip. "task" is the game's 64-byte
+ * description of it: its kind at +0, the chip program at +0x10 and its
+ * data at +0x18, and the list of commands at +0x30 (length at +0x34). */
+static void run_task(const uint8_t *task) {
+#define FIELD(offset) ((uint32_t)task[offset] << 24 | (uint32_t)task[(offset) + 1] << 16 | (uint32_t)task[(offset) + 2] << 8 | task[(offset) + 3])
+#define POINTER(offset) as_cpu_address(FIELD(offset))
+    uint32_t type = FIELD(0); /* 1 = graphics, 2 = audio */
     if (type == 1) {
+        /* Drawing a picture took the console a good part of a refresh, and
+         * a few games count on that to set their pace rather than waiting
+         * for the refresh itself. Ours takes no time at all, so a game
+         * that asks for several pictures within one refresh is made to
+         * wait for the next. */
+        static long drawn_at_frame = -1;
+        static int drawn_this_frame;
+        drawn_this_frame = drawn_at_frame == frames ? drawn_this_frame + 1 : 1;
+        drawn_at_frame = frames;
+        if (drawn_this_frame > 3 && current) {
+            next_frame();
+            if (max_frames >= 0 && frames >= max_frames)
+                exit(0);
+            drawn_at_frame = frames, drawn_this_frame = 1;
+        }
         graphics_tasks++;
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
         /* Which dialect of drawing commands? The chip program's data block
          * (+0x18) carries its name as text. */
-        static int dialect_known;
-        if (!dialect_known) {
-            const char *data = (const char *)guest(g32(ARG0 + 0x18), 0x800);
-            int f3dex = 0;
-            for (int i = 0; i + 5 < 0x800; i++)
-                f3dex |= !memcmp(data + i, "F3DEX", 5) || !memcmp(data + i, "F3DLX", 5);
-            gfx_set_extended(f3dex);
-            dialect_known = 1;
-        }
+        gfx_set_dialect(graphics_dialect(POINTER(0x10), POINTER(0x18)));
         camera_before_drawing();
-        int made = gfx_run(g32(ARG0 + 0x30), smooth_motion); /* +0x30: the display list */
+        int made = gfx_run(POINTER(0x30), smooth_motion);
         camera_after_drawing();
         shown_count = shown_next = 0;
         if (made == 2)
@@ -680,15 +987,18 @@ void hle_osSpTaskStartGo(Context *ctx) {
             second_draw_worst = ms;
         if (ms > draw_ms_worst)
             draw_ms_worst = ms;
-    } else {
+    } else if (type == 2) {
         audio_tasks++;
-        /* +0x30/+0x34: the command list; +0x18/+0x1C: the chip program's data */
-        audio_run(g32(ARG0 + 0x30), g32(ARG0 + 0x34), g32(ARG0 + 0x18), g32(ARG0 + 0x1C));
+        audio_run(POINTER(0x30), FIELD(0x34), POINTER(0x18), FIELD(0x1C));
     }
     post_event(EVENT_SP);
     if (type == 1)
         post_event(EVENT_DP);
+#undef FIELD
+#undef POINTER
 }
+void hle_osSpTaskStartGo(Context *ctx) { run_task(guest(ARG0, 0x40)); }
+
 void hle_osSpTaskYield(Context *ctx) { (void)ctx; }
 void hle_osSpTaskYielded(Context *ctx) { RETURN(0); }
 
@@ -710,29 +1020,33 @@ static SDL_AudioDeviceID audio_device;
 #endif
 static int headless;
 
-void hle_osAiSetFrequency(Context *ctx) {
+static void open_sound(int frequency) {
 #ifdef USE_SDL
     if (!headless && !audio_device && SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
         SDL_AudioSpec want = {0};
-        want.freq = (int)ARG0, want.format = AUDIO_S16SYS, want.channels = 2, want.samples = 512;
+        want.freq = frequency, want.format = AUDIO_S16SYS, want.channels = 2, want.samples = 512;
         audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
         if (audio_device)
             SDL_PauseAudioDevice(audio_device, 0);
         else
             fprintf(stderr, "host: no sound: %s\n", SDL_GetError());
     }
+#else
+    (void)frequency;
 #endif
+}
+void hle_osAiSetFrequency(Context *ctx) {
+    open_sound((int)ARG0);
     RETURN(ARG0);
 }
-void hle_osAiSetNextBuffer(Context *ctx) {
-    uint32_t size = ARG1 & ~3u;
-    if (size == 0 || size > 0x8000) {
-        RETURN(0);
+/* Hand a block of finished sound to the sound card. */
+static void play_sound(uint32_t address, uint32_t size) {
+    size &= ~3u;
+    if (size == 0 || size > 0x8000)
         return;
-    }
     /* The game's samples are big-endian; the PC wants them the other way. */
     static int16_t samples[0x4000];
-    const uint8_t *source = guest(ARG0, size);
+    const uint8_t *source = guest(address, size);
     for (uint32_t i = 0; i < size / 2; i++)
         samples[i] = (int16_t)(source[i * 2] << 8 | source[i * 2 + 1]);
     if (wav_file)
@@ -759,6 +1073,9 @@ void hle_osAiSetNextBuffer(Context *ctx) {
             sound_skipped++;
     }
 #endif
+}
+void hle_osAiSetNextBuffer(Context *ctx) {
+    play_sound(ARG0, ARG1);
     RETURN(0);
 }
 void hle_osAiGetLength(Context *ctx) {
@@ -793,8 +1110,12 @@ void hle_osAiGetStatus(Context *ctx) { RETURN(0); }
 static uint16_t pad_buttons;
 static int8_t pad_x, pad_y;
 
-#define EEPROM_SIZE 512
+/* The save chip comes in two sizes, 512 bytes and 2048. The game does not
+ * choose: it asks the chip which it is. Which one a game's cartridge had is
+ * something the tools look up (see profiles.py) and tell us with --eeprom. */
+#define EEPROM_SIZE 2048
 static uint8_t eeprom[EEPROM_SIZE];
+static int eeprom_size = 512;
 static const char *save_path;
 static const char *settings_path;
 static const char *states_path;
@@ -813,17 +1134,43 @@ static void say(const char *text) {
 static void save_eeprom(void) {
     FILE *file = save_path ? fopen(save_path, "wb") : NULL;
     if (file) {
-        fwrite(eeprom, 1, EEPROM_SIZE, file);
+        fwrite(eeprom, 1, (size_t)eeprom_size, file);
+        fclose(file);
+    }
+}
+
+/* The battery-backed memory is kept in a file of its own beside the save
+ * chip's: the same name, ending in .sra. */
+static const char *sram_path(void) {
+    static char path[600];
+    if (!save_path)
+        return NULL;
+    snprintf(path, sizeof path - 5, "%s", save_path);
+    char *dot = strrchr(path, '.');
+    strcpy(dot && !strchr(dot, '/') ? dot : path + strlen(path), ".sra");
+    return path;
+}
+static void save_sram(void) {
+    FILE *file = sram_path() ? fopen(sram_path(), "wb") : NULL;
+    if (file) {
+        fwrite(sram, 1, SRAM_SIZE, file);
         fclose(file);
     }
 }
 
 /* Answer one request. channel 0-3 are the controller ports, 4 the save
  * chip. Returns 0 if nothing is connected there. */
+extern int host_trace;
 static int pif_request(int channel, const uint8_t *request, int request_size, uint8_t *answer, int answer_size) {
     if (request_size < 1)
         return 0;
     uint8_t command = request[0];
+    if (host_trace) {
+        static int said[8][256];
+        if (!said[channel & 7][command]++)
+            fprintf(stderr, "trace %ld: controller port %d asked command 0x%02X (sends %d, wants %d back)\n", frames_now(), channel,
+                    command, request_size, answer_size);
+    }
     if (channel == 0) {
         if ((command == 0x00 || command == 0xFF) && answer_size >= 3) { /* what are you? */
             answer[0] = 0x05, answer[1] = 0x00; /* a standard controller */
@@ -839,14 +1186,14 @@ static int pif_request(int channel, const uint8_t *request, int request_size, ui
     }
     if (channel == 4) {
         if ((command == 0x00 || command == 0xFF) && answer_size >= 3) {
-            answer[0] = 0x00, answer[1] = 0x80, answer[2] = 0x00; /* the 512-byte kind */
+            answer[0] = 0x00, answer[1] = eeprom_size > 512 ? 0xC0 : 0x80, answer[2] = 0x00; /* which size */
             return 1;
         }
-        if (command == 0x04 && request_size >= 2 && answer_size >= 8 && request[1] < EEPROM_SIZE / 8) {
+        if (command == 0x04 && request_size >= 2 && answer_size >= 8 && request[1] < eeprom_size / 8) {
             memcpy(answer, eeprom + request[1] * 8, 8); /* read one 8-byte block */
             return 1;
         }
-        if (command == 0x05 && request_size >= 10 && answer_size >= 1 && request[1] < EEPROM_SIZE / 8) {
+        if (command == 0x05 && request_size >= 10 && answer_size >= 1 && request[1] < eeprom_size / 8) {
             memcpy(eeprom + request[1] * 8, request + 2, 8); /* write one block */
             answer[0] = 0;
             save_eeprom();
@@ -929,8 +1276,183 @@ void hle_osVirtualToPhysical(Context *ctx) {
     uint8_t *p = mapped(address, 1);
     RETURN(p ? (uint32_t)(p - ram) : 0xFFFFFFFFu);
 }
+/* ---- The console's hardware, seen from code we did not replace ----------------
+ * Most games only reach the hardware through the OS library, which we stand
+ * in for. Some also look at it directly: "is the graphics chip busy?",
+ * "which line is the TV drawing?". Hardware is controlled through
+ * "registers" at fixed addresses from 0xA4000000 up. We keep a small
+ * pretend copy of each group and fill in answers that mean "idle, nothing
+ * pending", which is what the game is waiting to see. What the game writes
+ * there lands in the copy and is otherwise ignored. */
+static uint8_t hardware[16][0x40]; /* one row per group of registers */
+static uint8_t hardware_spare[0x2000]; /* the chip's own small memory (0xA4000000) */
+
+static void set_register(int group, int offset, uint32_t v) {
+    uint8_t *p = hardware[group] + offset;
+    p[0] = (uint8_t)(v >> 24), p[1] = (uint8_t)(v >> 16), p[2] = (uint8_t)(v >> 8), p[3] = (uint8_t)v;
+}
+
+/* A few registers are orders rather than questions: writing a length to
+ * the cartridge port means "copy that much from the cartridge now". The
+ * OS library normally does this for a game and we stand in for the
+ * library; but some games, and library versions we do not recognise, write
+ * the registers themselves. We cannot see the moment of writing (it is a
+ * plain write to memory, in our pretend copy), so we look afterwards:
+ * each order register holds a marker meaning "nothing asked", and when one
+ * holds something else we carry the order out and announce it finished,
+ * just as the hardware would with an interrupt. Returns 1 if it did
+ * anything. */
+#define NOTHING_ASKED 0xFFFFFFFFu
+enum { EVENT_AI = 6, EVENT_PI = 8 };
+static uint32_t get_register(int group, int offset) {
+    const uint8_t *p = hardware[group] + offset;
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+static void pif_process(void);
+
+static int hardware_poll(void) {
+    static int ready;
+    int did = 0;
+    if (!ready) {
+        ready = 1;
+        set_register(6, 0x08, NOTHING_ASKED), set_register(6, 0x0C, NOTHING_ASKED);
+        set_register(8, 0x04, NOTHING_ASKED), set_register(8, 0x10, NOTHING_ASKED);
+        set_register(0, 0x08, NOTHING_ASKED), set_register(0, 0x0C, NOTHING_ASKED);
+        set_register(0, 0x10, 1);
+    }
+    /* Cartridge port: copy from the cartridge into memory. */
+    uint32_t length = get_register(6, 0x0C);
+    if (length != NOTHING_ASKED) {
+        uint32_t to = get_register(6, 0x00) & 0xFFFFFF, from = get_register(6, 0x04) & 0x0FFFFFFF;
+        uint32_t size = (length & 0xFFFFFF) + 1;
+        if (to < RAM_SIZE && size <= RAM_SIZE - to && from < rom_size && size <= rom_size - from) {
+            memcpy(ram + to, rom + from, size);
+            dma_count++, dma_bytes += size;
+            if (getenv("SHOW_READS"))
+                fprintf(stderr, "read %ld: ROM 0x%06X -> 0x%08X, 0x%X bytes (by the game itself)\n", frames, from,
+                        to | 0x80000000u, size);
+        }
+        set_register(6, 0x0C, NOTHING_ASKED);
+        post_event(EVENT_PI);
+        did = 1;
+    }
+    if (get_register(6, 0x08) != NOTHING_ASKED) { /* ...or the other way: nothing to write to */
+        set_register(6, 0x08, NOTHING_ASKED);
+        post_event(EVENT_PI);
+        did = 1;
+    }
+    /* Controller port: hand a block of requests to the controller chip, or
+     * collect its answers. */
+    if (get_register(8, 0x10) != NOTHING_ASKED) {
+        uint32_t from = get_register(8, 0x00) & 0xFFFFFF;
+        if (from <= RAM_SIZE - 64)
+            memcpy(pif, ram + from, 64);
+        set_register(8, 0x10, NOTHING_ASKED);
+        post_event(EVENT_SI);
+        did = 1;
+    }
+    if (get_register(8, 0x04) != NOTHING_ASKED) {
+        uint32_t to = get_register(8, 0x00) & 0xFFFFFF;
+        pif_process();
+        if (to <= RAM_SIZE - 64)
+            memcpy(ram + to, pif, 64);
+        set_register(8, 0x04, NOTHING_ASKED);
+        post_event(EVENT_SI);
+        did = 1;
+    }
+    /* Signal chip: copy into its own small memory (that is how a task's
+     * description reaches it), and "start running". */
+    length = get_register(0, 0x08);
+    if (length != NOTHING_ASKED) {
+        uint32_t to = get_register(0, 0x00) & 0x1FFF, from = get_register(0, 0x04) & 0xFFFFFF;
+        uint32_t size = (length & 0xFFF) + 1;
+        if (size <= sizeof hardware_spare - to && from < RAM_SIZE && size <= RAM_SIZE - from)
+            memcpy(hardware_spare + to, ram + from, size);
+        set_register(0, 0x08, NOTHING_ASKED);
+        did = 1;
+    }
+    if (get_register(0, 0x0C) != NOTHING_ASKED)
+        set_register(0, 0x0C, NOTHING_ASKED), did = 1;
+    uint32_t status = get_register(0, 0x10);
+    if (status != 1) {            /* (1 is what we show: "halted") */
+        set_register(0, 0x10, 1);
+        if ((status & 3) == 1) {  /* bit 0: stop being halted */
+            run_task(hardware_spare + 0xFC0);
+            did = 1;
+        }
+    }
+    /* Sound output: a block of sound to play. */
+    length = get_register(5, 0x04);
+    if (length != 0) {
+        uint32_t rate = get_register(5, 0x10);
+        open_sound(rate ? (int)(48681812 / (rate + 1)) : 32000);
+        play_sound(as_cpu_address(get_register(5, 0x00) & 0xFFFFFF), length & 0x3FFF8);
+        set_register(5, 0x04, 0);
+        post_event(EVENT_AI);
+        did = 1;
+    }
+    return did;
+}
+
+static uint8_t *hardware_at(uint32_t address, uint32_t size) {
+    uint32_t physical = address & 0x1FFFFFFF;
+    if (address >> 30 != 2)
+        return NULL;
+    static uint8_t nothing[8];
+    if (physical >= 0x10000000 && physical - 0x10000000 <= rom_size - size && size <= rom_size)
+        return rom + (physical - 0x10000000); /* the cartridge, read in place */
+    if (physical >= RAM_SIZE && physical < 0x03F00000) {
+        /* Past the end of memory. Games find out how much memory there is
+         * by writing further and further out and reading back; what they
+         * read here must not be what they wrote. */
+        memset(nothing, 0, sizeof nothing);
+        return nothing;
+    }
+    if ((physical >= 0x05000000 && physical < 0x10000000) || (physical >= 0x10000000 + rom_size && physical < 0x1FC00000) ||
+        physical >= 0x1FD00000) {
+        /* Where the 64DD disk drive and other add-ons would be. With none
+         * plugged in, every read gives all ones. */
+        memset(nothing, 0xFF, sizeof nothing);
+        return nothing;
+    }
+    if (physical >= 0x04000000 && physical < 0x04002000)
+        return hardware_spare + (physical - 0x04000000);
+    if (physical >= 0x1FC007C0 && physical <= 0x1FC00800 - size)
+        return pif + (physical - 0x1FC007C0); /* the controller chip's 64 bytes */
+    if (physical < 0x04040000 || physical >= 0x04900000 || (physical & 0xFFFFF) > 0x40 - size)
+        return NULL;
+    int group = (int)((physical - 0x04000000) >> 20); /* 0: signal chip ... 8: controllers */
+    if (host_trace) {
+        static uint32_t seen[64];
+        static int count;
+        int known = 0;
+        for (int i = 0; i < count; i++)
+            known |= seen[i] == physical;
+        if (!known && count < 64) {
+            seen[count++] = physical;
+            fprintf(stderr, "trace %ld: the game looks at hardware register 0x%08X itself\n", frames, physical);
+        }
+    }
+    if ((physical & 0xF0000) == 0x80000)
+        group = 15; /* 0x04080000: the signal chip's program counter */
+    hardware_poll(); /* whatever the game wrote last time */
+    static uint32_t line;
+    line = (line + 2) % 525;
+    set_register(0, 0x18, 0);             /* ...and not copying anything */
+    set_register(1, 0x0C, 0x0080);        /* drawing chip: idle, ready for commands */
+    set_register(3, 0x04, 0x02020102);    /* the console's version */
+    set_register(3, 0x08, 0);             /* no interrupts pending */
+    set_register(4, 0x10, line);          /* the TV line being drawn: keeps moving */
+    set_register(5, 0x0C, 0);             /* sound output: not full */
+    set_register(6, 0x10, 0);             /* cartridge port: not busy */
+    set_register(8, 0x18, 0);             /* controller port: not busy */
+    return hardware[group] + (physical & 0x3F);
+}
+
 uint8_t *host_mapped_memory(Context *ctx, uint32_t address, uint32_t size) {
     uint8_t *p = mapped(address, size);
+    if (!p)
+        p = hardware_at(address, size);
     if (!p)
         trap(ctx, "bad memory access", address);
     return p;
@@ -940,17 +1462,83 @@ void hle_osSetIntMask(Context *ctx) { RETURN(0); }
 
 /* ---- Things recompiled code needs from us ---------------------------------- */
 
+int host_interpret_loaded_code;
+int host_trace;
+void host_trace_call(Context *ctx, const char *name) {
+    static char last[40][96];
+    static int repeats[40];
+    int id = current ? current->id & 31 : 32;
+    char text[96];
+    snprintf(text, sizeof text, "%s(0x%X, 0x%X, 0x%X) from 0x%08X", name, (uint32_t)ctx->a0, (uint32_t)ctx->a1,
+             (uint32_t)ctx->a2, (uint32_t)ctx->ra);
+    if (!strcmp(text, last[id])) { /* the same call over and over is said once, with a count */
+        repeats[id]++;
+        return;
+    }
+    if (repeats[id])
+        fprintf(stderr, "  thread %d: ...%d more times\n", id, repeats[id]);
+    repeats[id] = 0;
+    strcpy(last[id], text);
+    fprintf(stderr, "trace %ld thread %d: %s\n", frames, id, text);
+}
+
 void trap(Context *ctx, const char *reason, uint32_t address) {
     fprintf(stderr, "\ngame stopped: %s at 0x%08X\n", reason, address);
     fprintf(stderr, "  thread %d, return address 0x%08X, frame %ld\n",
             current ? current->id : -1, (uint32_t)ctx->ra, frames);
     exit(1);
 }
+/* The CPU's own control registers ("coprocessor 0"). The OS library uses
+ * them for interrupts, which we do not have; what matters to us is the
+ * handful that describe an address mapping, for the games that set
+ * mappings up by hand instead of asking the library. */
+enum { C0_INDEX = 0, C0_RANDOM = 1, C0_ENTRYLO0 = 2, C0_ENTRYLO1 = 3, C0_PAGEMASK = 5, C0_COUNT = 9, C0_ENTRYHI = 10 };
+static uint64_t control[32];
+static uint32_t tlb_raw[TLB_ENTRIES][4]; /* each entry as the game wrote it: mask, hi, lo0, lo1 */
+
 uint64_t cop0_read(Context *ctx, int reg) {
-    (void)ctx, (void)reg;
-    return 0;
+    (void)ctx;
+    if (reg == C0_COUNT)
+        return (uint32_t)(ticks += 100);
+    if (reg == C0_RANDOM)
+        return (uint64_t)(31 - (ticks++ % 24));
+    return control[reg & 31];
 }
-void cop0_write(Context *ctx, int reg, uint64_t value) { (void)ctx, (void)reg, (void)value; }
+void cop0_write(Context *ctx, int reg, uint64_t value) {
+    (void)ctx;
+    control[reg & 31] = value;
+}
+
+void tlb_instruction(Context *ctx, int which) {
+    (void)ctx;
+    uint32_t index = (uint32_t)control[C0_INDEX] & 31;
+    if (which == 6) /* "write a random entry" */
+        index = (uint32_t)cop0_read(ctx, C0_RANDOM);
+    if (which == 2 || which == 6) {
+        /* An entry maps two neighbouring pages: the address they start at,
+         * their size, and where in real memory each of the two is. */
+        uint32_t mask = (uint32_t)control[C0_PAGEMASK], hi = (uint32_t)control[C0_ENTRYHI];
+        uint32_t lo[2] = {(uint32_t)control[C0_ENTRYLO0], (uint32_t)control[C0_ENTRYLO1]};
+        uint32_t page_size = ((mask >> 13) + 1) * 0x1000;
+        uint32_t start = hi & ~(page_size * 2 - 1);
+        tlb_raw[index][0] = mask, tlb_raw[index][1] = hi, tlb_raw[index][2] = lo[0], tlb_raw[index][3] = lo[1];
+        for (int half = 0; half < 2; half++) {
+            int valid = (lo[half] & 2) && start < 0x80000000u; /* (bit 1: "this page is in use") */
+            tlb[index * 2 + half].start = start + (uint32_t)half * page_size;
+            tlb[index * 2 + half].size = valid ? page_size : 0;
+            tlb[index * 2 + half].physical = ((lo[half] >> 6) & 0xFFFFF) << 12;
+        }
+    } else if (which == 1) {
+        control[C0_PAGEMASK] = tlb_raw[index][0], control[C0_ENTRYHI] = tlb_raw[index][1];
+        control[C0_ENTRYLO0] = tlb_raw[index][2], control[C0_ENTRYLO1] = tlb_raw[index][3];
+    } else if (which == 8) { /* which entry maps the address in EntryHi? */
+        uint32_t address = (uint32_t)control[C0_ENTRYHI] & 0xFFFFE000;
+        control[C0_INDEX] = 0x80000000u; /* "none" */
+        for (int i = 0; i < TLB_ENTRIES * 2; i++)
+            if (tlb[i].size && address - tlb[i].start < tlb[i].size)
+                control[C0_INDEX] = (uint64_t)(i / 2);
+    }
+}
 
 /* ---- Save states -----------------------------------------------------------------
  * A save state is a photograph of the whole machine at one moment: the
@@ -981,7 +1569,8 @@ static struct { void *data; size_t size; } state_parts[] = {
     {&turn_counter, sizeof turn_counter}, {events, sizeof events},
     {&vi_queue, sizeof vi_queue}, {&vi_message, sizeof vi_message}, {&framebuffer, sizeof framebuffer},
     {&loop_budget, sizeof loop_budget}, {&ticks, sizeof ticks}, {timers, sizeof timers},
-    {eeprom, sizeof eeprom}, {pif, sizeof pif},
+    {&video_records, sizeof video_records}, {eeprom, sizeof eeprom}, {pif, sizeof pif}, {sram, sizeof sram}, {&pi_command_queue, sizeof pi_command_queue},
+    {hardware, sizeof hardware}, {hardware_spare, sizeof hardware_spare}, {control, sizeof control}, {tlb_raw, sizeof tlb_raw},
 };
 #define STATE_PART_COUNT (sizeof state_parts / sizeof state_parts[0])
 
@@ -1123,7 +1712,6 @@ enum { /* the N64 controller's buttons, as bits */
 };
 #define STICK_MAX 80
 
-static long max_frames = -1;
 /* How much wider than the original the visible scene is. Game-specific code
  * (the games/ folder) uses it to keep objects at the sides from vanishing. */
 float host_view_widen = 1;
@@ -1191,7 +1779,7 @@ enum {
 
 enum {
     NOT_A_SHORTCUT, SHORTCUT_FAST, SHORTCUT_SAVE, SHORTCUT_LOAD, SHORTCUT_LOOK, SHORTCUT_CAMERA_RESET,
-    SHORTCUT_CAMERA_NEARER, SHORTCUT_CAMERA_FARTHER, SHORTCUT_COUNT
+    SHORTCUT_CAMERA_NEARER, SHORTCUT_CAMERA_FARTHER, SHORTCUT_CHEAT, SHORTCUT_PICTURE, SHORTCUT_COUNT
 };
 
 typedef struct {
@@ -1229,6 +1817,10 @@ static Binding bindings[] = {
     {"Reset camera", 0, 0, 0, SHORTCUT_CAMERA_RESET, USUAL(UNKNOWN, 2, PAD(RIGHTSTICK))},
     {"Camera nearer", 0, 0, 0, SHORTCUT_CAMERA_NEARER, USUAL(PAGEUP, 0, PAD(DPAD_UP))},
     {"Camera farther", 0, 0, 0, SHORTCUT_CAMERA_FARTHER, USUAL(PAGEDOWN, 0, PAD(DPAD_DOWN))},
+    /* Some ready-made cheats only act while this is held ("Press GS for..."). */
+    {"Cheat button", 0, 0, 0, SHORTCUT_CHEAT, USUAL(G, 0, PAD_NONE)},
+    /* Saves what is on screen as a picture file (see save_window_picture). */
+    {"Screenshot", 0, 0, 0, SHORTCUT_PICTURE, USUAL(F12, 0, PAD(LEFTSTICK))},
 };
 #define BINDING_COUNT ((int)(sizeof bindings / sizeof bindings[0]))
 
@@ -1357,7 +1949,7 @@ static void open_window(void) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    window = SDL_CreateWindow("Snake's Decompiler", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow("Snake's N64 decompiler", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               720 * w / h, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
     if (!window || !SDL_GL_CreateContext(window))
         fatal(SDL_GetError(), 0);
@@ -1494,8 +2086,9 @@ enum {
     ACT_WIDE, ACT_SMOOTH, ACT_SCALE, ACT_FULLSCREEN, ACT_TEXTURES, ACT_LOOK,
     ACT_SOUND, ACT_VOLUME, ACT_SOUND_BUFFER,
     ACT_BIND, ACT_USUAL_CONTROLS, /* ACT_BIND: choose a key or button for bindings[number] */
-    ACT_FREE_CAMERA, ACT_DPAD,
+    ACT_FREE_CAMERA, ACT_DPAD, ACT_CAMERA_STYLE, ACT_STICK_FOLLOWS,
     ACT_MOD, /* switch game_mods[number] */
+    ACT_CHEAT, /* change cheats[number] (the ready-made ones, see cheats.c) */
     ACT_SLOT, ACT_SAVE_STATE, ACT_LOAD_STATE, ACT_FAST_SPEED,
     ACT_LIMIT, ACT_STATS, ACT_DEFAULTS,
     ACT_RESET, ACT_QUIT,
@@ -1509,7 +2102,7 @@ typedef struct {
     int has_cells;
     char cells[DEVICE_COUNT][16];
 } Row;
-#define MAX_ROWS 80
+#define MAX_ROWS 420
 /* Where the cells start, counted in characters, and how wide the menu is
  * on pages with and without them. */
 static const int cell_column[DEVICE_COUNT] = {17, 30, 39};
@@ -1543,12 +2136,17 @@ static void save_settings(void) {
     fprintf(file, "state slot = %d\n", state_slot);
     fprintf(file, "free camera = %d\n", free_camera);
     fprintf(file, "dpad moves stick = %d\n", dpad_moves_stick);
+    fprintf(file, "camera circles = %d\n", camera_circles);
+    fprintf(file, "stick follows camera = %d\n", stick_follows_camera);
     for (int i = 0; i < BINDING_COUNT; i++)
         for (int device = 0; device < DEVICE_COUNT; device++)
             fprintf(file, "%s %s = %s\n", device_names[device], bindings[i].name,
                     code_name(device, bindings[i].now[device], 1));
     for (int i = 0; i < game_mod_count; i++)
         fprintf(file, "mod %s = %d\n", game_mods[i].name, game_mods[i].on);
+    for (int i = 0; i < cheat_count; i++)
+        if (cheats[i].on) /* (only the ones in use: the list can be long) */
+            fprintf(file, "cheat %s = %d\n", cheats[i].name, cheats[i].on);
     fclose(file);
 }
 
@@ -1613,9 +2211,12 @@ static void restore_defaults(void) {
     gfx_texture_smoothing = 1, stats_shown = 0;
     sound_muted = 0, sound_volume = 10, sound_cushion_ms = 100, speed_limit = 1, fast_speed = 4;
     reset_camera(), free_camera = 0, dpad_moves_stick = game_ignores_dpad;
+    camera_circles = 1, stick_follows_camera = game_stick_follows_camera;
     usual_controls(0), usual_controls(1);
     for (int i = 0; i < game_mod_count && i < 64; i++)
         game_mods[i].on = mods_at_start[i];
+    for (int i = 0; i < cheat_count; i++)
+        cheats[i].on = 0;
     apply_picture_settings();
 }
 
@@ -1641,6 +2242,8 @@ static int menu_rows(int page, Row *rows) {
             for (int i = 0; i < game_mod_count; i++)
                 if (game_mods[i].kind == page_kind[kind_page])
                     total++, on += game_mods[i].on;
+            for (int i = 0; kind_page == PAGE_CHEATS && i < cheat_count; i++)
+                total++, on += cheats[i].on != 0;
             if (total) /* a game with none of them does not get the page */
                 ROW(ACT_OPEN, kind_page, "%-26s%d of %d on", kind_page == PAGE_CHEATS ? "Cheats" : "Fixes", on, total);
         }
@@ -1666,6 +2269,10 @@ static int menu_rows(int page, Row *rows) {
         if (page == PAGE_CONTROLS)
             ROW(ACT_FREE_CAMERA, 0, "%-17s%-5s%s", "Free camera", free_camera ? "ON" : "off",
                 "right stick turns the view");
+        if (page == PAGE_CONTROLS && !game_focus)
+            ROW(ACT_CAMERA_STYLE, 0, "%-17s%s", "Camera style", camera_circles ? "circles the middle of the view" : "turns on the spot");
+        if (page == PAGE_CONTROLS)
+            ROW(ACT_STICK_FOLLOWS, 0, "%-17s%s", "Stick", stick_follows_camera ? "follows the free camera" : "as the game expects");
         if (page == PAGE_CONTROLS)
             ROW(ACT_DPAD, 0, "%-17s%s", "D-pad", dpad_moves_stick ? "also moves the control stick" : "N64 D-pad only");
         for (int i = 0; i < BINDING_COUNT; i++) {
@@ -1690,6 +2297,14 @@ static int menu_rows(int page, Row *rows) {
         for (int i = 0; i < game_mod_count; i++)
             if (game_mods[i].kind == page_kind[page])
                 ROW(ACT_MOD, i, "%-37.37s%s", game_mods[i].name, ON(game_mods[i].on));
+        /* Then the ready-made ones. One with choices shows the chosen
+         * value's name, cut to fit; left and right step through them. */
+        for (int i = 0; page == PAGE_CHEATS && i < cheat_count && count < MAX_ROWS - 2; i++) {
+            if (cheats[i].choice_count)
+                ROW(ACT_CHEAT, i, "%-24.24s <%.14s>", cheats[i].name, cheat_state(&cheats[i]));
+            else
+                ROW(ACT_CHEAT, i, "%-37.37s%s", cheats[i].name, cheat_state(&cheats[i]));
+        }
         break;
     case PAGE_SYSTEM:
         ROW(ACT_LIMIT, 0, "%-26s%s", "Speed limit (60 Hz)", ON(speed_limit));
@@ -1788,7 +2403,13 @@ static void menu_act(int action, int number, int direction, int selected) {
             reset_camera();
         break;
     case ACT_DPAD: dpad_moves_stick = !dpad_moves_stick; break;
+    case ACT_CAMERA_STYLE:
+        camera_circles = !camera_circles;
+        reset_camera(); /* start the other style from the game's own view */
+        break;
+    case ACT_STICK_FOLLOWS: stick_follows_camera = !stick_follows_camera; break;
     case ACT_MOD: game_mods[number].on ^= 1; break;
+    case ACT_CHEAT: cheat_change(&cheats[number], selected ? 0 : direction); break;
     case ACT_SLOT: state_slot = (state_slot - 1 + direction + 9) % 9 + 1; break;
     case ACT_FAST_SPEED: {
         static const int speeds[] = {2, 3, 4, 8, 0}; /* 0: no limit */
@@ -1824,7 +2445,7 @@ static void draw_overlay(void) {
     }
     if (!menu_open)
         return;
-    Row rows[MAX_ROWS];
+    static Row rows[MAX_ROWS];
     int row_count = menu_rows(menu_page, rows);
     int table = menu_page == PAGE_CONTROLS || menu_page == PAGE_SHORTCUTS;
     /* A page too long for the window shows a part of itself, moved along so
@@ -1872,6 +2493,15 @@ static void draw_overlay(void) {
                                              : "Press a gamepad button.  Backspace: none   Esc: cancel";
     else if (rows[menu_row].has_cells)
         help = "Arrows: choose   Enter: change   Esc: back";
+    char about[MENU_WIDTH - 6];
+    if (rows[menu_row].action == ACT_CHEAT) { /* what the cheat's author said about it, if anything */
+        const Cheat *cheat = &cheats[rows[menu_row].number];
+        const char *note = cheat->needs_button ? "Acts while the cheat button is held (see Shortcuts)"
+                           : cheat->note[0] ? cheat->note
+                           : cheat->choice_count ? "Left, right: choose   Enter: next" : help;
+        snprintf(about, sizeof about, "%s", note);
+        help = about;
+    }
     draw_text(x + letter, y + (visible + 2) * line + 2 * size, help, 150, 150, 150);
     if (visible < row_count) { /* say where we are in the list */
         char place[16];
@@ -1882,7 +2512,7 @@ static void draw_overlay(void) {
 
 /* The chosen cell was waiting for a press and got one. */
 static void finish_press(int device, int code) {
-    Row rows[MAX_ROWS];
+    static Row rows[MAX_ROWS];
     menu_rows(menu_page, rows);
     waiting_for_press = 0;
     if (device != menu_column || !rows[menu_row].has_cells)
@@ -1902,7 +2532,7 @@ static void overlay_key(SDL_Scancode key) {
             finish_press(DEVICE_KEY, (int)key);
         return;
     }
-    Row rows[MAX_ROWS];
+    static Row rows[MAX_ROWS];
     int row_count = menu_rows(menu_page, rows);
     if (key == SDL_SCANCODE_F3)
         menu_act(ACT_STATS, 0, 1, 0);
@@ -2078,6 +2708,8 @@ static void read_keyboard_and_gamepad(void) {
 
     /* Shortcuts. Fast forward and looking last as long as they are held;
      * the others act once, on the press. */
+    if (getenv("PICTURE_TEST") && frames == atol(getenv("PICTURE_TEST"))) /* for testing: a screenshot at this frame */
+        picture_wanted = 1;
     if (getenv("FAST_TEST")) /* for testing: hold fast forward from one frame to another */
         held_now[SHORTCUT_FAST] = frames >= atol(getenv("FAST_TEST")) && frames < atol(strchr(getenv("FAST_TEST"), ':') + 1);
     for (int i = 1; i < SHORTCUT_COUNT; i++) {
@@ -2089,13 +2721,20 @@ static void read_keyboard_and_gamepad(void) {
             state_request = STATE_LOAD;
         if (pressed && i == SHORTCUT_CAMERA_RESET)
             reset_camera();
+        if (pressed && i == SHORTCUT_PICTURE)
+            picture_wanted = 1;
         /* Held: the camera slides in or out, about a third of the way a second. */
-        if (held_now[i] && i == SHORTCUT_CAMERA_NEARER)
+        /* (In a game without a camera made for it, these only act once the
+         * free camera is switched on: the D-pad they are on to begin with
+         * is something many games use themselves.) */
+        int zoom_allowed = game_focus || free_camera || host_camera.on;
+        if (held_now[i] && i == SHORTCUT_CAMERA_NEARER && zoom_allowed)
             zoom_camera(0.98f);
-        if (held_now[i] && i == SHORTCUT_CAMERA_FARTHER)
+        if (held_now[i] && i == SHORTCUT_CAMERA_FARTHER && zoom_allowed)
             zoom_camera(1 / 0.98f);
     }
     fast_forward = shortcut_held[SHORTCUT_FAST];
+    cheat_button_held = shortcut_held[SHORTCUT_CHEAT];
 
     /* The right stick turns the camera, a little every refresh for as long
      * as it is pushed. It does so whenever the "Free camera" setting is on,
@@ -2113,6 +2752,27 @@ static void read_keyboard_and_gamepad(void) {
     }
     simple_look_yaw = look_yaw, simple_look_pitch = look_pitch;
     gfx_set_view(look_yaw, look_pitch, look_zoom);
+}
+
+/* The screenshot shortcut: write what the window is showing to a file in
+ * the screenshots folder, named after the game and numbered. Handy for
+ * showing someone exactly what went wrong. */
+static void save_window_picture(int w, int h) {
+    char path[700], text[64];
+    if (!pictures_path)
+        return;
+    int number = 1;
+    do
+        snprintf(path, sizeof path, "%s-%03d.bmp", pictures_path, number++);
+    while (access(path, F_OK) == 0 && number < 1000);
+    uint8_t *pixels = malloc((size_t)w * (size_t)h * 3);
+    glb_read_window(pixels, w, h);
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(pixels, w, h, 24, w * 3, SDL_PIXELFORMAT_RGB24);
+    int saved = surface && SDL_SaveBMP(surface, path) == 0;
+    SDL_FreeSurface(surface);
+    free(pixels);
+    snprintf(text, sizeof text, saved ? "Screenshot %d saved" : "Could not save a screenshot", number - 1);
+    say(text);
 }
 
 static void show_picture(int which) {
@@ -2135,6 +2795,10 @@ static void show_picture(int which) {
         fwrite(pixels, 3, (size_t)w * (size_t)h, file);
         fclose(file);
         free(pixels);
+    }
+    if (picture_wanted) {
+        picture_wanted = 0;
+        save_window_picture(w, h);
     }
     SDL_GL_SwapWindow(window);
 }
@@ -2181,7 +2845,7 @@ static void turn_stick(void) {
     /* While the view is turned at all, the game is told to leave nothing out. */
     host_view_widen = (host_camera.on || simple_look_yaw != 0 || simple_look_pitch != 0) ? 20 : base_view_widen;
     /* (Not while the game is paused: in its menus up must stay up.) */
-    if (turned != 0 && !camera_paused()) {
+    if (turned != 0 && stick_follows_camera && !camera_paused()) {
         float c = cosf(turned), s = sinf(turned), x = pad_x, y = pad_y;
         float turned_x = x * c + y * s, turned_y = y * c - x * s;
         pad_x = (int8_t)(turned_x > 127 ? 127 : turned_x < -127 ? -127 : turned_x);
@@ -2206,6 +2870,7 @@ static void apply_mods(void) {
         if (mod->every_frame)
             mod->every_frame(&ctx, pad_buttons);
     }
+    cheats_apply(ram, RAM_SIZE, cheat_button_held);
 }
 
 /* Read the settings file written by the menu (see save_settings). Each line
@@ -2236,7 +2901,14 @@ static void load_settings(int *scale, float *aspect) {
         else if (!strcmp(line, "volume")) sound_volume = value < 0 ? 0 : value > 10 ? 10 : value;
         else if (!strcmp(line, "sound buffer")) sound_cushion_ms = value < 25 ? 25 : value > 200 ? 200 : value;
         else if (!strcmp(line, "fast forward speed")) fast_speed = value < 0 || value > 8 ? 4 : value;
+        else if (!strcmp(line, "camera circles")) camera_circles = value != 0;
+        else if (!strcmp(line, "stick follows camera")) stick_follows_camera = value != 0;
         else if (!strcmp(line, "state slot")) state_slot = value < 1 || value > 9 ? 1 : value;
+        else if (!strncmp(line, "cheat ", 6)) {
+            for (int i = 0; i < cheat_count; i++)
+                if (!strcmp(line + 6, cheats[i].name))
+                    cheats[i].on = value < 0 || value > (cheats[i].choice_count ? cheats[i].choice_count : 1) ? 0 : value;
+        }
         else if (!strncmp(line, "mod ", 4)) {
             for (int i = 0; i < game_mod_count; i++)
                 if (!strcmp(line + 4, game_mods[i].name))
@@ -2359,17 +3031,39 @@ static void print_summary(void) {
     printf("\n");
     printf("  frames cut short by the loop budget: %ld (busiest refresh used %ld of %d)\n", forced_frames,
            most_loops, LOOP_BUDGET_PER_FRAME);
+    if (host_interpreted)
+        printf("  interpreted:       %ld instructions (code that was not translated ahead of time)\n",
+               host_interpreted);
     if (getenv("SHOW_THREADS")) /* for working out why a game is stuck */
         for (int i = 0; i < thread_count; i++)
             printf("  thread %d: priority %d, %s, queue 0x%08X (%u waiting), last call from 0x%08X\n",
                    threads[i].id, threads[i].priority,
-                   (const char *[]){"stopped", "ready", "waiting", "finished"}[threads[i].state],
+                   (const char *[]){"stopped", "ready", "waiting", "finished", "idle loop"}[threads[i].state],
                    threads[i].wait_queue,
                    threads[i].state == WAITING ? g32(MQ_VALID(threads[i].wait_queue)) : 0,
                    (uint32_t)threads[i].ctx.ra);
 }
 
 /* ---- Main ------------------------------------------------------------------ */
+
+/* A game that goes round and round without ever reaching the next screen
+ * refresh would leave us frozen with no explanation. A timer checks every
+ * few seconds that the refresh count is still going up. */
+static void watchdog(int signal_number) {
+    static long frames_before = -1;
+    static int strikes;
+    (void)signal_number;
+    strikes = frames == frames_before ? strikes + 1 : 0;
+    frames_before = frames;
+    if (strikes >= 4) {
+        static const char text[] = "\ngame stopped: it is stuck in a loop and no longer reaching the next frame\n";
+        if (write(2, text, sizeof text - 1)) {}
+        if (current)
+            fprintf(stderr, "  thread %d, last call from 0x%08X, frame %ld\n", current->id, (uint32_t)current->ctx.ra, frames);
+        exit(1);
+    }
+    alarm(5);
+}
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -2384,18 +3078,27 @@ int main(int argc, char **argv) {
     for (int i = 0; i < game_mod_count && i < 64; i++)
         mods_at_start[i] = game_mods[i].on;
 #endif
+    stick_follows_camera = game_stick_follows_camera;
     /* The remembered settings come first, so that anything given on the
      * command line afterwards wins over them. */
-    for (int i = 2; i + 1 < argc; i++)
+    for (int i = 2; i + 1 < argc; i++) {
         if (!strcmp(argv[i], "--settings"))
             settings_path = argv[i + 1];
+        if (!strcmp(argv[i], "--cheats")) /* may be given more than once */
+            cheats_load(argv[i + 1]);
+    }
     load_settings(&scale, &aspect);
     for (int i = 2; i < argc; i++) {
         const char *next = i + 1 < argc ? argv[i + 1] : "";
         if (!strcmp(argv[i], "--frames")) max_frames = atol(next), i++;
         else if (!strcmp(argv[i], "--scale")) scale = atoi(next), i++;
         else if (!strcmp(argv[i], "--save")) save_path = next, i++;
+#ifdef USE_SDL
+        else if (!strcmp(argv[i], "--pictures")) pictures_path = next, i++;
+#endif
+        else if (!strcmp(argv[i], "--eeprom")) eeprom_size = atoi(next) > 512 ? 2048 : 512, i++;
         else if (!strcmp(argv[i], "--settings")) i++; /* dealt with above */
+        else if (!strcmp(argv[i], "--cheats")) i++;   /* ...and so was this */
         else if (!strcmp(argv[i], "--states")) states_path = next, i++;
         else if (!strcmp(argv[i], "--headless")) headless = 1;
         else if (!strcmp(argv[i], "--wide")) aspect = 16.0f / 9;
@@ -2438,19 +3141,29 @@ int main(int argc, char **argv) {
     if (fread(rom, 1, rom_size, file) != rom_size)
         fatal("cannot read ROM", 0);
     fclose(file);
+    host_rom = rom;
 
     memset(eeprom, 0xFF, sizeof eeprom); /* a blank chip reads as all ones */
     file = save_path ? fopen(save_path, "rb") : NULL;
     if (file) {
-        if (fread(eeprom, 1, EEPROM_SIZE, file) != EEPROM_SIZE)
+        if (fread(eeprom, 1, (size_t)eeprom_size, file) != (size_t)eeprom_size)
             fprintf(stderr, "host: save file is short; missing part treated as blank\n");
+        fclose(file);
+    }
+    memset(sram, 0, sizeof sram);
+    file = sram_path() ? fopen(sram_path(), "rb") : NULL;
+    if (file) {
+        if (fread(sram, 1, SRAM_SIZE, file)) {}
         fclose(file);
     }
 
     /* What the console's boot code does before the game starts: copy the
      * first megabyte of game code into memory and leave a few facts about
      * the console at fixed addresses. */
-    ram = memory_at(RAM_PLACE, RAM_SIZE); /* arrives filled with zeros */
+    /* (With spare room after it: the renderer and the sound code copy
+     * blocks out of the game's memory at addresses and lengths the game
+     * gives, and a nonsense length near the end must not run off it.) */
+    ram = memory_at(RAM_PLACE, RAM_SIZE + RAM_SLACK); /* arrives filled with zeros */
     memcpy(guest(ENTRY_POINT, BOOT_LOAD_SIZE), rom + ENTRY_ROM_OFFSET, BOOT_LOAD_SIZE);
     w32(0x80000300, 1);          /* TV type: NTSC */
     w32(0x80000308, 0xB0000000); /* where the cartridge is mapped */
@@ -2461,7 +3174,7 @@ int main(int argc, char **argv) {
         fseek(wav_file, 44, SEEK_SET); /* leave room for the header, written at the end */
     gfx_init(ram, scale, aspect);
     host_view_widen = base_view_widen = aspect / (4.0f / 3);
-    if (look_test_yaw != 0 && game_focus) { /* for testing the free camera without a gamepad */
+    if (look_test_yaw != 0 && (game_focus || camera_circles)) { /* for testing the free camera without a gamepad */
         camera_test_turn = look_test_yaw;
     } else if (look_test_yaw != 0) { /* ...or the simple look-around */
         gfx_set_view(look_test_yaw, 0, 1);
@@ -2484,8 +3197,16 @@ int main(int argc, char **argv) {
         open_window();
 #endif
 
-    /* The start-up code runs as a thread of its own, above all others. */
-    Thread *boot = new_thread(0, 0, 1000, ENTRY_POINT);
+    host_trace = getenv("TRACE_OS") != NULL;
+    host_interpret_loaded_code = getenv("INTERPRET_LOADED") != NULL;
+    signal(SIGALRM, watchdog);
+    alarm(5);
+
+    /* The start-up code runs as a thread of its own, below all others: on
+     * the console it is not a thread at all, and the first real thread it
+     * starts takes over from it at once. (Many games end their start-up
+     * code with a loop that goes round forever, relying on exactly that.) */
+    Thread *boot = new_thread(0, 0, -1, ENTRY_POINT);
     make_runnable(boot);
 
     int idle_frames = 0;
@@ -2504,10 +3225,14 @@ int main(int argc, char **argv) {
         if (t) {
             idle_frames = 0;
             current = t;
+            calls_at_switch = host_calls;
             swapcontext(&scheduler, &t->uc);
+            t->calls += host_calls - calls_at_switch;
             current = NULL;
             continue;
         }
+        if (hardware_poll())
+            continue; /* something a thread was waiting for has now happened */
         /* Every thread is waiting, so the frame's work is done. Move time
          * forward to the next screen refresh and announce it. */
         next_frame();

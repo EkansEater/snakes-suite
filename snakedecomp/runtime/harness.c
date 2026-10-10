@@ -23,6 +23,8 @@ uint64_t cop0_read(Context *ctx, int reg) {
     return 0;
 }
 void cop0_write(Context *ctx, int reg, uint64_t value) { (void)ctx, (void)reg, (void)value; }
+void tlb_instruction(Context *ctx, int which) { (void)ctx, (void)which; }
+void interpret(Context *ctx, uint32_t pc) { trap(ctx, "function not recompiled", pc); }
 
 int main(int argc, char **argv) {
     if (argc != 4)

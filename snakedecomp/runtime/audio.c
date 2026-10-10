@@ -26,7 +26,13 @@
 #define GUARD 0x100         /* some commands read a little before their input */
 
 static uint8_t *ram;
-static uint8_t memory[GUARD + SCRATCH_SIZE + GUARD];
+/* A game whose sound program we do not know sends commands that mean
+ * something else to us, with lengths far beyond anything real. Rather than
+ * check every one, the working memory has room after it for the longest
+ * length a command can carry, so the worst a wrong command does is make
+ * noise. */
+#define SLACK 0x30000
+static uint8_t memory[GUARD + SCRATCH_SIZE + SLACK];
 static uint8_t *const scratch = memory + GUARD;
 
 /* Settings left behind by earlier commands for later ones to use. */
@@ -132,6 +138,11 @@ static void resample(int flags, uint32_t pitch, uint32_t memory_address) {
         in -= (get16(previous + 10) / 2) * 2;
     }
     in -= 8;
+    /* (The step back above comes from what the last call remembered. From
+     * a sound program we do not know, it can be anything; never let it
+     * take us out of our working memory.) */
+    if (in < memory + 16 || in > scratch + SCRATCH_SIZE)
+        in = memory + 16;
     uint32_t position = (uint16_t)get16(previous + 8); /* fraction of a sample, 16 bits */
     memcpy(in, previous, 8);
 
@@ -323,6 +334,8 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
                 state.dry_right = w0 & 0xFFFF, state.wet_left = w1 >> 16, state.wet_right = w1 & 0xFFFF;
             } else {
                 state.in = w0 & 0xFFFF, state.out = w1 >> 16, state.count = w1 & 0xFFFF;
+                if (state.count > 0x4000) /* (no real block of sound is this long) */
+                    state.count = 0x4000;
             }
             break;
         case 9: { /* volume settings, several kinds packed into one command */

@@ -491,3 +491,5 @@ int game_mod_count = sizeof game_mods / sizeof game_mods[0];
 
 /* Super Mario 64 does everything with the control stick, menus included. */
 int game_ignores_dpad = 1;
+/* Mario runs where the stick points, as seen by the camera. */
+int game_stick_follows_camera = 1;

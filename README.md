@@ -1,9 +1,18 @@
-# Snake's Decompiler
+# Snake's N64 decompiler
 
 Turns a Nintendo 64 game ROM into a program that runs directly on your PC,
 with no emulator. It reads the game's machine code, translates every function
 to C, compiles it, and runs it against stand-ins for the console's operating
 system, graphics chip, sound chip and controllers.
+
+You give it a ROM and it works out the rest for that game: which version of
+Nintendo's library the game was built with, which dialect of drawing
+commands it uses, where its code is, and which ready-made cheats exist for
+it. Each game gets its own menu with its own cheats, and every game gets a
+free camera.
+
+One point of wording: this tool *recompiles* rather than *decompiles*. It
+produces C that runs, not readable source like a hand-made decompilation.
 
 This is a learning project. It is not finished and it does not run every game.
 
@@ -12,12 +21,56 @@ own. Nothing in this project is, or contains, Nintendo's code or data.
 
 ## What works
 
+Checked on 63 ROMs with the `survey` command below, which runs each game by
+itself with no window, pressing Start and A now and then. "Looks right"
+means one or two screenshots looked right; nobody has played those games
+on this yet.
+
 | Game | State |
 |---|---|
-| Super Mario 64 (USA) | Playable: picture, sound, controls, saving |
-| Mario Kart 64 (USA) | Boots, title, menus, attract-mode race; not played further |
+| Super Mario 64 | Playable: picture, sound, controls, saving; its own free camera and its own cheats |
+| Wave Race 64 | Goes through its menus and into races under scripted button presses, with sound; general free camera, 12 ready-made cheats. Not yet played by a person |
+| Mario Kart 64 | The same: menus and a Grand Prix race under scripted presses; general free camera, 23 ready-made cheats. Not yet played by a person |
 
-Other games may start, or may stop with a line beginning `game stopped:`.
+**Start, and the picture looks right (17).** In play or a demo: Chameleon
+Twist, Duke Nukem: Zero Hour, Pokémon Snap, Quest 64, Rampage: World Tour,
+Road Rash 64, Star Fox 64, WCW Nitro. At a title, logo, menu or message
+screen: 007: The World Is Not Enough, Army Men: Air Combat, Army Men:
+Sarge's Heroes, Army Men: Sarge's Heroes 2, Cruis'n USA, Dr. Mario 64 (slow:
+its code is interpreted), Jet Force Gemini, Pokémon Puzzle League, Rampage
+2: Universal Tour.
+
+**Start, with faults in the picture (6).** Duke Nukem 64 (in a level, white
+patches), F-1 World Grand Prix (some wrong colours), Mario Golf (in play,
+garbled text),
+Pokémon Stadium (corrupted textures), Cruis'n Exotica (garbage), Resident
+Evil 2 (says "No Controller").
+
+**Run, but the screen stays black (6).** Diddy Kong Racing, NFL Blitz:
+Special Edition, NFL Blitz 2001, Pokémon Stadium 2, Star Wars Episode I:
+Racer, WCW vs. nWo: World Tour.
+
+**Stop during start-up, or never draw (30).** All-Star Baseball 2000 and
+2001, Banjo-Kazooie, Banjo-Tooie, Conker's Bad Fur Day, Cruis'n World,
+Donkey Kong 64, Doom 64, GoldenEye 007, Kirby 64, both Zeldas, Mario
+Tennis, NFL Blitz, NFL Blitz 2000, Paper Mario, Perfect Dark, both South
+Parks, Super Smash Bros., Tony Hawk's Pro Skater 3, all three Turoks, WCW
+Mayhem, WCW/nWo Revenge, WWF No Mercy, WWF WrestleMania 2000, Wetrix,
+Yoshi's Story. (One more, All-Star Baseball '99, is a zip file that could not be read.)
+
+Sound, saving and controls have not been checked in any game below the
+table.
+
+A game that stops prints a line beginning `game stopped:` saying where.
+To see how far every ROM in a folder gets, without opening a window:
+
+```bash
+python3 -m snakedecomp survey path/to/folder
+```
+
+It builds each game, runs it by itself for a while pressing Start now and
+then, and prints one line per game. Screenshots and the full output of each
+are kept under `build/survey/`. Your real saves are not touched.
 
 ## Requirements
 
@@ -36,7 +89,37 @@ Linux, with:
 ./play path/to/your-game.z64
 ```
 
-Or put ROMs in the `roms/` folder and run `./play` on its own. The first run
+The ROM can be a `.z64`, `.n64` or `.v64` file, or a `.zip` with one inside.
+
+### The game list
+
+```bash
+./play
+```
+
+With no ROM named, a window lists the games in the `roms/` folder
+(`./play some/folder` lists another folder). Choose one and it starts; quit
+the game and you are back at the list.
+
+| | Keyboard | Mouse | Gamepad |
+|---|---|---|---|
+| Move | Up, Down, Page Up, Page Down | pointer, wheel | D-pad or left stick; LB, RB a page |
+| Play | Enter | click | A or Start |
+| Look at the folder again | F5 | | Y |
+| Full screen | F11 | | |
+| Quit | Esc | close the window | B |
+
+Each game has a word in front saying how far it got when it was last tried
+(PLAYS, IN PLAY, STARTS, FAULTS, BLACK), and a line at the bottom saying
+more. Games are sorted best first. Two dots at the right mean the game has
+not been built yet, so its first start takes a minute or two; this builds
+every game in a folder ahead of time:
+
+```bash
+python3 -m snakedecomp build roms
+```
+
+A gamepad can be switched on after the list is open, wireless ones included. The first run
 of each game translates and compiles it, which takes a minute or two. Later
 runs start straight away.
 
@@ -65,17 +148,38 @@ plugged in. Gamepads can be connected at any time, including over Bluetooth.
 
 **Free camera.** It is off to begin with. Switch on "Free camera", the
 first row under Controls. The right stick then takes over the camera: it
-circles the character, stays where you put it, and stops at walls, floors
-and ceilings instead of going through them. The control stick moves
-relative to what you see. Click the right stick to hand the camera back to
-the game. (The C buttons then need other buttons, if you want them on the
-gamepad.) Holding the right mouse button and moving the mouse does the
-same. Page Up and Page Down (D-pad up and down on a gamepad, or the mouse
-wheel) move the camera nearer and farther; like everything else, those can
-be changed under Shortcuts. It turns most
+circles what you are playing and stays where you put it. Click the right
+stick to hand the camera back to the game. (The C buttons then need other
+buttons, if you want them on the gamepad.) Holding the right mouse button
+and moving the mouse does the same. Page Up and Page Down (D-pad up and
+down on a gamepad, or the mouse wheel) move the camera nearer and farther;
+like everything else, those can be changed under Shortcuts. It turns most
 smoothly with "Smooth motion (60 fps)" on; without it the view can only
-change 30 times a second, like the game. So far only Super Mario 64 has
-this; in other games the view simply turns on the spot.
+change 30 times a second, like the game.
+
+It works in every game, in one of two ways:
+
+- **Super Mario 64** has a camera made for it: the tool knows where Mario
+  is, the camera stops at walls, floors and ceilings, the stick moves Mario
+  relative to what you see, and the sky turns with you.
+- **Every other game** gets a general one. The tool finds the game's own
+  camera in what the game draws, guesses what it is looking at (usually
+  your character), and circles that. Two rows under Controls adjust it:
+  - "Camera style": circle the middle of the view, or just turn on the
+    spot (better for games seen through the character's eyes).
+  - "Stick": whether the control stick should follow the free camera. Leave
+    it "as the game expects" for racing and first-person games; switch it
+    to "follows the free camera" for games where you run a character
+    around, so that up on the stick is still "away from me".
+
+  The camera nearer and farther buttons start out on the gamepad's D-pad.
+  In these games they only act while the free camera is switched on, and
+  the game still sees the D-pad too; if a game needs its D-pad, give the
+  two shortcuts other buttons under Shortcuts.
+
+  The general camera does not know where walls are, and the game still
+  only draws what its own camera can see, so scenery can be missing when
+  you look somewhere the game did not expect.
 
 ### While playing
 
@@ -88,8 +192,8 @@ this; in other games the view simply turns on the spot.
   | Save states | Choose one of 9 slots, save, load |
   | Graphics | Widescreen, resolution, full screen, 60 fps smooth motion, smooth textures |
   | Sound | On/off, volume, buffer (raise it if the sound crackles) |
-  | Controls | Keyboard key, mouse button and gamepad button for each N64 button; free camera |
-  | Shortcuts | The same for fast forward, save state, load state, look, reset camera, camera nearer and farther |
+  | Controls | Keyboard key, mouse button and gamepad button for each N64 button; free camera and how it behaves |
+  | Shortcuts | The same for fast forward, save state, load state, look, reset camera, camera nearer and farther, cheat button, screenshot |
   | Cheats, Fixes | For games that have them (see below) |
   | System | Speed limit, fast forward speed, statistics, put every setting back to usual |
   | Reset game | Starts the game again from the beginning |
@@ -103,6 +207,8 @@ this; in other games the view simply turns on the spot.
   these to begin with, so that a slip of the thumb cannot undo your progress;
   choose them under Shortcuts. A gamepad button given to a shortcut stops
   doing its usual job in the game.
+- **F12** (click the left stick on a gamepad): screenshot. It is saved in
+  `screenshots/`, named after the game and numbered.
 - **F3**: live statistics (speed, drawing time, CPU and GPU use).
 - **F11**: full screen.
 - **Right mouse button + move**: look around. Wheel zooms, middle button
@@ -121,7 +227,7 @@ this; in other games the view simply turns on the spot.
 - `--scale N`: resolution, as a multiple of the console's 240 lines
 - `--stats`: start with the statistics showing
 
-Saved games are kept in `saves/`, one file per ROM.
+Saved games are kept in `saves/` (see "Saved games" below).
 
 ### Save states
 
@@ -137,16 +243,52 @@ from the game's own saving, with two things to know:
 
 ### Cheats and fixes
 
-| Game | Cheats | Fixes |
-|---|---|---|
-| Super Mario 64 (USA) | Infinite lives; infinite health; enemies cannot hurt Mario; no damage from falling; wing, metal and vanish cap, always; every jump is a triple jump; higher jumps; jump again in mid-air; low gravity; moon jump (hold L); giant Mario; tiny Mario; fast Mario | Keep objects visible at the edges of a widescreen picture |
+Every game's menu has its own Cheats page, filled in two ways.
 
-They are listed at the bottom of the game's file in
-`snakedecomp/runtime/games/`. A simple cheat is one line there: a name, an
-address in the game's memory, and the value to keep writing to it. Others
-are a few lines of C that run every frame, or that change one of the game's
-own functions; the file has examples of each, and
-`snakedecomp/runtime/mods.h` explains the three ways.
+**Ready-made cheats.** The tool comes with a public collection of
+"GameShark" codes (the one the mupen64plus emulator uses). When it builds a
+game it looks the ROM up by its checksums and takes that exact version's
+cheats, so Wave Race 64 gets "Always First Place" and Mario Kart 64 gets
+"Infinite Items". Most are on/off. Some have a list to choose from (which
+course, which item): left and right step through it. A few only act while
+the "Cheat button" is held (G on the keyboard; change it under Shortcuts).
+These were written by many people over many years for the real console;
+most work, a few do nothing or misbehave. Switching one off simply stops
+it.
+
+**Your own.** Put them in `cheats/<rom name>.txt` (for `roms/wr64.us.z64`
+that is `cheats/wr64.us.txt`), written the way the collection writes them:
+
+```
+cn Infinite Time
+ cd A note about it, shown under the menu (optional)
+ 801C2BFE 00FF
+```
+
+`cn` starts a cheat and gives its name; each line after it is a code: where
+in the game's memory, and the value to keep writing there.
+`snakedecomp/runtime/cheats.c` explains every kind of code.
+
+**Cheats made for one game.** Super Mario 64 also has cheats written
+specially for it, which can do what codes cannot (change how a jump works,
+not just a number): infinite lives and health, no fall damage, the three
+caps, triple jumps, higher jumps, mid-air jumps, low gravity, moon jump,
+giant, tiny and fast Mario. And one fix: keep objects visible at the edges
+of a widescreen picture. They live in `snakedecomp/runtime/games/NSME.c`;
+a file there named after another game's four-letter code does the same for
+that game, and `snakedecomp/runtime/mods.h` explains how.
+
+### Saved games
+
+Saved games are kept in `saves/`, one set of files per ROM. Cartridges
+saved in different ways and the tool handles these:
+
+| Kind | Handled | File |
+|---|---|---|
+| Save chip, small and large (EEPROM) | yes | `.eep` |
+| Battery memory (SRAM) | yes | `.sra` |
+| Flash memory | not yet | |
+| Controller Pak | not yet | |
 
 ## How it works
 
@@ -154,18 +296,36 @@ The tools are in `snakedecomp/`, and are meant to be read:
 
 | File | What it does |
 |---|---|
-| `rom.py` | Loads a ROM, reads its header, checks its checksum |
+| `rom.py` | Loads a ROM (any byte order, or zipped), reads its header, checks its checksum |
 | `mips.py` | Turns machine code into readable assembly |
 | `functions.py`, `program.py` | Find the code segments and where each function starts and ends |
-| `signatures.py` | Recognises the OS library's functions by fingerprint |
+| `libsigs.py`, `signatures.py` | Recognise the OS library's functions, whichever version the game has |
 | `recomp.py` | Translates each function to C |
-| `cpu.py`, `verify.py` | An interpreter, and a check of the translated C against it |
-| `runtime/host.c` | Stands in for the console's OS: threads, messages, timers, controllers, saves |
-| `runtime/gfx.c`, `gfx_gl.c` | The renderer: reads drawing commands, draws with OpenGL |
+| `cheats.py`, `profiles.py` | Find the game's ready-made cheats; the few facts that cannot be detected |
+| `survey.py` | Tries a whole folder of games and reports on each |
+| `launcher/launcher.c` | The game list window |
+| `cpu.py`, `verify.py` | An interpreter in Python, and a check of the translated C against it |
+| `runtime/host.c` | Stands in for the console: threads, messages, timers, controllers, saves, hardware registers |
+| `runtime/interp.c` | Runs code that could not be translated ahead of time, one instruction at a time |
+| `runtime/gfx.c`, `gfx_gl.c` | The renderer: reads drawing commands in four dialects, draws with OpenGL |
 | `runtime/audio.c` | Carries out the game's sound commands |
+| `runtime/cheats.c` | Carries out the ready-made cheats |
 | `tools/make_font.py` | Draws the menu's font into `runtime/font.h` |
-| `runtime/games/` | Changes made specially for one game, including its cheats and fixes |
-| `runtime/mods.h` | What a cheat or fix is made of |
+| `runtime/games/` | Changes made specially for one game |
+| `runtime/mods.h` | What a made-for-one-game cheat or fix is made of |
+
+Three ideas carry most of the weight:
+
+- **Translate what can be found, interpret the rest.** Code in the ROM is
+  translated to C ahead of time. Games also unpack code while running, or
+  keep several pieces that take turns at one address; whatever was not
+  translated is run by the interpreter straight from the game's memory.
+- **Stand in for the library, and for the hardware under it.** Where we
+  recognise a library function that talks to hardware, we do its job
+  ourselves. Where a game talks to the hardware directly, a pretend copy of
+  the hardware's registers answers it.
+- **Detect, do not configure.** Nothing has to be set up per game for it
+  to start.
 
 Other commands, for looking inside a ROM:
 
@@ -174,21 +334,48 @@ python3 -m snakedecomp info game.z64
 python3 -m snakedecomp functions game.z64
 python3 -m snakedecomp disasm game.z64 -n 20
 python3 -m snakedecomp recompile game.z64 --verify
+python3 -m snakedecomp run game.z64 --notes     (what could not be translated, and why)
 ```
+
+When a game misbehaves, these show what it is doing (set before `./play`):
+`TRACE_OS=1` prints every library call, `SHOW_READS=1` every read from the
+cartridge, `SHOW_GRAPHICS=1` the drawing dialect, `SHOW_CAMERA=1` how the
+game sets up its camera, `SHOW_THREADS=1` the threads when it stops.
+Two more switch on parts of the console's own start-up that are normally
+left out, which gets some stubborn games further: `OS_INIT=1` and
+`VI_INIT=1`.
 
 ## Known limits
 
 - Linux only.
+- Most games do not get as far as playing yet; see "What works".
+- Games that move code in and out of memory with the CPU's address mapping
+  (Turok 2, South Park, All-Star Baseball) do not start.
+- Games that keep their main code packed in the ROM (Dr. Mario 64, the
+  Banjo games, Perfect Dark) can only be interpreted, not translated, so
+  those that start run much more slowly.
+- Flash memory and Controller Pak saves are not there yet.
+- Sound has only been listened to in Super Mario 64 and Mario Kart 64. Games
+  that use a different sound program may be silent or wrong.
 - Widescreen keeps the HUD in the middle, and full-screen wipes do not cover
   the sides.
-- With the free camera, in places where the game only draws the room you
-  are in, the other rooms are missing if you look their way.
+- With the free camera, a game only draws what its own camera can see, so
+  things can be missing if you look elsewhere. (Super Mario 64 is told to
+  draw everything, but still only the room you are in.)
 - Smooth motion guesses the in-between pictures and can smear at camera cuts.
-- Only Super Mario 64 has cheats and fixes so far.
+- Code that is interpreted runs slower than translated code. The session
+  summary says how much was interpreted.
 - Save states do not survive a rebuild (see above).
 
 ## Credits
 
 - `snakedecomp/data/libultra.json` holds one-way hashes of OS library
   functions, used to recognise them. It contains no code.
+- `snakedecomp/data/n64sym.sig.gz` is the signature list of the
+  [n64sym](https://github.com/shygoo/n64sym) project by shygoo: checksums
+  of library functions from many SDK releases. MIT licence, in
+  `snakedecomp/data/n64sym-LICENSE.md`.
+- `snakedecomp/data/cheats.txt.gz` is the cheat list that comes with
+  [mupen64plus](https://mupen64plus.org/), written by Gent for Project64.
+  GPL version 2 or later; the notice is at the top of the file.
 - The menu font is generated from DejaVu Sans Mono Bold.

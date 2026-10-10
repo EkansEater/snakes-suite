@@ -46,6 +46,10 @@ extern int game_mod_count;
  * the gamepad's D-pad push the control stick (a setting under Controls). */
 extern int game_ignores_dpad;
 
+/* 1 if the player steers a character relative to the camera, so that with
+ * the free camera turned, the stick should be turned to match. */
+extern int game_stick_follows_camera;
+
 /* ---- The free camera (see "Free camera" in host.c) ----------------------------
  * What the game's file gives the host, and what it gets back. */
 

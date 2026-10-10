@@ -222,7 +222,7 @@ static GLuint texture_for(const DrawState *d, int *width, int *height) {
     uint32_t checksum = gfx_texture_checksum(d, w, h);
     for (int i = 0; i < CACHE_SIZE; i++) {
         CachedTexture *c = &cache[i];
-        if (c->texture && c->address == d->loaded.address && c->checksum == checksum &&
+        if (c->texture && c->address == d->loaded.source && c->checksum == checksum &&
             c->row_bytes == d->loaded.row_bytes && c->format == d->tile.format && c->size == d->tile.size &&
             c->palette == d->palette_address && c->palette_index == d->tile.palette && c->width == w &&
             c->height == h)
@@ -237,7 +237,7 @@ static GLuint texture_for(const DrawState *d, int *width, int *height) {
     gfx_texture_pixels(d, w, h, pixels);
     glBindTexture(GL_TEXTURE_2D, c->texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    c->address = d->loaded.address, c->row_bytes = d->loaded.row_bytes, c->checksum = checksum;
+    c->address = d->loaded.source, c->row_bytes = d->loaded.row_bytes, c->checksum = checksum;
     c->format = d->tile.format, c->size = d->tile.size;
     c->palette = d->palette_address, c->palette_index = d->tile.palette, c->width = w, c->height = h;
     return c->texture;

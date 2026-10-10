@@ -19,8 +19,9 @@ part is control flow:
     table of every function, at run time.
 """
 
+import bisect
+import io
 import os
-import shutil
 
 from .functions import RETURN, Function
 from .mips import GPR, disassemble
@@ -164,6 +165,8 @@ def simple_statement(word: int, address: int) -> str:
             return assign(rt, f"cop0_read(ctx, {rd})")
         if rs in (4, 5):
             return f"cop0_write(ctx, {rd}, {t});"
+        if rs >= 16 and fn in (1, 2, 6, 8):  # tlbr, tlbwi, tlbwr, tlbp: address mapping
+            return f"tlb_instruction(ctx, {fn});"
         return f'trap(ctx, "system instruction", 0x{address:08X});'
 
     if op == 17:  # floating point
@@ -216,6 +219,7 @@ class Recompiler:
         program: Program,
         replaced: set[str] = frozenset(),
         wanted_addresses: set[str] = frozenset(),
+        rewritten: set[int] = frozenset(),
     ):
         """replaced: names of functions the host program implements itself.
 
@@ -225,12 +229,46 @@ class Recompiler:
         (HLE = high-level emulation: imitate what a function achieves rather
         than the hardware it used to achieve it.)
         """
+        # rewritten: addresses that a cheat may write to. Where one of them
+        # is inside a function, the cheat is changing the game's
+        # instructions ("skip the line that takes a life away"). Our
+        # translation was made from the original instructions and would
+        # carry on unchanged, so such a function first checks whether its
+        # instructions in memory are still the original ones, and if not,
+        # hands over to the interpreter, which runs whatever is there now.
+        self.rewritten = rewritten
         self.program = program
         self.replaced = replaced
         self.wanted_addresses = wanted_addresses
         self.problems: list[str] = []
         self.not_recompiled: set[int] = set()
         self._local_returns: list[int] = []
+
+    def _rewritten_near(self, f: Function) -> list[int]:
+        if not hasattr(self, "_rewritten_sorted"):
+            self._rewritten_sorted = sorted(self.rewritten)
+        low = bisect.bisect_left(self._rewritten_sorted, f.start)
+        return self._rewritten_sorted[low : bisect.bisect_left(self._rewritten_sorted, f.end)]
+
+    def _call(self, f: Function, target: int) -> str | None:
+        """C for calling the function at an address, from inside f."""
+        group = self.program.alternatives.get(target)
+        if group:
+            # Several overlays have a function here (see program.py). From
+            # inside one of them it is that overlay's own; otherwise only
+            # the running game knows which is loaded.
+            own = [g for g in group if g.segment is f.segment]
+            if own:
+                return f"{own[0].name}(ctx);"
+            return f"call_indirect(ctx, 0x{target:08X}u);"
+        callee = self.program.functions.get(target)
+        if callee is None:
+            return None
+        # Code outside the main segment is loaded by the game when it likes,
+        # so a call into it from elsewhere is checked as the game runs.
+        if callee.segment is self.program.segments[0] or callee.segment is f.segment:
+            return f"func_{target:08X}(ctx);"
+        return f"call_indirect(ctx, 0x{target:08X}u);"
 
     def _word(self, f: Function, address: int) -> int:
         return self.program.rom.word(f.segment.to_rom(address))
@@ -259,10 +297,11 @@ class Recompiler:
             # A jump backwards is a loop; see LOOP_CHECK in runtime.h.
             check = "LOOP_CHECK(); " if target <= source else ""
             return f"{check}goto L_{target:08X};"
-        if target in self.program.functions:
+        call = self._call(f, target)
+        if call:
             # Jumping to another function without "jal" is a tail call: that
             # function will return straight to whoever called this one.
-            return f"func_{target:08X}(ctx); return;"
+            return f"{call} return;"
         raise Unsupported(f"jump from {f.name} into the middle of another function")
 
     def _control_flow(self, f: Function, address: int, labels: set[int]):
@@ -301,8 +340,8 @@ class Recompiler:
                 # function as a subroutine. In C that is a goto there, and a
                 # goto back when the piece does "jr $ra" (see below).
                 return f"ctx->ra = {link};", condition, self._transfer(f, address, target, labels), rt >= 18
-            if target in self.program.functions:
-                return f"ctx->ra = {link};", condition, f"func_{target:08X}(ctx);", rt >= 18
+            if self._call(f, target):
+                return f"ctx->ra = {link};", condition, self._call(f, target), rt >= 18
             raise Unsupported(f"0x{address:08X}: call into the middle of another function")
         if op == 17 and rs == 8:  # branch on the last float comparison
             condition = "ctx->fcr31 & FCR31_CONDITION"
@@ -312,9 +351,10 @@ class Recompiler:
         if op == 2:  # j
             return "", "1", self._transfer(f, address, target, labels), False
         if op == 3:  # jal
-            if target not in self.program.functions:
-                raise Unsupported(f"0x{address:08X}: call to unknown function 0x{target:08X}")
-            return f"ctx->ra = {link};", "1", f"func_{target:08X}(ctx);", False
+            # (A call to somewhere we found no function is left to the
+            # interpreter to sort out, when and if it happens.)
+            call = self._call(f, target) or f"call_indirect(ctx, 0x{target:08X}u);"
+            return f"ctx->ra = {link};", "1", call, False
         if op == 0 and fn == 9:  # jalr: call through a register
             setup = f"target = {s}; " + assign(rd, link)
             return setup, "1", "call_indirect(ctx, (uint32_t)target);", False
@@ -332,9 +372,10 @@ class Recompiler:
                         f"switch ((uint32_t)target) {{ {cases} default: return; }}", False)  # fmt: skip
             # A switch statement. If we could not read its table, allow a
             # jump to any instruction in this function.
-            targets = f.jump_tables.get(address) or [
-                a for a in range(f.start, f.end, 4) if not self._is_delay_slot(f, a)
-            ]
+            targets = f.jump_tables.get(address)
+            if not targets or not all(f.start <= t < f.end for t in targets):
+                # (...or it does not belong to this function after all)
+                targets = [a for a in range(f.start, f.end, 4) if not self._is_delay_slot(f, a)]
             labels.update(targets)
             cases = " ".join(f"case 0x{a:08X}u: goto L_{a:08X};" for a in sorted(set(targets)))
             action = (
@@ -376,7 +417,7 @@ class Recompiler:
         for address, code in body:
             if address >= f.end:
                 continue
-            asm = self.program.describe(address)
+            asm = self.program.describe(address, f.segment)
             if code is None:
                 lines.append(f"    /* {address:08X}  {asm}  (delay slot, done above) */")
                 continue
@@ -402,16 +443,17 @@ class Recompiler:
                     code = f"cond = {condition}; {delay} if (cond) {{ {action} }}"
             lines.append(f"    {code:<60} /* {address:08X}  {asm} */")
         # Running off the end continues into whatever comes next in memory.
-        if f.end in self.program.functions:
-            lines.append(f"    func_{f.end:08X}(ctx);")
+        if self._call(f, f.end):
+            lines.append(f"    {self._call(f, f.end)}")
         lines.append("}")
         return "\n".join(lines)
 
     def write(self, out_dir: str) -> int:
         """Write the recompiled game as C files. Returns the function count."""
         os.makedirs(out_dir, exist_ok=True)
-        shutil.copy(os.path.join(os.path.dirname(__file__), "runtime", "runtime.h"), out_dir)
-        functions = sorted(self.program.functions.values(), key=lambda f: f.start)
+        with open(os.path.join(os.path.dirname(__file__), "runtime", "runtime.h")) as source:
+            _write(os.path.join(out_dir, "runtime.h"), source.read())
+        functions = sorted(self.program.all_functions, key=lambda f: f.start)
 
         sources = []
         replaced = [f for f in functions if f.symbol in self.replaced]
@@ -419,7 +461,7 @@ class Recompiler:
             if f.symbol in self.replaced:
                 sources.append(
                     f"/* {f.symbol}: provided by the host program */\n"
-                    f"void {f.name}(Context *ctx) {{ hle_{f.symbol}(ctx); }}"
+                    f'void {f.name}(Context *ctx) {{ HLE_CALL("{f.symbol}"); hle_{f.symbol}(ctx); }}'
                 )
                 # The translated original is kept too, as original_<name>, so
                 # a replacement can do a little extra and then call it.
@@ -432,16 +474,27 @@ class Recompiler:
                     )
                 continue
             try:
+                if any(a & ~3 in range(f.start, f.end, 4) for a in self._rewritten_near(f)):
+                    sources.append(self.function_source(f, f"{f.name}_translated"))
+                    sources.append(
+                        f"/* a cheat may rewrite this one: see Recompiler */\n"
+                        f"void {f.name}_translated(Context *ctx);\n"
+                        f"void {f.name}(Context *ctx) {{\n"
+                        f"    if (CODE_CHANGED(ctx, 0x{f.start:08X}u, 0x{f.segment.to_rom(f.start):X}u, {f.end - f.start}))\n"
+                        f"        NOT_RECOMPILED(ctx, 0x{f.start:08X}u);\n"
+                        f"    else\n        {f.name}_translated(ctx);\n}}"
+                    )
+                    continue
                 sources.append(self.function_source(f))
             except Unsupported as problem:
                 self.problems.append(f"{f.name}: {problem}")
                 self.not_recompiled.add(f.start)
                 sources.append(
                     f"void {f.name}(Context *ctx) {{\n"
-                    f'    trap(ctx, "function not recompiled", 0x{f.start:08X});\n}}'
+                    f"    NOT_RECOMPILED(ctx, 0x{f.start:08X}u);\n}}"
                 )
 
-        with open(os.path.join(out_dir, "functions.h"), "w") as out:
+        with _Output(os.path.join(out_dir, "functions.h")) as out:
             out.write('#include "runtime.h"\n\n')
             out.writelines(f"void {f.name}(Context *ctx);\n" for f in functions)
             out.writelines(f"void hle_{f.symbol}(Context *ctx);\n" for f in replaced)
@@ -451,7 +504,9 @@ class Recompiler:
                 symbols = self.program.symbols
                 address = symbols.addresses.get(name) if symbols else None
                 if address is None:
-                    self.problems.append(f"the host wants ADDR_{name}, which is not in the name list")
+                    # (The host copes without the library's own variables.)
+                    if not name.startswith(("__os", "os")):
+                        self.problems.append(f"the host wants ADDR_{name}, which is not in the name list")
                 else:
                     out.write(f"#define ADDR_{name} 0x{address:08X}u\n")
             entry = self.program.segments[0]
@@ -460,36 +515,94 @@ class Recompiler:
             out.write(f"#define BOOT_LOAD_SIZE 0x{entry.size:X}u\n")
         for i in range(0, len(sources), FUNCTIONS_PER_FILE):
             path = os.path.join(out_dir, f"functions_{i // FUNCTIONS_PER_FILE:02}.c")
-            with open(path, "w") as out:
+            with _Output(path) as out:
                 out.write('#include "functions.h"\n\n')
                 out.write("\n\n".join(sources[i : i + FUNCTIONS_PER_FILE]) + "\n")
 
         # The lookup table for calls through function pointers.
-        with open(os.path.join(out_dir, "lookup.c"), "w") as out:
+        with _Output(os.path.join(out_dir, "lookup.c")) as out:
             out.write('#include "functions.h"\n\n')
-            out.write("static const struct { uint32_t address; void (*function)(Context *); } ")
-            out.write("table[] = {\n")
-            out.writelines(f"    {{0x{f.start:08X}u, {f.name}}},\n" for f in functions)
+            out.write("/* rom_offset and size are filled in for code the game loads itself. */\n")
+            out.write("static const struct { uint32_t address; void (*function)(Context *); ")
+            out.write("uint32_t rom_offset, size; } table[] = {\n")
+            for f in functions:
+                shared = f.segment is not self.program.segments[0]
+                where = f"0x{f.segment.to_rom(f.start):X}u, {f.end - f.start}" if shared else "0, 0"
+                out.write(f"    {{0x{f.start:08X}u, {f.name}, {where}}},\n")
             out.write("};\n\n")
             out.write(LOOKUP_FUNCTION)
         return len(functions)
 
 
+def _write(path: str, text: str) -> None:
+    """Write a file, unless it already says exactly this.
+
+    Leaving unchanged files alone lets the build skip compiling them again.
+    """
+    if os.path.exists(path):
+        with open(path) as old:
+            if old.read() == text:
+                return
+    with open(path, "w") as out:
+        out.write(text)
+
+
+class _Output(io.StringIO):
+    """Collects text like an open file does, then hands it to _write."""
+
+    def __init__(self, path: str):
+        super().__init__()
+        self.path = path
+
+    def __exit__(self, *problem):
+        _write(self.path, self.getvalue())
+        return super().__exit__(*problem)
+
+
 LOOKUP_FUNCTION = """\
-void call_indirect(Context *ctx, uint32_t address) {
+/* The translated function for an address, or NULL if there is none, or if
+ * the code in the game's memory there is no longer the code we translated. */
+void (*native_function(Context *ctx, uint32_t address))(Context *) {
     /* The table is sorted, so halve the search range until we find it. */
-    int low = 0, high = (int)(sizeof(table) / sizeof(table[0])) - 1;
+    int count = (int)(sizeof(table) / sizeof(table[0]));
+    int low = 0, high = count - 1;
     while (low <= high) {
         int middle = (low + high) / 2;
-        if (table[middle].address == address) {
-            table[middle].function(ctx);
-            return;
-        }
-        if (table[middle].address < address)
+        if (table[middle].address < address) {
             low = middle + 1;
-        else
+        } else if (table[middle].address > address) {
             high = middle - 1;
+        } else {
+#ifdef HOST_RUNTIME
+            if (!table[middle].size)
+                return table[middle].function;
+            if (host_interpret_loaded_code)
+                return NULL; /* (for testing: see runtime.h) */
+            /* Code outside the part loaded at start-up comes and goes, and
+             * several pieces may use this address in turn. Take the one
+             * that matches what is in memory at this moment. */
+            if (address < 0x80000000u || address - 0x80000000u > RAM_SIZE - table[middle].size)
+                return NULL;
+            while (middle > 0 && table[middle - 1].address == address)
+                middle--;
+            for (; middle < count && table[middle].address == address; middle++)
+                if (!memcmp(ctx->ram + (address - 0x80000000u), host_rom + table[middle].rom_offset,
+                            table[middle].size))
+                    return table[middle].function;
+            return NULL;
+#else
+            return table[middle].function;
+#endif
+        }
     }
-    trap(ctx, "call to an address that is not a function", address);
+    return NULL;
+}
+
+void call_indirect(Context *ctx, uint32_t address) {
+    void (*function)(Context *) = native_function(ctx, address);
+    if (function)
+        function(ctx);
+    else
+        NOT_RECOMPILED(ctx, address);
 }
 """

@@ -74,11 +74,22 @@ def build(
 
     Returns the path of the finished program.
     """
-    sources = sorted(glob.glob(os.path.join(source_dir, "*.c")))
+    # (glob.escape: a folder named after a ROM may well have [brackets] in
+    # its name, which would otherwise be taken as a pattern.)
+    sources = sorted(glob.glob(os.path.join(glob.escape(source_dir), "*.c")))
     sources += [os.path.join(RUNTIME_DIR, source) for source in runtime_sources if source]
+
+    # A file only needs compiling again if it, or something it includes,
+    # has changed since last time (or we are compiling with other options).
+    headers = glob.glob(os.path.join(RUNTIME_DIR, "*.h")) + glob.glob(os.path.join(glob.escape(source_dir), "*.h"))
+    newest_header = max(os.path.getmtime(h) for h in headers)
+    stamp = os.path.join(source_dir, "flags.txt")
+    same_flags = os.path.exists(stamp) and open(stamp).read() == " ".join(flags)
 
     def compile_one(source: str) -> str:
         obj = os.path.join(source_dir, os.path.basename(source)[:-2] + ".o")
+        if same_flags and os.path.exists(obj) and os.path.getmtime(obj) > max(os.path.getmtime(source), newest_header):
+            return obj
         # -I says where to look for the files named in #include lines.
         command = ["gcc", *flags, "-w", "-ffp-contract=off", "-I", source_dir, "-I", RUNTIME_DIR]
         if os.path.basename(source) in ("gfx.c", "gfx_gl.c", "audio.c"):
@@ -90,6 +101,8 @@ def build(
     # Compile the files side by side, one per CPU core, then join them up.
     with ThreadPoolExecutor(os.cpu_count()) as pool:
         objects = list(pool.map(compile_one, sources))
+    with open(stamp, "w") as out:
+        out.write(" ".join(flags))
     program = os.path.join(source_dir, name)
     subprocess.run(["gcc", *objects, "-lm", *libraries, "-o", program], check=True)
     return program

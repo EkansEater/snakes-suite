@@ -12,6 +12,8 @@ hardware, so the first job is to normalise them all to big-endian (.z64).
 """
 
 import struct
+import zlib
+import zipfile
 from dataclasses import dataclass
 
 HEADER_SIZE = 0x40
@@ -31,6 +33,18 @@ CHECKSUM_SEED_6102 = 0xF8CA4DDC
 # The boot code copies exactly 1 MB of the ROM into memory before starting
 # the game, so the main code segment cannot be larger than that.
 BOOT_LOAD_SIZE = 0x100000
+
+# Every cartridge has a lock-out chip (the "CIC"), and boot code that goes
+# with it. There are five kinds. We tell them apart by a checksum of the
+# boot code. Two of them store the entry point with a fixed amount added,
+# as a small obstacle to copying.
+BOOT_CHIPS = {
+    0x6170A4A1: ("6101", 0),
+    0x90BB6CB5: ("6102", 0),
+    0x0B050EE0: ("6103", 0x100000),
+    0x98BC2C86: ("6105", 0),
+    0xACC8580A: ("6106", 0x200000),
+}
 
 REGIONS = {
     "E": "USA",
@@ -94,6 +108,7 @@ class Header:
     name: str
     game_code: str  # e.g. "NSME": N = cartridge, SM = Super Mario, E = USA
     version: int
+    boot_chip: str = "unknown"
 
     @property
     def region(self) -> str:
@@ -107,6 +122,13 @@ class Rom:
 
     @classmethod
     def from_file(cls, path: str) -> "Rom":
+        """Load a ROM from a .z64/.n64/.v64 file, or from a .zip holding one."""
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as archive:
+                inside = [n for n in archive.namelist() if n.lower().endswith((".z64", ".n64", ".v64", ".rom"))]
+                if not inside:
+                    raise ValueError(f"no N64 ROM found inside {path}")
+                return cls(archive.read(inside[0]))
         with open(path, "rb") as f:
             return cls(f.read())
 
@@ -115,8 +137,10 @@ class Rom:
         entry_point, release, crc1, crc2 = struct.unpack_from(">IIII", self.data, 0x08)
         name = self.data[0x20:0x34].decode("ascii", errors="replace").strip()
         game_code = self.data[0x3B:0x3F].decode("ascii", errors="replace")
+        boot_chip, entry_shift = BOOT_CHIPS.get(zlib.crc32(self.data[0x40:0x1000]), ("unknown", 0))
         return Header(
-            entry_point=entry_point,
+            boot_chip=boot_chip,
+            entry_point=entry_point - entry_shift,
             libultra_version=chr(release & 0xFF),
             crc1=crc1,
             crc2=crc2,

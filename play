@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Launcher for Snake's Decompiler: checks what is needed, then builds and
+# Launcher for Snake's N64 decompiler: checks what is needed, then builds and
 # runs a game from your own ROM.
 #
-#   ./play                      choose from the ROMs in the roms/ folder
+#   ./play                      show the list of games in the roms/ folder
+#   ./play path/to/folder       ...or in another folder
 #   ./play path/to/game.z64     play that ROM
 #   ./play game.z64 --wide --smooth    ...with options (see README.md)
 
@@ -16,7 +17,8 @@ cd "$(dirname "$(readlink -f "$0")")" || exit 1
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     echo "usage: ./play [rom file] [options]"
     echo
-    echo "With no ROM given, offers the ones in the roms/ folder."
+    echo "With no ROM given, shows a list of the games in the roms/ folder"
+    echo "(or in a folder you name) to choose from, by keyboard, mouse or gamepad."
     echo "Options: --wide  --smooth  --scale N  --stats   (see README.md)"
     exit 0
 fi
@@ -48,28 +50,19 @@ if [ $# -gt 0 ] && [ -f "$1" ]; then
     rom="$1"
     shift
 else
-    mkdir -p roms
-    shopt -s nullglob
-    roms=(roms/*.z64 roms/*.n64 roms/*.v64)
-    if [ ${#roms[@]} -eq 0 ]; then
-        echo "No ROM given, and none found in the roms/ folder."
-        echo
-        echo "This program does not include any games. Put a ROM you own in roms/"
-        echo "(a .z64, .n64 or .v64 file), or run:  ./play path/to/your-game.z64"
-        exit 1
-    elif [ ${#roms[@]} -eq 1 ]; then
-        rom="${roms[0]}"
-    elif [ ! -t 0 ]; then
-        # Nobody is at the keyboard to answer a question.
-        echo "Several ROMs found; say which one:  ./play ${roms[0]}"
-        exit 1
-    else
-        echo "Which game?"
-        select rom in "${roms[@]}"; do
-            [ -n "$rom" ] && break
-        done
-        [ -n "$rom" ] || exit 1
+    # No ROM named: show the game list, a window that works with keyboard,
+    # mouse or gamepad. It lists the ROMs in a folder: the one given, or roms/.
+    folder="roms"
+    if [ $# -gt 0 ] && [ -d "$1" ]; then
+        folder="$1"
     fi
+    mkdir -p roms build
+    source=snakedecomp/launcher/launcher.c
+    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ]; then
+        # shellcheck disable=SC2046
+        gcc -O1 $(pkg-config --cflags sdl2) -I snakedecomp/runtime "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
+    fi
+    exec build/launcher "$folder"
 fi
 
 echo "Starting $rom (the first run builds the game, which takes a minute or two)"

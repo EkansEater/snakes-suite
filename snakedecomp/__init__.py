@@ -1,1 +1,1 @@
-"""Snake's Decompiler: educational N64 reverse-engineering tools."""
+"""Snake's N64 decompiler: educational N64 reverse-engineering tools."""

@@ -42,8 +42,18 @@ typedef struct Context {
 void trap(Context *ctx, const char *reason, uint32_t address) __attribute__((noreturn));
 uint64_t cop0_read(Context *ctx, int reg);
 void cop0_write(Context *ctx, int reg, uint64_t value);
+/* The four instructions that work the CPU's address-mapping table (the
+ * "TLB"). which: 1 read an entry, 2 write one, 6 write a random one, 8 look
+ * one up. */
+void tlb_instruction(Context *ctx, int which);
 /* Generated: call a function given only its address (function pointers). */
 void call_indirect(Context *ctx, uint32_t address);
+/* Generated: the translated function at an address, if there is one. */
+void (*native_function(Context *ctx, uint32_t address))(Context *);
+/* Run the function at an address straight from the game's memory, one
+ * instruction at a time (interp.c). */
+void interpret(Context *ctx, uint32_t pc);
+extern long host_interpreted;
 
 /* A recompiled loop cannot be interrupted from outside the way a real CPU
  * can, so every jump backwards counts down a budget. When it runs out the
@@ -51,10 +61,30 @@ void call_indirect(Context *ctx, uint32_t address);
  * a screen refresh and let a more important thread run. */
 #ifdef HOST_RUNTIME
 extern long loop_budget;
+extern const uint8_t *host_rom; /* the cartridge's contents */
+/* For testing the translator: with INTERPRET_LOADED=1, code the game loads
+ * itself is never run from its translation, only interpreted. If the game
+ * then behaves differently, a translation is wrong (or was used when the
+ * code in memory was not the code it was made from). */
+extern int host_interpret_loaded_code;
 void host_time_slice(Context *ctx);
 #define LOOP_CHECK() do { if (--loop_budget < 0) host_time_slice(ctx); } while (0)
+/* For working out what a game is up to: with TRACE_OS set, every call to a
+ * library function we stand in for is printed. */
+extern int host_trace;
+void host_trace_call(Context *ctx, const char *name);
+extern long host_calls; /* how many such calls there have been */
+#define HLE_CALL(name) do { host_calls++; if (host_trace) host_trace_call(ctx, name); } while (0)
+/* Code we have no translation of is interpreted instead. */
+#define NOT_RECOMPILED(ctx, address) interpret(ctx, address)
+/* Has something (a cheat) rewritten these instructions since the ROM was loaded? */
+#define CODE_CHANGED(ctx, address, rom_offset, size) \
+    (memcmp((ctx)->ram + ((address) & 0x7FFFFF), host_rom + (rom_offset), (size)) != 0)
 #else
 #define LOOP_CHECK() ((void)0)
+#define NOT_RECOMPILED(ctx, address) trap(ctx, "function not recompiled", address)
+#define HLE_CALL(name) ((void)0)
+#define CODE_CHANGED(ctx, address, rom_offset, size) 0
 #endif
 
 /* ---- Memory ------------------------------------------------------------
