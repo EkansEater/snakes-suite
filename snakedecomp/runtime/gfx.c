@@ -1819,6 +1819,7 @@ static void command_ex2(uint32_t w0, uint32_t w1) {
         *mode = (*mode & ~mask) | (w1 & mask);
         break;
     }
+    case 0x00: break; /* "do nothing" */
     default:
         gfx_unhandled_count++;
         if (gfx_report_unhandled || getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
@@ -2002,6 +2003,11 @@ static void run_list(uint32_t address) {
         /* "Wait until the chip has caught up" (four kinds) and "do nothing":
          * we draw each command as it comes, so there is nothing to wait for. */
         case 0xE6: case 0xE7: case 0xE8: case 0xE9: case 0xC0: break;
+        /* "Skip the rest of this list if these corners are all off the
+         * screen": a way for the game to save the console work. We have
+         * the speed to draw it anyway, and what is off the screen is cut
+         * away later all the same. */
+        case 0xBE: break;
         case 0xEE: rdp.prim_depth = (float)((w1 >> 16) & 0x7FFF) / 32767.0f; break;
         default:
             gfx_unhandled_count++;

@@ -11,3 +11,6 @@ NDN seen bad 2026-10-10 White patches in the level (seen in an earlier survey)
 NFW seen bad 2026-10-10 Some wrong colours (seen in an earlier survey)
 NRE seen bad 2026-10-10 Only ever shows "No Controller"
 NKT seen good 2026-10-10 Scripted run: menus and a Luigi Raceway race look right
+NWR seen good 2026-10-10 Menus, the round screen and a Sunny Beach race look right
+NFX seen good 2026-10-10 Map, briefing and the flight into Corneria look right
+NDZ seen good 2026-10-10 Menus, the opening scene and the briefing screen look right

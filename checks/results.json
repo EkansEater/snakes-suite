@@ -151,7 +151,7 @@
   "findings": [
    "1780 blocks of sound were thrown away because the sound chip was full",
    "The game's sound program made 88306 samples a second but 43775 reached the sound chip",
-   "It ran slowly: under 90% speed for 32 of 51 seconds (worst 49%)"
+   "It ran slowly: under 90% speed for 41 of 52 seconds (worst 47%)"
   ],
   "frames": 3600,
   "heard": {
@@ -226,7 +226,7 @@
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
    "The game sends 27506 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 49 of 52 seconds (worst 33%)"
+   "It ran slowly: under 90% speed for 52 of 52 seconds (worst 30%)"
   ],
   "frames": 3600,
   "heard": {
@@ -301,8 +301,7 @@
   "code": "NDZE",
   "file": "Duke Nukem - ZER0 H0UR (U) [!].zip",
   "findings": [
-   "3123 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 37 of 42 seconds (worst 48%)"
+   "It ran slowly: under 90% speed for 40 of 44 seconds (worst 46%)"
   ],
   "frames": 3600,
   "heard": {
@@ -313,7 +312,7 @@
   },
   "pace": 30,
   "pace verdict": "ok",
-  "picture": "3123 drawing commands were skipped because we do not handle them",
+  "picture": "ok",
   "runs": "ok",
   "script": false,
   "seen": {
@@ -376,9 +375,7 @@
   "checked": "2026-10-10",
   "code": "NETE",
   "file": "Quest 64 (U) [!].zip",
-  "findings": [
-   "2630 drawing commands were skipped because we do not handle them"
-  ],
+  "findings": [],
   "frames": 3600,
   "heard": {
    "clipped": 0.0007,
@@ -388,7 +385,7 @@
   },
   "pace": 30,
   "pace verdict": "ok",
-  "picture": "2630 drawing commands were skipped because we do not handle them",
+  "picture": "ok",
   "runs": "ok",
   "script": false,
   "seen": {
@@ -415,7 +412,7 @@
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 16%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 17%)"
   ],
   "frames": 3600,
   "heard": {
@@ -454,7 +451,7 @@
   "findings": [
    "6868 drawing commands were skipped because we do not handle them",
    "The game sends 20433 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 44 of 46 seconds (worst 52%)"
+   "It ran slowly: under 90% speed for 46 of 47 seconds (worst 46%)"
   ],
   "frames": 3600,
   "heard": {
@@ -565,7 +562,7 @@
   "code": "NKTE",
   "file": "mk64.us.z64",
   "findings": [
-   "It ran slowly: under 90% speed for 13 of 31 seconds (worst 79%)"
+   "It ran slowly: under 90% speed for 17 of 35 seconds (worst 80%)"
   ],
   "frames": 3600,
   "heard": {
@@ -603,7 +600,7 @@
   "file": "Mario Golf (U) [!].zip",
   "findings": [
    "The game froze at 0:26 (frame 1560): no new picture for five seconds",
-   "197 drawing commands were skipped because we do not handle them",
+   "105 drawing commands were skipped because we do not handle them",
    "The game sends 16142 samples of sound a second but asked to play 32000"
   ],
   "frames": 3600,
@@ -615,7 +612,7 @@
   },
   "pace": 30,
   "pace verdict": "ok",
-  "picture": "197 drawing commands were skipped because we do not handle them",
+  "picture": "105 drawing commands were skipped because we do not handle them",
   "runs": "froze at 0:26: no new picture for five seconds or more",
   "script": false,
   "seen": {
@@ -787,7 +784,7 @@
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
    "The game's sound program made 17144 samples a second but 20813 reached the sound chip",
    "The game sends 20813 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 11 of 11 seconds (worst 9%)"
+   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 9%)"
   ],
   "frames": 3600,
   "heard": {
@@ -825,8 +822,8 @@
   "file": "Pokemon Stadium (U) (V1.1) [!].zip",
   "findings": [
    "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
-   "1685 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 18%)"
+   "602 drawing commands were skipped because we do not handle them",
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 17%)"
   ],
   "frames": 3600,
   "heard": {
@@ -903,7 +900,7 @@
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 39 of 41 seconds (worst 38%)"
+   "It ran slowly: under 90% speed for 38 of 40 seconds (worst 41%)"
   ],
   "frames": 3600,
   "heard": {
@@ -941,7 +938,7 @@
   "file": "Rampage - World Tour (U) [!].zip",
   "findings": [
    "The game sends 18792 samples of sound a second but asked to play 32000",
-   "It ran slowly: under 90% speed for 26 of 39 seconds (worst 61%)"
+   "It ran slowly: under 90% speed for 34 of 43 seconds (worst 64%)"
   ],
   "frames": 3600,
   "heard": {
@@ -978,7 +975,7 @@
   "code": "NSME",
   "file": "sm64.us.z64",
   "findings": [
-   "It ran slowly: under 90% speed for 30 of 45 seconds (worst 65%)"
+   "It ran slowly: under 90% speed for 30 of 44 seconds (worst 55%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1053,7 +1050,7 @@
   "code": "NW3E",
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
-   "94580 drawing commands were skipped because we do not handle them",
+   "47290 drawing commands were skipped because we do not handle them",
    "It ran slowly: under 90% speed for 44 of 44 seconds (worst 12%)"
   ],
   "frames": 3600,
@@ -1065,7 +1062,7 @@
   },
   "pace": 180,
   "pace verdict": "too fast",
-  "picture": "94580 drawing commands were skipped because we do not handle them",
+  "picture": "47290 drawing commands were skipped because we do not handle them",
   "runs": "ok",
   "script": false,
   "seen": {
@@ -1091,9 +1088,9 @@
   "code": "NWNE",
   "file": "WCW vs. nWo - World Tour (U) (V1.1) [!].zip",
   "findings": [
-   "20954 drawing commands were skipped because we do not handle them",
+   "16004 drawing commands were skipped because we do not handle them",
    "The game sends 21182 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 14%)"
+   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 14%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1104,7 +1101,7 @@
   },
   "pace": 30,
   "pace verdict": "ok",
-  "picture": "20954 drawing commands were skipped because we do not handle them",
+  "picture": "16004 drawing commands were skipped because we do not handle them",
   "runs": "ok",
   "script": false,
   "seen": {
@@ -1130,8 +1127,7 @@
   "code": "NWRE",
   "file": "wr64.us.z64",
   "findings": [
-   "18409 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 17 of 47 seconds (worst 68%)"
+   "It ran slowly: under 90% speed for 21 of 47 seconds (worst 67%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1142,7 +1138,7 @@
   },
   "pace": 20,
   "pace verdict": "ok",
-  "picture": "18409 drawing commands were skipped because we do not handle them",
+  "picture": "ok",
   "runs": "ok",
   "script": false,
   "seen": {
@@ -1169,7 +1165,7 @@
   "file": "Cruis'n Exotica (U) [!].zip",
   "findings": [
    "The screen went blank at 0:10 (frame 600) for 5 seconds",
-   "1249140 drawing commands were skipped because we do not handle them"
+   "1249131 drawing commands were skipped because we do not handle them"
   ],
   "frames": 3600,
   "heard": {
