@@ -26,6 +26,7 @@ typedef struct {
     uint32_t address, source, row_bytes;
     uint32_t bytes;  /* total size, when a whole texture was loaded as one strip */
     int fixed_rows;  /* a rectangle cut from a larger picture: row length is the picture's */
+    int step_plus_1; /* loaded as a strip with this row step, plus one; 0 once dealt with (see turn_odd_rows) */
 } Loaded;
 
 typedef struct {

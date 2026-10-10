@@ -43,6 +43,24 @@ static uint32_t *color_buffer; /* the one being drawn: 0xAARRGGBB per pixel */
 static float wide_units = SCREEN_W; /* picture width in the game's units */
 static float wide_offset;           /* where the game's x = 0 lands */
 
+/* High resolution. Most games draw a picture of 320 by 240 units, but some
+ * switch to a finer one for their menus and title screens (and a few for
+ * everything): 640 by 480, or 320 by 480, twice as fine downwards only.
+ * The game says how wide its picture is when it names the memory to draw
+ * into, and how tall when it sets the box nothing may be drawn outside of.
+ * We draw the same size of picture either way, so every position the game
+ * gives is divided by these (2 where it is twice as fine). */
+static float hires_x = 1, hires_y = 1;
+
+/* Normally anything closer to the camera than a set distance (the "near
+ * plane") is cut away. Chip programs with "NoN" in their name do not do
+ * that: things may come right up to the camera, and flat models drawn over
+ * the scene (a weapon shown in a corner, say) need not mind their depth. */
+static int no_near;
+/* A distance in quarter units of the game's screen, in our pixels. */
+static int unit_x(int quarter_units) { return (int)((float)(quarter_units * scale) / (4 * hires_x)); }
+static int unit_y(int quarter_units) { return (int)((float)(quarter_units * scale) / (4 * hires_y)); }
+
 /* Free look: an extra turn and zoom applied on top of the game's camera. */
 static float look_yaw, look_pitch, look_zoom = 1;
 
@@ -86,6 +104,8 @@ static Tracked *tracked_now, *tracked_before;
 static int tracked_count, tracked_before_count;
 static float *depth_buffer;    /* 0 = nearest, 1 = farthest */
 long gfx_triangle_count;
+long gfx_rectangle_count, gfx_unhandled_count;
+int gfx_report_unhandled;
 int gfx_texture_smoothing = 1;
 
 /* ---- Reading the game's memory -------------------------------------------- */
@@ -178,6 +198,7 @@ static struct {
 
 static struct {
     uint32_t other_mode_h, other_mode_l;
+    float prim_depth; /* one depth for a whole shape, 0 (nearest) to 1, for when the game asks for that */
     int cc[2][4], ac[2][4]; /* colour and alpha combiner settings, two cycles */
     int prim[4], env[4], fog[4], blend[4];
     uint32_t fill_color;
@@ -671,7 +692,7 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
         v->backdrop = !seen_perspective && !is_perspective(rsp.projection);
         v->clip = (v->x < -side ? CLIP_LEFT : 0) | (v->x > side ? CLIP_RIGHT : 0) |
                   (v->y < -v->w ? CLIP_BOTTOM : 0) | (v->y > v->w ? CLIP_TOP : 0) |
-                  (v->z < -v->w ? CLIP_NEAR : 0);
+                  ((no_near ? v->w <= 0 : v->z < -v->w) ? CLIP_NEAR : 0);
 
         v->u = s * rsp.texture_scale_s / 32.0f;
         v->v = t * rsp.texture_scale_t / 32.0f;
@@ -762,6 +783,34 @@ static const Loaded *find_loaded(int tmem) {
 }
 
 /* Take a snapshot of the current settings. */
+/* A quirk of the chip that a few games lean on. Texture memory is made of
+ * 8-byte words, and on every odd row the chip stores the two halves of each
+ * word the other way round, and turns them back when drawing. When loading
+ * a strip it works out which row a word is on from a step the game gives
+ * (the last number in the load command), not from the row length. Normally
+ * the two agree and nothing shows. But a game may give a step of 0 ("all one
+ * row") for a texture it has stored with its odd rows already turned round:
+ * then nothing is turned on the way in, and the odd rows are turned on the
+ * way out. Where the two disagree, we do the turning here, in our copy of
+ * the texture, the first time it is drawn (only then is the row length
+ * certain). */
+static void turn_odd_rows(Loaded *loaded, uint32_t row) {
+    uint32_t step = (uint32_t)loaded->step_plus_1 - 1;
+    loaded->step_plus_1 = 0; /* once is enough */
+    if (!(loaded->address & COPY_FLAG) || row < 8 || row % 8)
+        return;
+    uint8_t *words = copies + (loaded->address & (COPY_ROOM - 1));
+    for (uint32_t i = 0; i * 8 + 8 <= loaded->bytes; i++) {
+        uint32_t row_when_loading = i * step >> 11, row_when_drawing = i * 8 / row;
+        if ((row_when_loading ^ row_when_drawing) & 1) {
+            uint8_t half[4];
+            memcpy(half, words + i * 8, 4);
+            memcpy(words + i * 8, words + i * 8 + 4, 4);
+            memcpy(words + i * 8 + 4, half, 4);
+        }
+    }
+}
+
 static void capture_state(DrawState *d, int tile_index, int allow_depth) {
     memset(d, 0, sizeof *d); /* so that two identical states compare equal byte for byte */
     const Tile *tile = &rdp.tiles[tile_index];
@@ -789,6 +838,8 @@ static void capture_state(DrawState *d, int tile_index, int allow_depth) {
      * is drawn with, whichever of the eight that is. */
     if (loaded && !d->loaded.fixed_rows && tile->line)
         d->loaded.row_bytes = (uint32_t)tile->line * 8 * (tile->size == 3 ? 2 : 1);
+    if (loaded && loaded->step_plus_1 == 1 && tile->size != 3) /* (a step of 0: the one case games rely on) */
+        turn_odd_rows((Loaded *)loaded, d->loaded.row_bytes);
     d->use_texture = loaded != NULL && combiner_uses_texture();
     /* How the pixel meets what is already on screen ("blender"). Bit 18 says
      * the new pixel simply replaces the old; otherwise they are mixed. */
@@ -1336,15 +1387,37 @@ static void draw_all_shapes(void) {
 
 static void to_screen(const Vertex *v, ScreenVertex *s) {
     float q = 1.0f / v->w;
-    float x = rsp.viewport_translate[0] + v->x * q * rsp.viewport_scale[0];
+    float x = (rsp.viewport_translate[0] + v->x * q * rsp.viewport_scale[0]) / hires_x;
     /* A backdrop is stretched to fill the wider picture; everything else
      * keeps its shape and is shifted to the middle. */
     x = v->backdrop ? x * wide_units / SCREEN_W : x + wide_offset;
     s->x = x * (float)scale;
-    s->y = (rsp.viewport_translate[1] - v->y * q * rsp.viewport_scale[1]) * (float)scale;
+    s->y = (rsp.viewport_translate[1] - v->y * q * rsp.viewport_scale[1]) / hires_y * (float)scale;
     s->z = v->z * q * 0.5f + 0.5f;
+    /* The game can ask for everything it draws to be at one depth of its
+     * choosing instead of each corner's own: that is how parts of a HUD are
+     * kept in front of the scene. */
+    if (rdp.other_mode_l & 4)
+        s->z = rdp.prim_depth;
+    if (no_near && s->z < 0)
+        s->z = 0; /* nearer than the near plane: as near as can be */
     s->q = q;
     s->u = v->u, s->v = v->v, s->r = v->r, s->g = v->g, s->b = v->b, s->a = v->a, s->fog = v->fog;
+}
+
+/* How far a corner is on the wanted side of one of the planes a triangle is
+ * cut with (see triangle). */
+static float clip_distance(const Vertex *v, int plane) {
+    const float far_out = 16; /* times the width of the view */
+    if (!no_near)
+        return v->z + v->w; /* the near plane */
+    switch (plane) {
+    case 0: return v->w - 0.001f; /* in front of the camera */
+    case 1: return far_out * v->w - v->x;
+    case 2: return far_out * v->w + v->x;
+    case 3: return far_out * v->w - v->y;
+    default: return far_out * v->w + v->y;
+    }
 }
 
 /* Triangle commands name their corners by position in the vertex list,
@@ -1381,27 +1454,38 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
     /* A triangle that passes behind the camera must be cut off at the
      * "near plane" first, or the maths below would divide by zero or worse.
      * Cutting a triangle with a plane leaves three or four corners. */
-    Vertex polygon[4];
-    int count = 0;
-    for (int i = 0; i < 3; i++) {
-        const Vertex *a = v[i], *b = v[(i + 1) % 3];
-        float da = a->z + a->w, db = b->z + b->w; /* distance in front of the plane */
-        if (da >= 0)
-            polygon[count++] = *a;
-        if ((da >= 0) != (db >= 0)) {
-            float t = da / (da - db);
-            Vertex *n = &polygon[count++];
+    /* (Chip programs with "no near" keep what is closer than the near plane.
+     * For those we cut only what is behind the camera, and then what is far
+     * off to the sides, above or below: a corner almost level with the
+     * camera lands so far off screen that the numbers stop making sense.) */
+    Vertex polygon[10], cut[10];
+    int count = 3;
+    for (int i = 0; i < 3; i++)
+        polygon[i] = *v[i];
+    for (int plane = 0; plane < (no_near ? 5 : 1) && count >= 3; plane++) {
+        int made = 0;
+        for (int i = 0; i < count; i++) {
+            const Vertex *a = &polygon[i], *b = &polygon[(i + 1) % count];
+            float da = clip_distance(a, plane), db = clip_distance(b, plane); /* distance in front of the plane */
+            if (da >= 0)
+                cut[made++] = *a;
+            if ((da >= 0) != (db >= 0)) {
+                float t = da / (da - db);
+                Vertex *n = &cut[made++];
 #define LERP(field) n->field = a->field + (b->field - a->field) * t
-            LERP(x); LERP(y); LERP(z); LERP(w); LERP(u); LERP(v);
-            LERP(r); LERP(g); LERP(b); LERP(a); LERP(fog);
+                LERP(x); LERP(y); LERP(z); LERP(w); LERP(u); LERP(v);
+                LERP(r); LERP(g); LERP(b); LERP(a); LERP(fog);
 #undef LERP
-            n->backdrop = a->backdrop;
+                n->backdrop = a->backdrop;
+            }
         }
+        memcpy(polygon, cut, (size_t)made * sizeof *cut);
+        count = made;
     }
     if (count < 3)
         return;
 
-    ScreenVertex s[4];
+    ScreenVertex s[10];
     for (int i = 0; i < count; i++) {
         if (polygon[i].w <= 1e-6f)
             return;
@@ -1410,14 +1494,14 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
     for (int i = 1; i + 1 < count; i++) {
         Shape *shape = new_shape(TRIANGLE);
         capture_state(&shape->state, rsp.texture_tile, 1);
-        if (rsp.clip_ratio == 1 && rsp.viewport_scale[0] * 2 < SCREEN_W - 2) {
+        if (rsp.clip_ratio == 1 && rsp.viewport_scale[0] * 2 / hires_x < SCREEN_W - 2) {
             /* A view smaller than the screen that nothing may leave: keep
              * this shape inside it. (A full-screen view is left alone, so
              * that a widescreen picture can show more at the sides.) */
-            int box[4] = {(int)((rsp.viewport_translate[0] - fabsf(rsp.viewport_scale[0]) + wide_offset) * (float)scale),
-                          (int)((rsp.viewport_translate[1] - fabsf(rsp.viewport_scale[1])) * (float)scale),
-                          (int)((rsp.viewport_translate[0] + fabsf(rsp.viewport_scale[0]) + wide_offset) * (float)scale),
-                          (int)((rsp.viewport_translate[1] + fabsf(rsp.viewport_scale[1])) * (float)scale)};
+            int box[4] = {(int)(((rsp.viewport_translate[0] - fabsf(rsp.viewport_scale[0])) / hires_x + wide_offset) * (float)scale),
+                          (int)((rsp.viewport_translate[1] - fabsf(rsp.viewport_scale[1])) / hires_y * (float)scale),
+                          (int)(((rsp.viewport_translate[0] + fabsf(rsp.viewport_scale[0])) / hires_x + wide_offset) * (float)scale),
+                          (int)((rsp.viewport_translate[1] + fabsf(rsp.viewport_scale[1])) / hires_y * (float)scale)};
             int *scissor = shape->state.scissor;
             if (scissor[0] < box[0]) scissor[0] = box[0];
             if (scissor[1] < box[1]) scissor[1] = box[1];
@@ -1451,9 +1535,9 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
 static int wide_x(int quarter_units) {
     if (quarter_units <= 0)
         return 0;
-    if (quarter_units >= SCREEN_W * 4)
+    if ((float)quarter_units >= SCREEN_W * 4 * hires_x)
         return width;
-    return (int)(((float)quarter_units / 4 + wide_offset) * (float)scale);
+    return (int)(((float)quarter_units / (4 * hires_x) + wide_offset) * (float)scale);
 }
 
 /* Coordinates arrive as 10.2 fixed point (quarter pixels). */
@@ -1466,6 +1550,7 @@ static void command_fill_rectangle(uint32_t w0, uint32_t w1) {
 
     if (measuring)
         return;
+    gfx_rectangle_count++;
     if (getenv("SHOW_RECTANGLES")) /* for testing */
         fprintf(stderr, "fill x %d..%d y %d..%d cycle %d colour %08X image %06X depth %06X scissor %d %d %d %d cc %d %d %d %d ac %d %d %d %d prim %d %d %d %d env %d %d %d %d modes %06X %08X\n", left / 4, right / 4,
                 top / 4, bottom / 4, (int)CYCLE_TYPE, rdp.fill_color, rdp.color_image, rdp.depth_image, rdp.scissor[0],
@@ -1476,8 +1561,8 @@ static void command_fill_rectangle(uint32_t w0, uint32_t w1) {
     Shape *shape = new_shape(rdp.color_image == rdp.depth_image ? DEPTH_CLEAR : fill ? FILL : COMBINED_RECTANGLE);
     capture_state(&shape->state, 0, 0);
     shape->state.use_texture = 0, shape->state.use_fog = 0;
-    shape->x0 = wide_x(left), shape->y0 = top * scale / 4;
-    shape->x1 = wide_x(right), shape->y1 = bottom * scale / 4;
+    shape->x0 = wide_x(left), shape->y0 = unit_y(top);
+    shape->x1 = wide_x(right), shape->y1 = unit_y(bottom);
     int c[4];
     rgba16(rdp.fill_color & 0xFFFF, c);
     shape->color = 0xFF000000u | (uint32_t)c[0] << 16 | (uint32_t)c[1] << 8 | (uint32_t)c[2];
@@ -1490,9 +1575,13 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
     int copy = CYCLE_TYPE == CYCLE_COPY;
     if (measuring)
         return;
+    gfx_rectangle_count++;
     Shape *shape = new_shape(copy ? COPY_RECTANGLE : TEXTURE_RECTANGLE);
     capture_state(&shape->state, (int)((w1 >> 24) & 7), 0);
     if (find_loaded(shape->state.tile.tmem) == NULL) {
+        if (getenv("SHOW_RECTANGLES")) /* for testing */
+            fprintf(stderr, "rect x %d..%d y %d..%d left out: nothing loaded at %d in texture memory\n", left / 4, right / 4,
+                    top / 4, bottom / 4, shape->state.tile.tmem);
         shape_count--; /* nothing to draw it with */
         return;
     }
@@ -1516,9 +1605,11 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
                 left / 4, right / 4, top / 4, bottom / 4, shape->s, shape->t, shape->ds, shape->dt, shape->state.tile.uls / 4,
                 shape->state.tile.lrs / 4, shape->state.tile.clamp_s, shape->state.tile.mask_s, shape->state.tile.size,
                 shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes);
-    shape->left = (float)left / 4 + wide_offset, shape->top = (float)top / 4, shape->flip = flip;
-    shape->x0 = (int)(shape->left * (float)scale), shape->y0 = top * scale / 4;
-    shape->x1 = shape->x0 + (right - left) * scale / 4, shape->y1 = bottom * scale / 4;
+    /* (left, top and the steps are kept in units of a 320-wide screen) */
+    shape->left = (float)left / (4 * hires_x) + wide_offset, shape->top = (float)top / (4 * hires_y), shape->flip = flip;
+    shape->ds *= flip ? hires_y : hires_x, shape->dt *= flip ? hires_x : hires_y; /* (flipped: ds goes downwards) */
+    shape->x0 = (int)(shape->left * (float)scale), shape->y0 = unit_y(top);
+    shape->x1 = shape->x0 + unit_x(right - left), shape->y1 = unit_y(bottom);
 }
 
 /* ---- Texture set-up commands ------------------------------------------------- */
@@ -1575,6 +1666,10 @@ static void command_load_block(uint32_t w1) {
     Loaded *loaded = (Loaded *)find_loaded(tile->tmem);
     if (loaded && !measuring)
         loaded->address = keep_copy(rdp.texture_image, bytes);
+    if (loaded && !measuring && (loaded->address & COPY_FLAG))
+        loaded->step_plus_1 = (int)(w1 & 0xFFF) + 1; /* (see turn_odd_rows) */
+    else if (loaded)
+        loaded->step_plus_1 = 0;
 }
 
 static void command_load_tile(uint32_t w0, uint32_t w1) {
@@ -1586,6 +1681,8 @@ static void command_load_tile(uint32_t w0, uint32_t w1) {
     /* The rows from the first to the last asked for, whole. */
     uint32_t rows = ((w1 & 0xFFF) / 4) - ((w0 & 0xFFF) / 4) + 1;
     Loaded *loaded = (Loaded *)find_loaded(tile->tmem);
+    if (loaded)
+        loaded->step_plus_1 = 0;
     if (loaded && !measuring && rows < 2048)
         loaded->address = keep_copy(start, rows * row);
 }
@@ -1614,6 +1711,10 @@ static void set_viewport(uint32_t address) {
         rsp.viewport_scale[i] = (float)(int16_t)rd16(address + (uint32_t)i * 2) / 4.0f;
         rsp.viewport_translate[i] = (float)(int16_t)rd16(address + 8 + (uint32_t)i * 2) / 4.0f;
     }
+    if (getenv("SHOW_MATRICES") && !measuring && gfx_frame_number == atol(getenv("SHOW_MATRICES"))) /* for testing */
+        fprintf(stderr, "viewport: middle %.1f %.1f %.1f, half size %.1f %.1f %.1f (after %d shapes)\n", rsp.viewport_translate[0],
+                rsp.viewport_translate[1], rsp.viewport_translate[2], rsp.viewport_scale[0], rsp.viewport_scale[1],
+                rsp.viewport_scale[2], shape_count);
 }
 
 static void set_light(int n, uint32_t address) {
@@ -1719,7 +1820,8 @@ static void command_ex2(uint32_t w0, uint32_t w1) {
         break;
     }
     default:
-        if (getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
+        gfx_unhandled_count++;
+        if (gfx_report_unhandled || getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
             static long seen[256];
             if (seen[w0 >> 24]++ < 3)
                 fprintf(stderr, "gfx: F3DEX2 command %08X %08X not handled\n", w0, w1);
@@ -1853,10 +1955,14 @@ static void run_list(uint32_t address) {
             if (getenv("SHOW_SCISSORS") && !measuring && gfx_frame_number == atol(getenv("SHOW_SCISSORS"))) /* for testing */
                 fprintf(stderr, "scissor command %08X %08X: x %.2f..%.2f y %.2f..%.2f (after %d shapes)\n", w0, w1,
                         ((w0 >> 12) & 0xFFF) / 4.0, ((w1 >> 12) & 0xFFF) / 4.0, (w0 & 0xFFF) / 4.0, (w1 & 0xFFF) / 4.0, shape_count);
+            /* A box (nearly) as wide as the screen tells us how tall the screen is:
+             * well over 240 lines for its width means twice as fine downwards. */
+            if ((float)((w0 >> 12) & 0xFFF) <= 16 * 4 * hires_x && (float)((w1 >> 12) & 0xFFF) >= (SCREEN_W - 16) * 4 * hires_x)
+                hires_y = (float)(w1 & 0xFFF) > SCREEN_H * 4 * hires_x * 1.5f ? hires_x * 2 : hires_x;
             rdp.scissor[0] = wide_x((int)((w0 >> 12) & 0xFFF));
-            rdp.scissor[1] = (int)(w0 & 0xFFF) * scale / 4;
+            rdp.scissor[1] = unit_y((int)(w0 & 0xFFF));
             rdp.scissor[2] = wide_x((int)((w1 >> 12) & 0xFFF));
-            rdp.scissor[3] = (int)(w1 & 0xFFF) * scale / 4;
+            rdp.scissor[3] = unit_y((int)(w1 & 0xFFF));
             if (rdp.scissor[2] > width) rdp.scissor[2] = width;
             if (rdp.scissor[3] > height) rdp.scissor[3] = height;
             if (rdp.scissor[0] < 0) rdp.scissor[0] = 0;
@@ -1886,9 +1992,20 @@ static void run_list(uint32_t address) {
             rdp.texture_image = segmented(w1);
             break;
         case 0xFE: rdp.depth_image = segmented(w1); break;
-        case 0xFF: rdp.color_image = segmented(w1); break;
+        case 0xFF:
+            rdp.color_image = segmented(w1);
+            if ((w0 & 0xFFF) + 1 >= SCREEN_W) { /* (narrower ones are side pictures, not the screen) */
+                float finer = (float)((w0 & 0xFFF) + 1) / SCREEN_W;
+                hires_y *= finer / hires_x, hires_x = finer;
+            }
+            break;
+        /* "Wait until the chip has caught up" (four kinds) and "do nothing":
+         * we draw each command as it comes, so there is nothing to wait for. */
+        case 0xE6: case 0xE7: case 0xE8: case 0xE9: case 0xC0: break;
+        case 0xEE: rdp.prim_depth = (float)((w1 >> 16) & 0x7FFF) / 32767.0f; break;
         default:
-            if (getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
+            gfx_unhandled_count++;
+            if (gfx_report_unhandled || getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */
                 static long seen[256];
                 if (seen[w0 >> 24]++ < 3)
                     fprintf(stderr, "gfx: command %08X %08X not handled\n", w0, w1);
@@ -2023,6 +2140,7 @@ void gfx_view_back(float back[3][3]) { memcpy(back, view_back, sizeof view_back)
 
 
 void gfx_set_dialect(int which) { dialect = which; }
+void gfx_set_no_near(int on) { no_near = on; }
 
 void gfx_set_view(float yaw, float pitch, float zoom) {
     look_yaw = yaw, look_pitch = pitch, look_zoom = zoom;

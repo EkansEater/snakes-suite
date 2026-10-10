@@ -68,7 +68,10 @@ extern const uint8_t *host_rom; /* the cartridge's contents */
  * code in memory was not the code it was made from). */
 extern int host_interpret_loaded_code;
 void host_time_slice(Context *ctx);
-#define LOOP_CHECK() do { if (--loop_budget < 0) host_time_slice(ctx); } while (0)
+/* (host_loop_where: which function was looping when the budget ran out, for
+ * working out what a game spends its time on; see SHOW_LOOPS in host.c) */
+extern const char *host_loop_where;
+#define LOOP_CHECK() do { if (--loop_budget < 0) { host_loop_where = __func__; host_time_slice(ctx); } } while (0)
 /* For working out what a game is up to: with TRACE_OS set, every call to a
  * library function we stand in for is printed. */
 extern int host_trace;

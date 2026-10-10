@@ -508,6 +508,34 @@ void glb_read_window(uint8_t *rgb, int width, int height) {
     free(row);
 }
 
+int glb_window_colours(uint32_t *average) {
+    enum { ACROSS = 8, DOWN = 6 };
+    /* The picture sits in the middle of the window, as in glb_present. */
+    int w = window_w, h = window_w * picture_h / (picture_w ? picture_w : 1);
+    if (h > window_h)
+        h = window_h, w = window_h * picture_w / (picture_h ? picture_h : 1);
+    int left = (window_w - w) / 2, bottom = (window_h - h) / 2;
+    uint32_t seen[ACROSS * DOWN], sum[3] = {0, 0, 0};
+    int different = 0;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    for (int i = 0; i < ACROSS * DOWN; i++) {
+        uint8_t rgb[3] = {0, 0, 0};
+        glReadPixels(left + (i % ACROSS * 2 + 1) * w / (ACROSS * 2), bottom + (i / ACROSS * 2 + 1) * h / (DOWN * 2), 1, 1,
+                     GL_RGB, GL_UNSIGNED_BYTE, rgb);
+        sum[0] += rgb[0], sum[1] += rgb[1], sum[2] += rgb[2];
+        /* (nearly the same colour counts as the same: the low bits flicker) */
+        uint32_t colour = (uint32_t)(rgb[0] >> 4) << 8 | (uint32_t)(rgb[1] >> 4) << 4 | (uint32_t)(rgb[2] >> 4);
+        int known = 0;
+        for (int j = 0; j < different; j++)
+            known |= seen[j] == colour;
+        if (!known)
+            seen[different++] = colour;
+    }
+    *average = sum[0] / (ACROSS * DOWN) << 16 | sum[1] / (ACROSS * DOWN) << 8 | sum[2] / (ACROSS * DOWN);
+    return different;
+}
+
 /* ---- Start-up ----------------------------------------------------------------- */
 
 static const GfxBackend backend = {resize, select_picture, draw};

@@ -15,3 +15,5 @@ dist/
 __pycache__/
 # Pictures taken with the screenshot shortcut.
 screenshots/
+# The logs of your runs (see the diagnose command).
+logs/

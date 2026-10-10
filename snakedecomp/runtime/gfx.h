@@ -35,6 +35,10 @@ const uint32_t *gfx_picture(int which, int *width, int *height);
 enum { GFX_FAST3D, GFX_F3DEX, GFX_F3DEX2, GFX_F3DWAVE };
 void gfx_set_dialect(int which);
 
+/* Chip programs with "NoN" in their name ("no near") do not cut away what is
+ * closer to the camera than the near plane. */
+void gfx_set_no_near(int on);
+
 /* Free look: turn (radians) and zoom applied on top of the game's camera. */
 void gfx_set_view(float yaw, float pitch, float zoom);
 
@@ -64,6 +68,12 @@ int gfx_game_camera_place(float place[3]);
 void gfx_view_back(float back[3][3]);
 
 extern long gfx_triangle_count;
+
+/* For the run log (see "The run log" in host.c): how many flat rectangles
+ * have been drawn, and how many drawing commands we did nothing with. With
+ * gfx_report_unhandled set, the first few of each such command are printed. */
+extern long gfx_rectangle_count, gfx_unhandled_count;
+extern int gfx_report_unhandled;
 
 /* 1: blend neighbouring texture dots where the game asks for it, as the
  * console did. 0: always show them as sharp squares. Can change at any time. */

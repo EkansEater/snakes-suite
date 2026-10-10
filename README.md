@@ -72,6 +72,34 @@ It builds each game, runs it by itself for a while pressing Start now and
 then, and prints one line per game. Screenshots and the full output of each
 are kept under `build/survey/`. Your real saves are not touched.
 
+### When a game goes wrong while you play
+
+Every game you play leaves a log in `logs/<game>/`: once a second, what it
+drew and whether the screen was blank, plus every button you pressed. When
+you quit, the terminal says in a line what the log shows. For the full
+story of the last games you played:
+
+```bash
+python3 -m snakedecomp diagnose
+```
+
+For each run it says what happened (the screen went blank, the game froze,
+stopped, crashed or ran slowly), shows the evidence, and points at the part
+of this tool to look at. The same text is saved as `logs/report.txt`.
+
+```bash
+python3 -m snakedecomp diagnose --replay
+```
+
+also plays each troubled run again by itself, with no window and the same
+button presses, and saves pictures from around the bad moment next to the
+log. If the fault happens again there, it can be worked on without anyone
+having to play the game to that point again. (A replay starts from a copy
+of the save you had; it cannot follow a loaded save state or a reset.)
+
+A log cannot see wrong colours, garbled text or bad sound. For those, press
+F12 at the bad moment: the screenshot goes to `screenshots/`.
+
 ## Requirements
 
 Linux, with:
@@ -201,7 +229,7 @@ It works in every game, in one of two ways:
 
   Everything chosen here is remembered for next time, separately for each
   game, in `settings/`.
-- **Tab** (right trigger on a gamepad), held: fast forward, 4 times normal
+- **Tab**, held: fast forward, 4 times normal (no gamepad button to begin with; choose one under Shortcuts)
   speed unless changed in the menu. It is silent.
 - **F5**: save state. **F7**: load state. No gamepad buttons are set for
   these to begin with, so that a slip of the thumb cannot undo your progress;
@@ -303,6 +331,7 @@ The tools are in `snakedecomp/`, and are meant to be read:
 | `recomp.py` | Translates each function to C |
 | `cheats.py`, `profiles.py` | Find the game's ready-made cheats; the few facts that cannot be detected |
 | `survey.py` | Tries a whole folder of games and reports on each |
+| `diagnose.py` | Keeps a log of every run, and reads the logs back to say what went wrong |
 | `launcher/launcher.c` | The game list window |
 | `cpu.py`, `verify.py` | An interpreter in Python, and a check of the translated C against it |
 | `runtime/host.c` | Stands in for the console: threads, messages, timers, controllers, saves, hardware registers |

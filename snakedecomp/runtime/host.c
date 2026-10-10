@@ -424,6 +424,9 @@ void hle_osInitialize(Context *ctx) {
 static uint32_t vi_queue, vi_message, framebuffer;
 static long frames;
 static long max_frames = -1; /* stop after this many (--frames), for testing */
+/* --log: tell the story of this run as it goes, for working out afterwards
+ * what went wrong (see "The run log" further down). */
+static int run_log;
 static int cheat_button_held; /* see cheats.c: some cheats wait for a button */
 static const char *pictures_path; /* where screenshots go: folder and start of the name (--pictures) */
 static int picture_wanted;        /* the screenshot shortcut was pressed */
@@ -492,6 +495,7 @@ static uint64_t ticks;
 
 static void present_frame(void); /* further down: window, input, screenshots */
 static void run_timers(void);
+static void sound_chip_update(void);
 
 static long forced_frames;
 long host_calls;
@@ -506,6 +510,7 @@ static void next_frame(void) {
     loop_budget = LOOP_BUDGET_PER_FRAME;
     present_frame();
     run_timers();
+    sound_chip_update();
     swap_video_records();
     if (vi_queue)
         queue_put(vi_queue, vi_message, 0);
@@ -513,8 +518,11 @@ static void next_frame(void) {
 
 /* Called from recompiled code when a thread has been looping for about a
  * frame's worth of work without ever waiting. */
+const char *host_loop_where = "";
 void host_time_slice(Context *ctx) {
-    (void)ctx;
+    if (getenv("SHOW_LOOPS")) /* for testing: who used up a whole frame's worth of looping, and where */
+        fprintf(stderr, "loops %ld: thread %d in %s, called from 0x%08X\n", frames, current ? current->id : -1,
+                host_loop_where, (uint32_t)ctx->ra);
     /* Games have an "idle thread": an endless empty loop for the CPU to sit
      * in when there is nothing else to do. One shows itself here: lowest
      * priority, and a whole refresh's worth of looping without asking the
@@ -899,7 +907,7 @@ static int fast_speed = 4;    /* how many times normal speed that is; 0 = as fas
  * time, but remember the answer for each. */
 #define WAVE_RACE_PROGRAM 0xE3AF6C41u /* Wave Race 64 (USA) */
 static int graphics_dialect(uint32_t program, uint32_t data) {
-    static struct { uint32_t program, data; int dialect; } known[8];
+    static struct { uint32_t program, data; int dialect; } known[8]; /* (dialect: plus 0x100 for "no near") */
     static int count;
     for (int i = 0; i < count; i++)
         if (known[i].program == program && known[i].data == data)
@@ -919,7 +927,7 @@ static int graphics_dialect(uint32_t program, uint32_t data) {
                 version = atof(p);
                 break;
             }
-        dialect = version >= 2 ? GFX_F3DEX2 : GFX_F3DEX;
+        dialect = (version >= 2 ? GFX_F3DEX2 : GFX_F3DEX) | (strstr(name, ".NoN") ? 0x100 : 0);
         break;
     }
     uint32_t sum = 0;
@@ -928,9 +936,9 @@ static int graphics_dialect(uint32_t program, uint32_t data) {
         sum = sum * 31 + code[i];
     if (sum == WAVE_RACE_PROGRAM)
         dialect = GFX_F3DWAVE;
-    if (getenv("SHOW_GRAPHICS"))
+    if (run_log || getenv("SHOW_GRAPHICS"))
         fprintf(stderr, "graphics program at 0x%08X: \"%s\", checksum 0x%08X, dialect %d\n", program, name, sum,
-                dialect);
+                dialect & 0xFF);
     if (count < 8)
         known[count].program = program, known[count].data = data, known[count++].dialect = dialect;
     return dialect;
@@ -970,10 +978,20 @@ static void run_task(const uint8_t *task) {
         clock_gettime(CLOCK_MONOTONIC, &t0);
         /* Which dialect of drawing commands? The chip program's data block
          * (+0x18) carries its name as text. */
-        gfx_set_dialect(graphics_dialect(POINTER(0x10), POINTER(0x18)));
+        int dialect = graphics_dialect(POINTER(0x10), POINTER(0x18));
+        gfx_set_dialect(dialect & 0xFF);
+        gfx_set_no_near(dialect >> 8);
         camera_before_drawing();
         int made = gfx_run(POINTER(0x30), smooth_motion);
         camera_after_drawing();
+        if (getenv("SHOW_PICTURES")) { /* for testing: when each picture is made, and a number that changes when it does */
+            int w, h;
+            const uint32_t *pixels = gfx_picture(1, &w, &h);
+            uint32_t sum = 0;
+            for (int i = 0; i < w * h; i += 97)
+                sum = sum * 31 + pixels[i];
+            fprintf(stderr, "picture %ld: %08X\n", frames, sum);
+        }
         shown_count = shown_next = 0;
         if (made == 2)
             shown_queue[shown_count++] = 0; /* the in-between picture first */
@@ -1004,15 +1022,81 @@ void hle_osSpTaskYielded(Context *ctx) { RETURN(0); }
 
 /* ---- Sound output ---------------------------------------------------------------
  * The game hands over finished blocks of samples (16-bit, stereo). They are
- * queued for the sound card. The game asks how much is still waiting to be
- * played and makes a little more or less next time, which keeps it in step
- * with the sound card's clock. */
+ * queued for the sound card.
+ *
+ * The console's sound chip plays one block and can hold one more behind it.
+ * A game learns how fast to make sound from the chip: it asks how much of
+ * the current block is left, or whether the chip is full, or simply gets
+ * told "no room" when it hands over a third block. Many games set their
+ * whole pace by this. So we keep track of the chip in the game's own time
+ * (ticks): when each block it was given would have finished playing. */
+static struct {
+    uint64_t ends[2]; /* when the block playing, and the one behind it, will finish */
+    int count;        /* how many blocks the chip holds: 0, 1 or 2 */
+    int frequency;    /* samples a second, as the game set it */
+} sound_chip = {{0, 0}, 0, 32000};
+#define TICKS_PER_SECOND 46875000ull
+
+static void set_register(int group, int offset, uint32_t v); /* (further down, with the other hardware registers) */
+static uint32_t sound_length_shown; /* what we last put in the chip's "length" register */
+
+/* How many bytes of the block now playing are still to be played. */
+static uint32_t sound_chip_left(void) {
+    uint64_t left = sound_chip.count ? sound_chip.ends[0] - ticks : 0;
+    return (uint32_t)(left * (uint64_t)sound_chip.frequency / TICKS_PER_SECOND) * 4;
+}
+/* Two facts in one number: the top bit says the chip is full, the next that it is playing. */
+static uint32_t sound_chip_status(void) {
+    return (sound_chip.count == 2 ? 0x80000001u : 0) | (sound_chip.count ? 0x40000000u : 0);
+}
+
+/* Blocks that have finished playing by now leave the chip, and the game is
+ * told about each (some wait for exactly that). */
+static void sound_chip_update(void) {
+    while (sound_chip.count && sound_chip.ends[0] <= ticks) {
+        sound_chip.ends[0] = sound_chip.ends[1];
+        sound_chip.count--;
+        post_event(6); /* EVENT_AI: "a block of sound has finished" */
+    }
+    /* Many games do not ask the library about the chip but look at its two
+     * registers themselves, so those are kept true as well: how much is
+     * left (register 4) and the status (register 0xC). */
+    sound_length_shown = sound_chip_left();
+    set_register(5, 0x04, sound_length_shown);
+    set_register(5, 0x0C, sound_chip_status());
+}
+
+static void play_sound(uint32_t address, uint32_t size);
+
+/* The game hands the chip a block of sound. Returns 0 if the chip is full
+ * (the game must wait and try again). */
+static int sound_chip_take(uint32_t address, uint32_t size) {
+    sound_chip_update();
+    if (sound_chip.count == 2)
+        return 0;
+    /* This block starts when the one before it ends (or now, if the chip
+     * was idle) and lasts as long as its samples take to play. */
+    uint64_t start = sound_chip.count ? sound_chip.ends[sound_chip.count - 1] : ticks;
+    sound_chip.ends[sound_chip.count++] = start + (uint64_t)(size / 4) * TICKS_PER_SECOND / (uint64_t)sound_chip.frequency;
+    /* The chip does not take the samples when it is told about a block: it
+     * reads them out of the game's memory as it plays them, a moment later.
+     * Some games rely on that, and name a block while its samples are still
+     * being made. So we read each block one step late: when the next one is
+     * named. (Games keep at least two blocks in turn, so it is still there.) */
+    static uint32_t named_address, named_size;
+    if (named_size)
+        play_sound(named_address, named_size);
+    named_address = address, named_size = size;
+    sound_chip_update();
+    return 1;
+}
 
 /* How much sound we keep waiting, beyond what the game asks for, as a
  * cushion against hiccups (see hle_osAiGetLength). More is safer against
  * crackling but makes sounds arrive later; it can be changed in the menu. */
 static int sound_cushion_ms = 100;
-#define SOUND_CUSHION_BYTES ((uint32_t)sound_cushion_ms * 128) /* 16-bit stereo at 32 kHz is 128 bytes a millisecond */
+/* (16-bit stereo is 4 bytes a sample) */
+#define SOUND_CUSHION_BYTES (((uint32_t)sound_cushion_ms * (uint32_t)sound_chip.frequency / 250) & ~3u)
 static FILE *wav_file;
 static long wav_bytes, sound_blocks, sound_gaps, sound_skipped;
 #ifdef USE_SDL
@@ -1037,6 +1121,8 @@ static void open_sound(int frequency) {
 }
 void hle_osAiSetFrequency(Context *ctx) {
     open_sound((int)ARG0);
+    if (ARG0 >= 4000 && ARG0 <= 96000)
+        sound_chip.frequency = (int)ARG0;
     RETURN(ARG0);
 }
 /* Hand a block of finished sound to the sound card. */
@@ -1062,37 +1148,37 @@ static void play_sound(uint32_t address, uint32_t size) {
             if (getenv("SOUND_TEST")) /* for testing: say when */
                 fprintf(stderr, "sound gap at frame %ld\n", frames);
         }
+        if (waiting == 0) {
+            /* Nothing is waiting (the start, or after a gap): put the
+             * cushion of silence in first, so that the PC being a moment
+             * late with the next block does not make another gap. */
+            static const int16_t silence[2048];
+            for (uint32_t left = SOUND_CUSHION_BYTES; left; left -= left > sizeof silence ? sizeof silence : left)
+                SDL_QueueAudio(audio_device, silence, left > sizeof silence ? sizeof silence : left);
+            waiting = SOUND_CUSHION_BYTES;
+        }
         if (getenv("SOUND_TEST") && frames % 120 == 0)
-            fprintf(stderr, "sound queue at frame %ld: %u ms, block %u bytes\n", frames, waiting / 128, size);
+            fprintf(stderr, "sound queue at frame %ld: %u ms, block %u bytes\n", frames,
+                    waiting / ((uint32_t)sound_chip.frequency / 250), size);
         if (sound_volume < 10) /* turned down in the menu */
             for (uint32_t i = 0; i < size / 2; i++)
                 samples[i] = (int16_t)(samples[i] * sound_volume / 10);
-        if (waiting < SOUND_CUSHION_BYTES + 25600) /* the cushion plus a fifth of a second */
+        if (waiting < SOUND_CUSHION_BYTES * 2 + (uint32_t)sound_chip.frequency / 5 * 4) /* twice the cushion plus a fifth of a second */
             SDL_QueueAudio(audio_device, samples, size);
         else
             sound_skipped++;
     }
 #endif
 }
-void hle_osAiSetNextBuffer(Context *ctx) {
-    play_sound(ARG0, ARG1);
-    RETURN(0);
-}
+void hle_osAiSetNextBuffer(Context *ctx) { RETURN(sound_chip_take(ARG0, ARG1) ? 0 : -1); }
 void hle_osAiGetLength(Context *ctx) {
-#ifdef USE_SDL
-    if (audio_device) {
-        /* The game tries to keep only a few milliseconds waiting, which a
-         * console can manage but a PC cannot: any hiccup and the sound card
-         * runs dry. So we under-report, and the game keeps that much extra
-         * queued without knowing. */
-        uint32_t waiting = SDL_GetQueuedAudioSize(audio_device);
-        RETURN(waiting > SOUND_CUSHION_BYTES ? (waiting - SOUND_CUSHION_BYTES) & ~3u : 0);
-        return;
-    }
-#endif
-    RETURN(0);
+    sound_chip_update();
+    RETURN(sound_chip_left());
 }
-void hle_osAiGetStatus(Context *ctx) { RETURN(0); }
+void hle_osAiGetStatus(Context *ctx) {
+    sound_chip_update();
+    RETURN(sound_chip_status());
+}
 
 /* ---- Controllers and save data ------------------------------------------------
  * Controllers and the cartridge's save chip are reached through one small
@@ -1129,6 +1215,8 @@ static void say(const char *text) {
     snprintf(message, sizeof message, "%s", text);
     message_until = frames_now() + 150;
     printf("%s\n", text);
+    if (run_log)
+        fprintf(stderr, "event %ld: %s\n", frames_now(), text);
 }
 
 static void save_eeprom(void) {
@@ -1382,13 +1470,18 @@ static int hardware_poll(void) {
         }
     }
     /* Sound output: a block of sound to play. */
+    /* (The length register also shows how much of the playing block is
+     * left, which we keep up to date ourselves: see sound_chip_update. A
+     * number there that we did not write is the game's.) */
     length = get_register(5, 0x04);
-    if (length != 0) {
+    if (length != sound_length_shown) {
         uint32_t rate = get_register(5, 0x10);
-        open_sound(rate ? (int)(48681812 / (rate + 1)) : 32000);
-        play_sound(as_cpu_address(get_register(5, 0x00) & 0xFFFFFF), length & 0x3FFF8);
-        set_register(5, 0x04, 0);
-        post_event(EVENT_AI);
+        int frequency = rate ? (int)(48681812 / (rate + 1)) : 32000;
+        open_sound(frequency);
+        if (frequency >= 4000 && frequency <= 96000)
+            sound_chip.frequency = frequency;
+        sound_chip_take(as_cpu_address(get_register(5, 0x00) & 0xFFFFFF), length & 0x3FFF8);
+        sound_chip_update(); /* (puts the register back to "how much is left") */
         did = 1;
     }
     return did;
@@ -1443,7 +1536,7 @@ static uint8_t *hardware_at(uint32_t address, uint32_t size) {
     set_register(3, 0x04, 0x02020102);    /* the console's version */
     set_register(3, 0x08, 0);             /* no interrupts pending */
     set_register(4, 0x10, line);          /* the TV line being drawn: keeps moving */
-    set_register(5, 0x0C, 0);             /* sound output: not full */
+    sound_chip_update();                  /* sound output: how full it really is */
     set_register(6, 0x10, 0);             /* cartridge port: not busy */
     set_register(8, 0x18, 0);             /* controller port: not busy */
     return hardware[group] + (physical & 0x3F);
@@ -1685,6 +1778,7 @@ static void load_state(void) {
     /* The pictures and sound that were waiting belong to the moment we left. */
     shown_count = shown_next = 0;
     gfx_forget_last_frame();
+    sound_chip.count = 0; /* (the chip is not part of a state: it starts idle) */
 #ifdef USE_SDL
     if (audio_device)
         SDL_ClearQueuedAudio(audio_device);
@@ -1810,7 +1904,10 @@ static Binding bindings[] = {
     {"D-pad down", BTN_DDOWN, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_DOWN))},
     {"D-pad left", BTN_DLEFT, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_LEFT))},
     {"D-pad right", BTN_DRIGHT, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_RIGHT))},
-    {"Fast forward", 0, 0, 0, SHORTCUT_FAST, USUAL(TAB, 0, PAD_RIGHT_TRIGGER)},
+    /* (No gamepad button to begin with: the right trigger used to be it, and
+     * is where a hand rests, so games ran four times too fast with the sound
+     * cutting out, and it looked like a fault.) */
+    {"Fast forward", 0, 0, 0, SHORTCUT_FAST, USUAL(TAB, 0, PAD_NONE)},
     {"Save state", 0, 0, 0, SHORTCUT_SAVE, USUAL(F5, 0, PAD_NONE)},
     {"Load state", 0, 0, 0, SHORTCUT_LOAD, USUAL(F7, 0, PAD_NONE)},
     {"Look (hold)", 0, 0, 0, SHORTCUT_LOOK, USUAL(UNKNOWN, 3, PAD_NONE)},
@@ -1958,6 +2055,14 @@ static void open_window(void) {
     if (fullscreen) /* remembered from last time */
         SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
 
+    if (run_log) { /* which screen, and how often it redraws: a picture rate that does not divide it looks uneven */
+        SDL_DisplayMode mode;
+        int screen = SDL_GetWindowDisplayIndex(window);
+        if (SDL_GetCurrentDisplayMode(screen, &mode) == 0)
+            fprintf(stderr, "screen: %s, %dx%d at %d Hz, video driver %s\n", SDL_GetDisplayName(screen), mode.w, mode.h,
+                    mode.refresh_rate, SDL_GetCurrentVideoDriver());
+    }
+
     /* Controllers are opened as SDL announces them (see the event loop),
      * which covers ones already connected as well as ones that turn up later. */
     next_frame_time = SDL_GetPerformanceCounter();
@@ -2052,7 +2157,7 @@ static void update_stats(int showed_picture) {
         LINE("GPU    not reported by this system");
     LINE("Size   %dx%d, %ld triangles per picture", w, h, triangles);
     LINE("Sound  %u ms queued, %ld gaps; %ld late refreshes",
-         audio_device ? SDL_GetQueuedAudioSize(audio_device) / 128 : 0, sound_gaps, late_refreshes);
+         audio_device ? SDL_GetQueuedAudioSize(audio_device) / ((uint32_t)sound_chip.frequency / 250) : 0, sound_gaps, late_refreshes);
 #undef LINE
     stats.since = now, stats.refreshes = stats.shown = 0;
     stats.cpu_seconds_before = cpu_seconds_used();
@@ -2190,6 +2295,8 @@ static void reset_game(void) {
     }
     arguments[count] = NULL;
     save_settings();
+    if (run_log)
+        fprintf(stderr, "event %ld: reset\n", frames);
     SDL_Quit(); /* close the window and the sound first */
     execvp(arguments[0], arguments);
     fatal("could not start the game again", 0);
@@ -2440,8 +2547,13 @@ static void draw_overlay(void) {
         draw_box(4 * size, window_h - line - 8 * size, ((int)strlen(message) + 2) * letter, line + 4 * size, 170);
         draw_text(12 * size, window_h - line - 4 * size, message, 255, 255, 255);
     } else if (fast_forward) {
-        draw_box(4 * size, window_h - line - 8 * size, 6 * letter, line + 4 * size, 170);
-        draw_text(12 * size, window_h - line - 4 * size, ">>", 255, 255, 255);
+        char text[40]; /* said in words, so that nobody takes it for a fault */
+        if (fast_speed)
+            snprintf(text, sizeof text, ">> Fast forward %dx (no sound)", fast_speed);
+        else
+            snprintf(text, sizeof text, ">> Fast forward (no sound)");
+        draw_box(4 * size, window_h - line - 8 * size, ((int)strlen(text) + 2) * letter, line + 4 * size, 170);
+        draw_text(12 * size, window_h - line - 4 * size, text, 255, 255, 255);
     }
     if (!menu_open)
         return;
@@ -2571,21 +2683,33 @@ static void read_keyboard_and_gamepad(void) {
             overlay_key(event.key.keysym.scancode);
 
         /* Controllers can be plugged in, or connect over Bluetooth, at any
-         * time. SDL tells us when one arrives or leaves. */
-        if (event.type == SDL_CONTROLLERDEVICEADDED && !gamepad) {
-            gamepad = SDL_GameControllerOpen(event.cdevice.which);
-            if (gamepad)
-                printf("controller connected: %s\n", SDL_GameControllerName(gamepad));
+         * time. SDL tells us when one arrives or leaves. We open every one
+         * of them, and "gamepad" is whichever was touched last: with several
+         * around (a second pad, or one left behind by a streaming program)
+         * the one in the player's hands is the one that counts. */
+        if (event.type == SDL_CONTROLLERDEVICEADDED) {
+            SDL_GameController *arrived = SDL_GameControllerOpen(event.cdevice.which);
+            if (arrived)
+                printf("controller connected: %s\n", SDL_GameControllerName(arrived));
+            if (!gamepad)
+                gamepad = arrived;
         }
-        if (event.type == SDL_CONTROLLERDEVICEREMOVED && gamepad &&
-            event.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gamepad))) {
-            printf("controller disconnected\n");
-            SDL_GameControllerClose(gamepad);
-            gamepad = NULL;
-            for (int i = 0; i < SDL_NumJoysticks() && !gamepad; i++) /* fall back to another, if any */
-                if (SDL_IsGameController(i))
-                    gamepad = SDL_GameControllerOpen(i);
+        if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
+            SDL_GameController *gone = SDL_GameControllerFromInstanceID(event.cdevice.which);
+            if (gone) {
+                printf("controller disconnected\n");
+                SDL_GameControllerClose(gone);
+            }
+            if (gone == gamepad) {
+                gamepad = NULL;
+                for (int i = 0; i < SDL_NumJoysticks() && !gamepad; i++) /* fall back to another, if any */
+                    gamepad = SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(i));
+            }
         }
+        if (event.type == SDL_CONTROLLERBUTTONDOWN)
+            gamepad = SDL_GameControllerFromInstanceID(event.cbutton.which);
+        if (event.type == SDL_CONTROLLERAXISMOTION && abs(event.caxis.value) > 20000)
+            gamepad = SDL_GameControllerFromInstanceID(event.caxis.which);
 
         if (menu_open && waiting_for_press) {
             /* A cell of the controls table is waiting to be told its new
@@ -2775,10 +2899,17 @@ static void save_window_picture(int w, int h) {
     say(text);
 }
 
+/* For the run log: what the window was last seen to show (see glb_window_colours). */
+static int window_colours;
+static uint32_t window_average;
+static long window_looked_at = -60;
+
 static void show_picture(int which) {
     int w, h;
     SDL_GL_GetDrawableSize(window, &w, &h);
     glb_present(which, w, h);
+    if (run_log && frames >= window_looked_at + 60) /* once a second, before the menu is drawn over it */
+        window_colours = glb_window_colours(&window_average), window_looked_at = frames;
     draw_overlay();
     glb_overlay_finish();
     /* For testing: WINDOW_SHOT=file.ppm saves what the window shows at frame
@@ -2941,6 +3072,105 @@ static void load_settings(int *scale, float *aspect) {
     fclose(file);
 }
 
+/* ---- The run log --------------------------------------------------------------
+ * With --log the game writes down how it is doing as it runs, one line of
+ * text at a time. Nobody has to watch: the "run" command keeps the text in
+ * the logs/ folder, and the "diagnose" command (diagnose.py) reads it back
+ * and says what went wrong and where to look. The lines:
+ *
+ *   health F: ...   once a second: what was drawn in that second, whether
+ *                   the screen is blank, how fast the game is going, and
+ *                   how evenly pictures reached the window
+ *   screen: ...     which screen the window is on and how often it redraws
+ *   input F: ...    the controller, every time it changes, so that the
+ *                   same session can be played again with --replay
+ *   event F: ...    things the player did in the menu (save states, reset)
+ *   stalled F: ...  no picture for five seconds, and what each thread of
+ *                   the game is waiting for
+ *
+ * F is the number of screen refreshes since the game started. */
+
+static void print_threads(FILE *out) {
+    for (int i = 0; i < thread_count; i++)
+        fprintf(out, "  thread %d: priority %d, %s, queue 0x%08X (%u waiting), last call from 0x%08X\n",
+                threads[i].id, threads[i].priority,
+                (const char *[]){"stopped", "ready", "waiting", "finished", "idle loop"}[threads[i].state],
+                threads[i].wait_queue,
+                threads[i].state == WAITING ? g32(MQ_VALID(threads[i].wait_queue)) : 0,
+                (uint32_t)threads[i].ctx.ra);
+}
+
+static int longest_wait, shortest_wait; /* between new pictures reaching the window, in tenths of a millisecond */
+
+static void log_health(void) {
+    static long pictures_before, triangles_before, rectangles_before, unhandled_before, sound_before;
+    static int quiet_seconds;
+    static struct timespec before;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    /* Sixty refreshes should take one second. */
+    double seconds = (double)(now.tv_sec - before.tv_sec) + (double)(now.tv_nsec - before.tv_nsec) / 1e9;
+    int speed = before.tv_sec && seconds > 0 ? (int)(100 / seconds + 0.5) : 100;
+    before = now;
+
+    int colours = 0, menu = 0;
+    uint32_t average = 0;
+    if (headless) {
+        /* No window: look at the picture itself, a few dozen dots of it. */
+        int w, h;
+        const uint32_t *pixels = gfx_picture(1, &w, &h);
+        uint32_t seen[48], sum[3] = {0, 0, 0};
+        for (int i = 0; i < 48; i++) {
+            uint32_t dot = pixels[((i / 8 * 2 + 1) * h / 12) * w + (i % 8 * 2 + 1) * w / 16];
+            sum[0] += dot >> 16 & 255, sum[1] += dot >> 8 & 255, sum[2] += dot & 255;
+            uint32_t colour = dot & 0xF0F0F0;
+            int known = 0;
+            for (int j = 0; j < colours; j++)
+                known |= seen[j] == colour;
+            if (!known)
+                seen[colours++] = colour;
+        }
+        average = sum[0] / 48 << 16 | sum[1] / 48 << 8 | sum[2] / 48;
+    }
+#ifdef USE_SDL
+    else
+        colours = window_colours, average = window_average, menu = menu_open;
+#endif
+    long pictures = graphics_tasks - pictures_before;
+    fprintf(stderr, "health %ld: pictures %ld triangles %ld rectangles %ld unhandled %ld sound %ld colours %d average %06X speed %d menu %d longest %d shortest %d\n",
+            frames, pictures, gfx_triangle_count - triangles_before, gfx_rectangle_count - rectangles_before,
+            gfx_unhandled_count - unhandled_before, audio_tasks - sound_before, colours, average, speed, menu,
+            longest_wait, shortest_wait);
+    longest_wait = shortest_wait = 0;
+    pictures_before = graphics_tasks, triangles_before = gfx_triangle_count, rectangles_before = gfx_rectangle_count;
+    unhandled_before = gfx_unhandled_count, sound_before = audio_tasks;
+
+    quiet_seconds = pictures ? 0 : quiet_seconds + 1;
+    if (quiet_seconds == 5) {
+        fprintf(stderr, "stalled %ld: no picture for five seconds. The threads:\n", frames);
+        print_threads(stderr);
+    }
+}
+
+/* --replay: the controller of an earlier run, read back from its log. */
+static struct Replayed { long frame; int buttons, x, y; } *replayed, replay_now;
+static int replay_count, replay_next;
+
+static void load_replay(const char *path) {
+    FILE *file = fopen(path, "r");
+    char line[256];
+    while (file && fgets(line, sizeof line, file)) {
+        struct Replayed r;
+        if (sscanf(line, "input %ld: %i %d %d", &r.frame, &r.buttons, &r.x, &r.y) != 4)
+            continue;
+        if (replay_count % 1024 == 0)
+            replayed = realloc(replayed, (size_t)(replay_count + 1024) * sizeof *replayed);
+        replayed[replay_count++] = r;
+    }
+    if (file)
+        fclose(file);
+}
+
 /* Once per screen refresh. */
 static void present_frame(void) {
     if (max_frames >= 0 && frames > max_frames)
@@ -2977,6 +3207,18 @@ static void present_frame(void) {
          * are up, so they stay responsive. */
         if (which >= 0 || menu_open || stats_shown || frames <= message_until)
             show_picture(on_screen);
+        if (which >= 0 && run_log) {
+            /* For the run log: how evenly do new pictures reach the window?
+             * The longest and shortest wait between two, this second. */
+            static Uint64 before;
+            Uint64 now = SDL_GetPerformanceCounter();
+            int tenths = before ? (int)((now - before) * 10000 / SDL_GetPerformanceFrequency()) : 0; /* tenths of a millisecond */
+            before = now;
+            if (tenths > longest_wait)
+                longest_wait = tenths;
+            if (tenths && (tenths < shortest_wait || !shortest_wait))
+                shortest_wait = tenths;
+        }
         wait_for_next_frame();
     }
 #endif
@@ -2988,6 +3230,19 @@ static void present_frame(void) {
         } else if (frames == script[i].start + script[i].duration) {
             pad_buttons = 0, pad_x = pad_y = 0;
         }
+    if (replay_count) {
+        while (replay_next < replay_count && replayed[replay_next].frame <= frames)
+            replay_now = replayed[replay_next++];
+        pad_buttons = (uint16_t)replay_now.buttons, pad_x = (int8_t)replay_now.x, pad_y = (int8_t)replay_now.y;
+    }
+    if (run_log) {
+        static int logged_buttons = -1, logged_x, logged_y;
+        if (pad_buttons != logged_buttons || pad_x != logged_x || pad_y != logged_y)
+            fprintf(stderr, "input %ld: 0x%04X %d %d\n", frames, pad_buttons, pad_x, pad_y);
+        logged_buttons = pad_buttons, logged_x = pad_x, logged_y = pad_y;
+        if (frames % 60 == 0)
+            log_health();
+    }
     static long next_screenshot = -1;
     if (next_screenshot < 0)
         next_screenshot = screenshot_from;
@@ -3041,14 +3296,8 @@ static void print_summary(void) {
     if (host_interpreted)
         printf("  interpreted:       %ld instructions (code that was not translated ahead of time)\n",
                host_interpreted);
-    if (getenv("SHOW_THREADS")) /* for working out why a game is stuck */
-        for (int i = 0; i < thread_count; i++)
-            printf("  thread %d: priority %d, %s, queue 0x%08X (%u waiting), last call from 0x%08X\n",
-                   threads[i].id, threads[i].priority,
-                   (const char *[]){"stopped", "ready", "waiting", "finished", "idle loop"}[threads[i].state],
-                   threads[i].wait_queue,
-                   threads[i].state == WAITING ? g32(MQ_VALID(threads[i].wait_queue)) : 0,
-                   (uint32_t)threads[i].ctx.ra);
+    if (run_log || getenv("SHOW_THREADS")) /* for working out why a game is stuck */
+        print_threads(stdout);
 }
 
 /* ---- Main ------------------------------------------------------------------ */
@@ -3070,6 +3319,16 @@ static void watchdog(int signal_number) {
         exit(1);
     }
     alarm(5);
+}
+
+/* The program itself went wrong (it read or wrote memory that is not there,
+ * say). Normally that ends it without a word; say where the game was first. */
+static void crashed(int signal_number) {
+    fprintf(stderr, "\ngame stopped: crashed (signal %d)\n", signal_number);
+    if (current)
+        fprintf(stderr, "  thread %d, last call from 0x%08X, frame %ld\n", current->id, (uint32_t)current->ctx.ra, frames);
+    signal(signal_number, SIG_DFL); /* and then end the way it was going to */
+    raise(signal_number);
 }
 
 int main(int argc, char **argv) {
@@ -3116,6 +3375,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--every")) screenshot_every = atoi(next), i++;
         else if (!strcmp(argv[i], "--wav")) wav_file = fopen(next, "wb"), i++;
         else if (!strcmp(argv[i], "--from")) screenshot_from = atol(next), i++;
+        else if (!strcmp(argv[i], "--log")) run_log = gfx_report_unhandled = 1;
+        else if (!strcmp(argv[i], "--replay")) load_replay(next), i++;
         else if (!strcmp(argv[i], "--keys")) {
             for (const char *p = next; *p && script_count < 64; script_count++) {
                 char *end;
@@ -3208,6 +3469,10 @@ int main(int argc, char **argv) {
     host_interpret_loaded_code = getenv("INTERPRET_LOADED") != NULL;
     signal(SIGALRM, watchdog);
     alarm(5);
+    for (int i = 0; i < 4; i++)
+        signal((int[]){SIGSEGV, SIGBUS, SIGFPE, SIGILL}[i], crashed);
+    if (run_log)
+        setvbuf(stdout, NULL, _IOLBF, 0); /* a line at a time, so the log is in the order things happened */
 
     /* The start-up code runs as a thread of its own, below all others: on
      * the console it is not a thread at all, and the first real thread it

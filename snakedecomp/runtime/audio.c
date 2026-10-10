@@ -19,6 +19,8 @@
  */
 #include "audio.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define RAM_MASK 0x7FFFFF
@@ -258,6 +260,44 @@ static void envelope_mix_new(uint32_t w0, uint32_t w1) {
     }
 }
 
+/* ---- The echo's filter ("pole filter") --------------------------------------------
+ * Games with an echo effect feed part of the sound back into a delay line,
+ * and pass it through this on the way: it turns the sound down (gain) and
+ * dulls it a little, so that each echo is quieter and softer than the last,
+ * as in a real room. Each output sample is made from the input sample and
+ * the outputs just before it, using a small table the game loads first (the
+ * same way it loads ADPCM tables).
+ *
+ * Without it every echo came back at full strength: the echo piled up into
+ * a harsh rattle behind anything loud, such as gunshots. */
+static void pole_filter(int flags, int gain, uint32_t memory_address) {
+    uint8_t *saved = game(memory_address);
+    uint8_t *in = at(state.in), *out = at(state.out);
+    const int16_t *h1 = state.codebook[0][0];
+    int16_t h2[8];
+    int last1 = 0, last2 = 0; /* the two outputs before this block */
+    if (!(flags & FLAG_INIT))
+        last1 = get16(saved + 4), last2 = get16(saved + 6);
+    for (int i = 0; i < 8; i++)
+        h2[i] = (int16_t)((state.codebook[0][1][i] * gain) >> 14);
+
+    for (int remaining = (int)round_up(state.count, 16); remaining > 0; remaining -= 16, in += 16, out += 16) {
+        int16_t frame[8], result[8];
+        for (int i = 0; i < 8; i++)
+            frame[i] = get16(in + i * 2);
+        for (int i = 0; i < 8; i++) {
+            int32_t total = frame[i] * gain + h1[i] * last1 + state.codebook[0][1][i] * last2;
+            for (int k = 0; k < i; k++)
+                total += h2[k] * frame[i - 1 - k];
+            result[i] = (int16_t)clamp16(total >> 14);
+        }
+        for (int i = 0; i < 8; i++)
+            put16(out + i * 2, result[i]);
+        last1 = result[6], last2 = result[7];
+    }
+    put16(saved + 4, last1), put16(saved + 6, last2);
+}
+
 /* Add one scratch buffer into another at a fixed gain. */
 static void mix(int gain, uint32_t in_offset, uint32_t out_offset, uint32_t count) {
     uint8_t *in = at(in_offset), *out = at(out_offset);
@@ -319,9 +359,13 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
     static int newer;
     for (uint32_t i = 0; i + 8 <= size && !newer; i += 8)
         newer = p[i] >= 0x12 && p[i] <= 0x16;
+    static long list_number;
+    list_number++;
     for (uint32_t i = 0; i + 8 <= size; i += 8, p += 8) {
         uint32_t w0 = (uint32_t)get32(p), w1 = (uint32_t)get32(p + 4);
         int flags = (int)((w0 >> 16) & 255);
+        if (getenv("SHOW_SOUND") && list_number == atol(getenv("SHOW_SOUND"))) /* for testing: one whole list */
+            fprintf(stderr, "sound %08X %08X\n", w0, w1);
         switch (w0 >> 24) {
         case 1: decode_adpcm(flags, w1); break;
         case 2: memset(at(w0 & 0xFFFF), 0, round_up(w1 & 0xFFFF, 16)); break;
@@ -376,6 +420,7 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
         case 0x14: memcpy(at(w0 & 0xFFFF), game(w1), ((w0 >> 16) & 255) << 4); break; /* load */
         case 0x15: memcpy(game(w1), at(w0 & 0xFFFF), ((w0 >> 16) & 255) << 4); break; /* save */
         case 13: interleave(w1 >> 16, w1 & 0xFFFF); break;
+        case 14: pole_filter(flags, (int)(w0 & 0xFFFF), w1); break;
         case 15: state.loop_state = w1; break;
         }
     }

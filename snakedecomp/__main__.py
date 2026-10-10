@@ -6,6 +6,7 @@ import re
 import subprocess
 import zipfile
 
+from . import diagnose
 from .cheats import find_cheats, read_cheat_file, write_cheat_file
 from .build import build, game_names, game_source, host_addresses, host_replacements, sdl_flags
 from .profiles import TRIED, UNTRIED, game_options
@@ -239,7 +240,17 @@ def cmd_run(rom: Rom, args: argparse.Namespace, extra: list[str]) -> None:
         # Smooth motion draws twice as many pictures, so unless the player
         # has chosen a resolution, start it at a lower one.
         options += ["--scale", "2"]
-    subprocess.run([game, plain_rom, *options, *extra])
+    # The game keeps a log of the run (see diagnose.py), and when it ends we
+    # say what the log shows. "python3 -m snakedecomp diagnose" says more.
+    log = diagnose.start_log(rom_name, save, settings)
+    facts = {"game": rom_name, "code": rom.header.game_code, "rom": args.rom}
+    diagnose.run_logged([game, plain_rom, *options, *extra, "--log"], log, facts)
+    session = diagnose.read_log(log)
+    problems = [f for f in diagnose.find_problems(session) if f.serious]
+    for problem in problems:
+        print(f"log: {problem.what}")
+    print(f"The log of this run is {log}" + ("; for the full story: python3 -m snakedecomp diagnose" if problems else ""))
+    diagnose.report()  # keep logs/report.txt up to date
 
 
 def rom_files(folder: str) -> list[str]:
@@ -288,6 +299,12 @@ def cmd_survey(args: argparse.Namespace) -> None:
     working = sum(1 for r in results if r["pictures"] and not r["note"])
     print(f"\n{working} of {len(results)} ran to the end and drew pictures. Report saved to {report}")
     print("Each game's last screenshots and full output are in its folder there.")
+
+
+def cmd_diagnose(args: argparse.Namespace) -> None:
+    print(diagnose.report(args.count, tuple(args.games), args.replay))
+    if os.path.exists(os.path.join(diagnose.LOGS, "report.txt")):
+        print(f"\nSaved as {os.path.join(diagnose.LOGS, 'report.txt')}")
 
 
 def parse_int(text: str) -> int:
@@ -369,15 +386,26 @@ def main() -> None:
     build_command = commands.add_parser("build", help="build games without starting them")
     build_command.add_argument("roms", nargs="+", help="ROM files, or folders of them")
 
+    diagnose_command = commands.add_parser(
+        "diagnose", help="read the logs of the last games played and say what went wrong",
+        description="Every game you play leaves a log in logs/. This reads the newest log of each game "
+        "(or of the games you name) and reports what happened and where to look.",
+    )
+    diagnose_command.add_argument("games", nargs="*", help="part of a game's name (default: the last games played)")
+    diagnose_command.add_argument("-n", "--count", type=parse_int, default=6, help="how many logs to read (default: 6)")
+    diagnose_command.add_argument(
+        "--replay", action="store_true", help="also play each troubled run again by itself and save pictures of it"
+    )
+
     for command in (disasm, functions, recompile, run, learn_command):
         command.add_argument("-s", "--symbols", help="linker map with function names")
 
     # Options we do not recognise are handed on to the game itself.
     args, extra = parser.parse_known_args()
-    if args.command in ("survey", "list", "build"):
+    if args.command in ("survey", "list", "build", "diagnose"):
         if extra:
             parser.error(f"unrecognised arguments: {' '.join(extra)}")
-        {"survey": cmd_survey, "list": cmd_list, "build": cmd_build}[args.command](args)
+        {"survey": cmd_survey, "list": cmd_list, "build": cmd_build, "diagnose": cmd_diagnose}[args.command](args)
     elif args.func is cmd_run:
         cmd_run(Rom.from_file(args.rom), args, extra)
     elif extra:

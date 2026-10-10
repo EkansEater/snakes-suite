@@ -21,4 +21,9 @@ void glb_overlay_finish(void);
 /* For test screenshots: the window's contents, 3 bytes per pixel. */
 void glb_read_window(uint8_t *rgb, int width, int height);
 
+/* A quick look at what the window shows, for the run log: how many different
+ * colours there are among a few dozen dots spread over the picture (1 means
+ * the screen is blank), and their average as 0xRRGGBB. */
+int glb_window_colours(uint32_t *average);
+
 #endif

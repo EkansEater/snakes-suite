@@ -332,14 +332,20 @@ int main(int argc, char **argv) {
             switch (event.type) {
             case SDL_QUIT: running = 0; break;
             case SDL_CONTROLLERDEVICEADDED: /* plugged in, or a wireless one woke up */
-                if (!pad)
-                    pad = SDL_GameControllerOpen(event.cdevice.which);
+                /* Every gamepad is opened, so that a press on any of them
+                 * arrives; "pad" is whichever was touched last. */
+                if (SDL_GameControllerOpen(event.cdevice.which) && !pad)
+                    pad = SDL_GameControllerFromInstanceID(SDL_JoystickGetDeviceInstanceID(event.cdevice.which));
                 break;
             case SDL_CONTROLLERDEVICEREMOVED:
-                if (pad && event.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pad))) {
-                    SDL_GameControllerClose(pad);
+                if (pad == SDL_GameControllerFromInstanceID(event.cdevice.which))
                     pad = NULL;
-                }
+                if (SDL_GameControllerFromInstanceID(event.cdevice.which))
+                    SDL_GameControllerClose(SDL_GameControllerFromInstanceID(event.cdevice.which));
+                break;
+            case SDL_CONTROLLERAXISMOTION:
+                if (abs(event.caxis.value) > 16000)
+                    pad = SDL_GameControllerFromInstanceID(event.caxis.which);
                 break;
             case SDL_KEYDOWN:
                 switch (event.key.keysym.scancode) {
@@ -360,6 +366,7 @@ int main(int argc, char **argv) {
                 }
                 break;
             case SDL_CONTROLLERBUTTONDOWN:
+                pad = SDL_GameControllerFromInstanceID(event.cbutton.which);
                 switch (event.cbutton.button) {
                 case SDL_CONTROLLER_BUTTON_A: case SDL_CONTROLLER_BUTTON_START: go = 1; break;
                 case SDL_CONTROLLER_BUTTON_B: running = 0; break;
