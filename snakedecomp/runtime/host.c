@@ -2997,6 +2997,13 @@ static void present_frame(void) {
     }
     turn_stick();
     apply_mods();
+    if (getenv("DUMP_RAM") && frames == atol(getenv("DUMP_RAM"))) { /* for testing: DUMP_RAM=frame:file writes out the game's memory */
+        FILE *dump = fopen(strchr(getenv("DUMP_RAM"), ':') ? strchr(getenv("DUMP_RAM"), ':') + 1 : "ram.bin", "wb");
+        if (dump) {
+            fwrite(ram, 1, RAM_SIZE, dump);
+            fclose(dump);
+        }
+    }
     if (getenv("WATCH")) { /* for testing: WATCH=address prints what is there, every frame */
         uint32_t bits = g32((uint32_t)strtoul(getenv("WATCH"), NULL, 0));
         float value;

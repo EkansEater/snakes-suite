@@ -165,6 +165,10 @@ static struct {
     float fog_multiply, fog_offset;
     float texture_scale_s, texture_scale_t;
     int texture_tile; /* which of the eight tile settings triangles are drawn with */
+    /* How far outside its view a shape may reach before the chip cuts it
+     * off, as a multiple of the view's size; 0 until the game says. With 1
+     * nothing leaves the view, which split-screen games rely on. */
+    int clip_ratio;
     float viewport_scale[3], viewport_translate[3];
 } rsp;
 
@@ -789,6 +793,20 @@ static void capture_state(DrawState *d, int tile_index, int allow_depth) {
     /* How the pixel meets what is already on screen ("blender"). Bit 18 says
      * the new pixel simply replaces the old; otherwise they are mixed. */
     d->use_alpha = (rdp.other_mode_l & 0x40000) == 0;
+    {
+        /* The blender's full recipe is "(P * A + M * B) / (A + B)", with
+         * each of the four chosen from a short menu by two bits of the
+         * mode (a second set of choices applies in two-cycle mode). The
+         * usual way to say "opaque" is A = nothing, M = the new pixel,
+         * B = everything: the new pixel exactly, whatever its alpha. Games
+         * clear parts of the screen that way with an alpha of zero (Mario
+         * Kart 64 behind its results board), so it must not be mixed. */
+        int second = CYCLE_TYPE == CYCLE_2;
+        uint32_t a_choice = (rdp.other_mode_l >> (second ? 24 : 26)) & 3;
+        uint32_t m_choice = (rdp.other_mode_l >> (second ? 20 : 22)) & 3;
+        if (a_choice == 3 && m_choice == 0)
+            d->use_alpha = 0;
+    }
     d->use_fog = (rdp.other_mode_l >> 30) == 3;
     /* "Texture edge" mode: the texture's alpha cuts holes in the shape. */
     d->cutout = (rdp.other_mode_l & 0x1000) != 0;
@@ -1279,6 +1297,18 @@ void gfx_set_backend(const GfxBackend *chosen) {
 }
 
 static void draw_all_shapes(void) {
+    if (getenv("SHOW_SCISSORS") && !measuring && gfx_frame_number == atol(getenv("SHOW_SCISSORS"))) { /* for testing */
+        int last[4] = {-1, -1, -1, -1}, run = 0;
+        for (int i = 0; i <= shape_count; i++) {
+            const Shape *shape = &shapes[i < shape_count ? i : 0];
+            if (i == shape_count || memcmp(last, shape->state.scissor, sizeof last)) {
+                if (run)
+                    fprintf(stderr, "%5d shapes with scissor %d %d %d %d\n", run, last[0], last[1], last[2], last[3]);
+                memcpy(last, shape->state.scissor, sizeof last), run = 0;
+            }
+            run++;
+        }
+    }
     if (shape_count == 0)
         return;
     if (backend) {
@@ -1380,13 +1410,32 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
     for (int i = 1; i + 1 < count; i++) {
         Shape *shape = new_shape(TRIANGLE);
         capture_state(&shape->state, rsp.texture_tile, 1);
+        if (rsp.clip_ratio == 1 && rsp.viewport_scale[0] * 2 < SCREEN_W - 2) {
+            /* A view smaller than the screen that nothing may leave: keep
+             * this shape inside it. (A full-screen view is left alone, so
+             * that a widescreen picture can show more at the sides.) */
+            int box[4] = {(int)((rsp.viewport_translate[0] - fabsf(rsp.viewport_scale[0]) + wide_offset) * (float)scale),
+                          (int)((rsp.viewport_translate[1] - fabsf(rsp.viewport_scale[1])) * (float)scale),
+                          (int)((rsp.viewport_translate[0] + fabsf(rsp.viewport_scale[0]) + wide_offset) * (float)scale),
+                          (int)((rsp.viewport_translate[1] + fabsf(rsp.viewport_scale[1])) * (float)scale)};
+            int *scissor = shape->state.scissor;
+            if (scissor[0] < box[0]) scissor[0] = box[0];
+            if (scissor[1] < box[1]) scissor[1] = box[1];
+            if (scissor[2] > box[2]) scissor[2] = box[2];
+            if (scissor[3] > box[3]) scissor[3] = box[3];
+        }
         if (getenv("SHOW_RECTANGLES") && !is_perspective(rsp.projection) && shape->state.use_texture) /* for testing */
-            fprintf(stderr, "flat tri u %.1f %.1f %.1f v %.1f %.1f %.1f x %.0f %.0f %.0f tile %d..%d,%d..%d clamp %d%d mask %d%d size %d fmt %d line %u scale %.3f q %.3f %.3f %.3f y %.0f %.0f %.0f\n",
+            fprintf(stderr, "flat tri u %.1f %.1f %.1f v %.1f %.1f %.1f x %.0f %.0f %.0f tile %d..%d,%d..%d clamp %d%d mask %d%d size %d fmt %d line %u scale %.3f q %.3f %.3f %.3f y %.0f %.0f %.0f from %06X rows %d tmem %d cyc %d cc %d %d %d %d prim %d %d %d %d ac %d %d %d %d ac0 %d %d %d %d modes %06X %08X env %d shade %.0f %.0f %.0f %.0f\n",
                     s[0].u, s[i].u, s[i + 1].u, s[0].v, s[i].v, s[i + 1].v, s[0].x, s[i].x, s[i + 1].x,
                     shape->state.tile.uls / 4, shape->state.tile.lrs / 4, shape->state.tile.ult / 4, shape->state.tile.lrt / 4,
                     shape->state.tile.clamp_s, shape->state.tile.clamp_t, shape->state.tile.mask_s, shape->state.tile.mask_t,
                     shape->state.tile.size, shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes, rsp.texture_scale_s, s[0].q, s[i].q, s[i + 1].q,
-                    s[0].y, s[i].y, s[i + 1].y);
+                    s[0].y, s[i].y, s[i + 1].y, shape->state.loaded.source, shape->state.loaded.fixed_rows, shape->state.tile.tmem,
+                    shape->state.first_cycle, shape->state.cc[1][0], shape->state.cc[1][1], shape->state.cc[1][2],
+                    shape->state.cc[1][3], shape->state.prim[0], shape->state.prim[1], shape->state.prim[2], shape->state.prim[3],
+                    shape->state.ac[1][0], shape->state.ac[1][1], shape->state.ac[1][2], shape->state.ac[1][3],
+                    shape->state.ac[0][0], shape->state.ac[0][1], shape->state.ac[0][2], shape->state.ac[0][3],
+                    rdp.other_mode_h, rdp.other_mode_l, shape->state.env[3], s[0].r, s[0].g, s[0].b, s[0].a);
         /* The rasteriser wants a consistent winding; flip if needed. */
         float area = (s[i].x - s[0].x) * (s[i + 1].y - s[0].y) - (s[i].y - s[0].y) * (s[i + 1].x - s[0].x);
         shape->v[0] = s[0];
@@ -1417,6 +1466,12 @@ static void command_fill_rectangle(uint32_t w0, uint32_t w1) {
 
     if (measuring)
         return;
+    if (getenv("SHOW_RECTANGLES")) /* for testing */
+        fprintf(stderr, "fill x %d..%d y %d..%d cycle %d colour %08X image %06X depth %06X scissor %d %d %d %d cc %d %d %d %d ac %d %d %d %d prim %d %d %d %d env %d %d %d %d modes %06X %08X\n", left / 4, right / 4,
+                top / 4, bottom / 4, (int)CYCLE_TYPE, rdp.fill_color, rdp.color_image, rdp.depth_image, rdp.scissor[0],
+                rdp.scissor[1], rdp.scissor[2], rdp.scissor[3], rdp.cc[1][0], rdp.cc[1][1], rdp.cc[1][2], rdp.cc[1][3],
+                rdp.ac[1][0], rdp.ac[1][1], rdp.ac[1][2], rdp.ac[1][3], rdp.prim[0], rdp.prim[1], rdp.prim[2], rdp.prim[3],
+                rdp.env[0], rdp.env[1], rdp.env[2], rdp.env[3], rdp.other_mode_h, rdp.other_mode_l);
     /* The game "draws" into its depth buffer to reset it each frame. */
     Shape *shape = new_shape(rdp.color_image == rdp.depth_image ? DEPTH_CLEAR : fill ? FILL : COMBINED_RECTANGLE);
     capture_state(&shape->state, 0, 0);
@@ -1456,7 +1511,7 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
      * and draws thin lines where the pieces meet. */
     if (fabsf(shape->ds) == 1 && fabsf(shape->dt) == 1)
         shape->state.bilinear = 0;
-    if (getenv("SHOW_RECTANGLES") && fabsf(shape->ds) != 1) /* for testing */
+    if (getenv("SHOW_RECTANGLES")) /* for testing */
         fprintf(stderr, "rect x %d..%d y %d..%d s %.2f t %.2f ds %.4f dt %.4f tile %d..%d clamp %d mask %d size %d fmt %d line %u\n",
                 left / 4, right / 4, top / 4, bottom / 4, shape->s, shape->t, shape->ds, shape->dt, shape->state.tile.uls / 4,
                 shape->state.tile.lrs / 4, shape->state.tile.clamp_s, shape->state.tile.mask_s, shape->state.tile.size,
@@ -1635,6 +1690,8 @@ static void command_ex2(uint32_t w0, uint32_t w1) {
     }
     case 0xDB: { /* set one number */
         uint32_t index = (w0 >> 16) & 255, offset = w0 & 0xFFFF;
+        if (index == 0x04)
+            rsp.clip_ratio = (int)(w1 < 0x8000 ? w1 : 0x10000 - (w1 & 0xFFFF));
         if (index == 0x02)
             rsp.light_count = (int)(w1 / 24);
         else if (index == 0x06)
@@ -1679,6 +1736,7 @@ static void command_move_word(uint32_t w0, uint32_t w1) {
     }
     switch (w0 & 255) {
     case 0x02: rsp.light_count = (int)((w1 - 0x80000000u) / 32) - 1; break;
+    case 0x04: rsp.clip_ratio = (int)(w1 < 0x8000 ? w1 : 0x10000 - (w1 & 0xFFFF)); break;
     case 0x06: rsp.segments[((w0 >> 8) & 0xFFFF) / 4 & 15] = w1 & 0xFFFFFF; break;
     case 0x08:
         rsp.fog_multiply = (float)(int16_t)(w1 >> 16);
@@ -1792,6 +1850,9 @@ static void run_list(uint32_t address) {
             pc += 16;
             break;
         case 0xED: /* scissor: nothing is drawn outside this box */
+            if (getenv("SHOW_SCISSORS") && !measuring && gfx_frame_number == atol(getenv("SHOW_SCISSORS"))) /* for testing */
+                fprintf(stderr, "scissor command %08X %08X: x %.2f..%.2f y %.2f..%.2f (after %d shapes)\n", w0, w1,
+                        ((w0 >> 12) & 0xFFF) / 4.0, ((w1 >> 12) & 0xFFF) / 4.0, (w0 & 0xFFF) / 4.0, (w1 & 0xFFF) / 4.0, shape_count);
             rdp.scissor[0] = wide_x((int)((w0 >> 12) & 0xFFF));
             rdp.scissor[1] = (int)(w0 & 0xFFF) * scale / 4;
             rdp.scissor[2] = wide_x((int)((w1 >> 12) & 0xFFF));
