@@ -34,10 +34,19 @@ Quest 64 (though several of those have other faults).
 
 ## Schedule: batches of five
 
-Each batch: fix, run the audit again on all 32 games (to catch anything a
-shared fix broke), you play-test the five, then release (commit, tag
-`batch-N`, update "What works" in the README). A batch is not released until
-you have played its five games.
+How each fix goes (changed 2026-10-10, so that the work does not wait on
+play-testing):
+
+1. Fix one issue.
+2. `python3 -m snakedecomp check` on all 32 games. It says what got better
+   and what got worse; nothing may get worse.
+3. Claude looks at the picture sheets of the games the fix touched.
+4. Commit. [STATUS.md](STATUS.md) is updated by the check and goes in the
+   same commit.
+
+Your play-test of a batch's five games comes when you have time, and is
+recorded with the `note` command; a batch is tagged `batch-N` once all five
+have been played.
 
 Order: games nearest to working first, and shared fixes as early as
 possible so later batches inherit them.

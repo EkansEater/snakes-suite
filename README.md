@@ -21,6 +21,10 @@ own. Nothing in this project is, or contains, Nintendo's code or data.
 
 ## What works
 
+**The list that is kept up to date is [STATUS.md](STATUS.md)**, written by
+the `check` command below. What follows here is the wider survey of 63 ROMs
+from before that list existed.
+
 Checked on 63 ROMs with the `survey` command below, which runs each game by
 itself with no window, pressing Start and A now and then. "Looks right"
 means one or two screenshots looked right; nobody has played those games
@@ -71,6 +75,43 @@ python3 -m snakedecomp survey path/to/folder
 It builds each game, runs it by itself for a while pressing Start now and
 then, and prints one line per game. Screenshots and the full output of each
 are kept under `build/survey/`. Your real saves are not touched.
+
+### Checking every game by machine
+
+Where each game stands today is in [STATUS.md](STATUS.md): one row per game,
+written afresh by this command, which is also how a change to the tool is
+tested without anyone having to play 32 games:
+
+```bash
+python3 -m snakedecomp check
+```
+
+It builds every game in `roms/`, runs each by itself for a minute with no
+window, and judges what a machine can: whether it stops or crashes, whether
+the screen goes blank, whether the sound it makes agrees with what the game
+asked for (and whether a recording of it is silent, distorted or noise),
+and whether it runs too fast. It then says what got **better or worse since
+the last check**. `--only mario` checks just the games with that in their
+file name; `--frames 7200` runs for two minutes.
+
+Each run also leaves one image, `build/check/<game>/sheet.png`, with twelve
+pictures of the run side by side: a quick way to see wrong colours or
+garbled text, which a machine cannot judge. (The sheets and the sound
+measurements need the Python packages Pillow and numpy; without them the
+rest still works.)
+
+By default a run only presses Start and A in turn, which gets past most
+title screens and no further. A file `checks/keys/<game code>.txt` gives a
+game its own presses, to take it into real play; `check.py` describes it.
+
+What you find by playing goes in the same list:
+
+```bash
+python3 -m snakedecomp note NKT played good "Two Grand Prix cups, all fine"
+python3 -m snakedecomp note NMF played bad "Text on the scorecard is garbled"
+```
+
+The three letters are the game's code, shown by `info`.
 
 ### When a game goes wrong while you play
 
@@ -140,9 +181,9 @@ the game and you are back at the list.
 | Full screen | F11 | | |
 | Quit | Esc | close the window | B |
 
-Each game has a word in front saying how far it got when it was last tried
-(PLAYS, IN PLAY, STARTS, FAULTS, BLACK), and a line at the bottom saying
-more. Games are sorted best first. Two dots at the right mean the game has
+Each game has a word in front saying where it stood at its last check
+(PLAYS, CHECKS OUT, MACHINE OK, FAULTS, BLACK, STOPS; STATUS.md says what
+each means), and a line at the bottom saying more. Games are sorted best first. Two dots at the right mean the game has
 not been built yet, so its first start takes a minute or two; this builds
 every game in a folder ahead of time:
 
@@ -334,6 +375,7 @@ The tools are in `snakedecomp/`, and are meant to be read:
 | `recomp.py` | Translates each function to C |
 | `cheats.py`, `profiles.py` | Find the game's ready-made cheats; the few facts that cannot be detected |
 | `survey.py` | Tries a whole folder of games and reports on each |
+| `check.py` | Runs every game by itself, judges picture, sound and pace, and writes STATUS.md |
 | `diagnose.py` | Keeps a log of every run, and reads the logs back to say what went wrong |
 | `launcher/launcher.c` | The game list window |
 | `cpu.py`, `verify.py` | An interpreter in Python, and a check of the translated C against it |

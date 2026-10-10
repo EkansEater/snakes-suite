@@ -30,7 +30,7 @@
 
 typedef struct {
     char path[512], title[80], note[120];
-    int rank;   /* how well it works: 0 best (see TRIED in profiles.py) */
+    int rank;   /* how well it works: 0 best (the states in check.py) */
     int cheats; /* how many ready-made cheats it has */
     int built;  /* has it been translated and compiled already? */
 } Game;
@@ -118,7 +118,7 @@ static void box(int x, int y, int w, int h, int r, int g, int b) {
 }
 
 /* A word and a colour for each rank. */
-static const char *const rank_words[] = {"PLAYS", "IN PLAY", "STARTS", "FAULTS", "BLACK", "NO START"};
+static const char *const rank_words[] = {"PLAYS", "CHECKS OUT", "MACHINE OK", "FAULTS", "BLACK", "STOPS"};
 static const int rank_colours[][3] = {{110, 255, 120}, {150, 230, 255}, {150, 190, 255}, {255, 200, 90}, {255, 140, 90}, {255, 90, 90}};
 
 static int rows_shown; /* how many games fit in the window */
@@ -152,7 +152,7 @@ static void draw(const char *banner, const char *banner_detail) {
     text(window_w - margin - (int)strlen(line) * letter, 6 * size, line, 130, 130, 140);
     box(margin, 25 * size, window_w - 2 * margin, size, 70, 70, 80);
 
-    int name_room = (window_w - 2 * margin) / letter - 13; /* letters left for the title */
+    int name_room = (window_w - 2 * margin) / letter - 15; /* letters left for the title */
     for (int i = first_shown; i < game_count && i < first_shown + rows_shown; i++) {
         const Game *g = &games[i];
         int y = list_top + (i - first_shown) * row_height, known = g->rank >= 0 && g->rank <= 5;
@@ -162,10 +162,10 @@ static void draw(const char *banner, const char *banner_detail) {
          * starting, never tried) are greyed out. They can still be started. */
         int ready = known && g->rank <= 2;
         const int *colour = ready ? rank_colours[g->rank] : (const int[]){95, 95, 105};
-        text(margin, y, known ? rank_words[g->rank] : "UNTRIED", colour[0], colour[1], colour[2]);
+        text(margin, y, known ? rank_words[g->rank] : "UNCHECKED", colour[0], colour[1], colour[2]);
         snprintf(line, sizeof line, "%.*s", name_room, g->title);
         int bright = !ready ? (i == chosen ? 150 : 95) : i == chosen ? 255 : 205;
-        text(margin + 10 * letter, y, line, bright, bright, ready && i == chosen ? 120 : bright + (ready ? 0 : 10));
+        text(margin + 12 * letter, y, line, bright, bright, ready && i == chosen ? 120 : bright + (ready ? 0 : 10));
         if (!g->built)
             text(window_w - margin - 2 * letter, y, "..", 120, 120, 130); /* not built yet */
     }

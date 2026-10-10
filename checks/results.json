@@ -1,0 +1,1199 @@
+{
+ "N2PE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "N2PE",
+  "file": "Rampage 2 - Universal Tour (U) [!].zip",
+  "findings": [],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.004,
+   "quiet": 0.355,
+   "seconds": 59.4
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 13,
+   "lit": 12,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Rampage 2 - Universal Tour (U) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 21842,
+   "refused": 0,
+   "sent": 21842,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Rampage 2: Universal Tour"
+ },
+ "N32E": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "N32E",
+  "file": "Army Men - Sarge's Heroes 2 (U) [!].zip",
+  "findings": [],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 59.0
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 6,
+   "lit": 13,
+   "same at end": 6,
+   "shots": 13
+  },
+  "sheet": "build/check/Army Men - Sarge's Heroes 2 (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 21678,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Army Men: Sarge's Heroes 2"
+ },
+ "NACE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NACE",
+  "file": "Army Men - Air Combat (U) [!].zip",
+  "findings": [
+   "The game stopped by itself: bad memory access at 0xFFFFFFFF",
+   "The screen went blank at 0:08 (frame 480) for 10 seconds",
+   "The game sends 21366 samples of sound a second but asked to play 22050"
+  ],
+  "frames": 1718,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 27.7
+  },
+  "pace": 40,
+  "pace verdict": "ok",
+  "picture": "The screen went blank at 0:08 (frame 480) for 10 seconds",
+  "runs": "stops at 0:28: bad memory access at 0xFFFFFFFF",
+  "script": false,
+  "seen": {
+   "different": 6,
+   "lit": 6,
+   "same at end": 1,
+   "shots": 6
+  },
+  "sheet": "build/check/Army Men - Air Combat (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; sends 21366 a second, wants 22050 (-4%); recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 21366,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Army Men: Air Combat"
+ },
+ "NAME": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NAME",
+  "file": "Army Men - Sarge's Heroes (U) [!].zip",
+  "findings": [],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 59.2
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "stuck: the last 11 of 13 pictures taken are identical",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 3,
+   "lit": 13,
+   "same at end": 11,
+   "shots": 13
+  },
+  "sheet": "build/check/Army Men - Sarge's Heroes (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 21751,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Army Men: Sarge's Heroes"
+ },
+ "NCTE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NCTE",
+  "file": "Chameleon Twist (U) [!].zip",
+  "findings": [
+   "1780 blocks of sound were thrown away because the sound chip was full",
+   "The game's sound program made 88306 samples a second but 43775 reached the sound chip"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0005,
+   "noise": 0.1,
+   "quiet": 0.244,
+   "seconds": 59.5
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 13,
+   "lit": 12,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Chameleon Twist (U) [!]/sheet.png",
+  "sound": "1780 blocks thrown away",
+  "sound numbers": {
+   "made": 88306,
+   "refused": 1780,
+   "sent": 43775,
+   "unknown": 0,
+   "wants": 44100
+  },
+  "title": "Chameleon Twist"
+ },
+ "NCUE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NCUE",
+  "file": "Cruis'n USA (U) (V1.2) [!].zip",
+  "findings": [
+   "The screen never showed anything (blank and stayed blank until the run ended)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 59.2
+  },
+  "pace": 0,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 1,
+   "lit": 1,
+   "same at end": 1,
+   "shots": 1
+  },
+  "sheet": "build/check/Cruis'n USA (U) (V1.2) [!]/sheet.png",
+  "sound": "recording is silent",
+  "sound numbers": {
+   "made": 21759,
+   "refused": 0,
+   "sent": 21759,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Cruis'n USA"
+ },
+ "NDNE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NDNE",
+  "file": "Duke Nukem 64 (U) [!].zip",
+  "findings": [
+   "The game sends 27506 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 23 of 33 seconds (worst 56%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0009,
+   "noise": 0.002,
+   "quiet": 0.715,
+   "seconds": 74.8
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 9,
+   "lit": 13,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Duke Nukem 64 (U) [!]/sheet.png",
+  "sound": "sends 27506 a second, wants 22050 (+24%)",
+  "sound numbers": {
+   "made": 27506,
+   "refused": 0,
+   "sent": 27506,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Duke Nukem 64"
+ },
+ "NDYE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NDYE",
+  "file": "Diddy Kong Racing (U) (M2) (V1.1) [!].zip",
+  "findings": [
+   "The screen never showed anything (blank and stayed blank until the run ended)",
+   "36014 drawing commands were skipped because we do not handle them"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0001,
+   "noise": 0.086,
+   "quiet": 0.153,
+   "seconds": 59.9
+  },
+  "pace": 5,
+  "pace verdict": "ok",
+  "picture": "The screen never showed anything (blank and stayed blank until the run ended)",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 3,
+   "lit": 3,
+   "same at end": 2,
+   "shots": 12
+  },
+  "sheet": "build/check/Diddy Kong Racing (U) (M2) (V1.1) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 22030,
+   "refused": 0,
+   "sent": 22030,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Diddy Kong Racing"
+ },
+ "NDZE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NDZE",
+  "file": "Duke Nukem - ZER0 H0UR (U) [!].zip",
+  "findings": [
+   "3123 drawing commands were skipped because we do not handle them",
+   "It ran slowly: under 90% speed for 5 of 15 seconds (worst 76%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.004,
+   "quiet": 0.273,
+   "seconds": 60.0
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "3123 drawing commands were skipped because we do not handle them",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 12,
+   "lit": 11,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Duke Nukem - ZER0 H0UR (U) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 22049,
+   "refused": 0,
+   "sent": 22049,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Duke Nukem: Zero Hour"
+ },
+ "NEPE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NEPE",
+  "file": "Star Wars Episode I - Racer (U) [!].zip",
+  "findings": [
+   "The screen never showed anything (blank and stayed blank until the run ended)",
+   "The game sends 223 samples of sound a second but asked to play 22050"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 0.6
+  },
+  "pace": 1,
+  "pace verdict": "ok",
+  "picture": "black: never showed anything",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 1,
+   "lit": 0,
+   "same at end": 1,
+   "shots": 1
+  },
+  "sheet": "build/check/Star Wars Episode I - Racer (U) [!]/sheet.png",
+  "sound": "sends 223 a second, wants 22050 (-99%); recording is silent",
+  "sound numbers": {
+   "made": 223,
+   "refused": 0,
+   "sent": 223,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Star Wars Episode I: Racer"
+ },
+ "NETE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NETE",
+  "file": "Quest 64 (U) [!].zip",
+  "findings": [
+   "2630 drawing commands were skipped because we do not handle them"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0007,
+   "noise": 0.025,
+   "quiet": 0.246,
+   "seconds": 59.5
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "2630 drawing commands were skipped because we do not handle them",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 12,
+   "lit": 13,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Quest 64 (U) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 21863,
+   "refused": 0,
+   "sent": 21863,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Quest 64"
+ },
+ "NFBE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NFBE",
+  "file": "NFL Blitz 2001 (U) [!].zip",
+  "findings": [
+   "The game froze at 0:09 (frame 540): no new picture for five seconds",
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 13%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 60.0
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "froze at 0:09: no new picture for five seconds or more",
+  "script": false,
+  "seen": {
+   "different": 1,
+   "lit": 2,
+   "same at end": 2,
+   "shots": 2
+  },
+  "sheet": "build/check/NFL Blitz 2001 (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 22043,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "NFL Blitz 2001"
+ },
+ "NFWE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NFWE",
+  "file": "F-1 World Grand Prix (U) [!].zip",
+  "findings": [
+   "6868 drawing commands were skipped because we do not handle them",
+   "The game sends 20433 samples of sound a second but asked to play 22050"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.001,
+   "quiet": 0.164,
+   "seconds": 55.6
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "6868 drawing commands were skipped because we do not handle them",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 11,
+   "lit": 12,
+   "same at end": 1,
+   "shots": 12
+  },
+  "sheet": "build/check/F-1 World Grand Prix (U) [!]/sheet.png",
+  "sound": "sends 20433 a second, wants 22050 (-8%)",
+  "sound numbers": {
+   "made": 20457,
+   "refused": 0,
+   "sent": 20433,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "F-1 World Grand Prix"
+ },
+ "NFXE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NFXE",
+  "file": "Star Fox 64 (U) (V1.1) [!].zip",
+  "findings": [
+   "8294 sound commands were not understood"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.004,
+   "quiet": 0.164,
+   "seconds": 59.9
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 12,
+   "lit": 11,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Star Fox 64 (U) (V1.1) [!]/sheet.png",
+  "sound": "8294 commands not understood",
+  "sound numbers": {
+   "made": 31702,
+   "refused": 1,
+   "sent": 31990,
+   "unknown": 8294,
+   "wants": 32000
+  },
+  "title": "Star Fox 64"
+ },
+ "NJFE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NJFE",
+  "file": "Jet Force Gemini (U) [!].zip",
+  "findings": [
+   "The screen went blank at 0:14 (frame 840) for 5 seconds",
+   "The screen went blank at 0:21 (frame 1260) and stayed blank until the run ended",
+   "246004 drawing commands were skipped because we do not handle them"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 59.4
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "The screen went blank at 0:14 (frame 840) for 5 seconds",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 10,
+   "lit": 9,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Jet Force Gemini (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 21828,
+   "unknown": 0,
+   "wants": 22020
+  },
+  "title": "Jet Force Gemini"
+ },
+ "NKTE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NKTE",
+  "file": "mk64.us.z64",
+  "findings": [
+   "10446 sound commands were not understood"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.007,
+   "quiet": 0.118,
+   "seconds": 59.9
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": true,
+  "seen": {
+   "different": 12,
+   "lit": 11,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/mk64.us/sheet.png",
+  "sound": "10446 commands not understood",
+  "sound numbers": {
+   "made": 26609,
+   "refused": 0,
+   "sent": 26764,
+   "unknown": 10446,
+   "wants": 26800
+  },
+  "title": "Mario Kart 64"
+ },
+ "NMFE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NMFE",
+  "file": "Mario Golf (U) [!].zip",
+  "findings": [
+   "The game froze at 0:26 (frame 1560): no new picture for five seconds",
+   "197 drawing commands were skipped because we do not handle them",
+   "The game sends 16142 samples of sound a second but asked to play 32000"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 30.3
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "197 drawing commands were skipped because we do not handle them",
+  "runs": "froze at 0:26: no new picture for five seconds or more",
+  "script": false,
+  "seen": {
+   "different": 5,
+   "lit": 4,
+   "same at end": 1,
+   "shots": 6
+  },
+  "sheet": "build/check/Mario Golf (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; sends 16142 a second, wants 32000 (-50%); recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 16142,
+   "unknown": 0,
+   "wants": 32000
+  },
+  "title": "Mario Golf"
+ },
+ "NN6E": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NN6E",
+  "file": "Dr. Mario 64 (U) [!].zip",
+  "findings": [
+   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 15%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.004,
+   "quiet": 0.1,
+   "seconds": 59.8
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 13,
+   "lit": 12,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Dr. Mario 64 (U) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 31917,
+   "refused": 0,
+   "sent": 31908,
+   "unknown": 0,
+   "wants": 32000
+  },
+  "title": "Dr. Mario 64"
+ },
+ "NO7E": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NO7E",
+  "file": "007 - The World is Not Enough (U) [!].zip",
+  "findings": [
+   "The game stopped by itself: bad memory access at 0x00000000",
+   "The game sends 11487 samples of sound a second but asked to play 22050"
+  ],
+  "frames": 2844,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 24.7
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "stops at 0:47: bad memory access at 0x00000000",
+  "script": false,
+  "seen": {
+   "different": 10,
+   "lit": 10,
+   "same at end": 1,
+   "shots": 10
+  },
+  "sheet": "build/check/007 - The World is Not Enough (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; sends 11487 a second, wants 22050 (-48%); recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 11487,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "007: The World Is Not Enough"
+ },
+ "NP3E": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NP3E",
+  "file": "Pokemon Stadium 2 (U) [!].zip",
+  "findings": [
+   "The game froze at 0:01 (frame 60): no new picture for five seconds"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 59.5
+  },
+  "pace": 0,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "froze at 0:01: no new picture for five seconds or more",
+  "script": false,
+  "seen": {
+   "different": 1,
+   "lit": 0,
+   "same at end": 1,
+   "shots": 1
+  },
+  "sheet": "build/check/Pokemon Stadium 2 (U) [!]/sheet.png",
+  "sound": "silent: sound program not understood; recording is silent",
+  "title": "Pokemon Stadium 2"
+ },
+ "NPFE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NPFE",
+  "file": "Pokemon Snap (U) [!].zip",
+  "findings": [
+   "The screen went blank at 0:08 (frame 480) and stayed blank until the run ended",
+   "31532 drawing commands were skipped because we do not handle them"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.013,
+   "quiet": 0.907,
+   "seconds": 60.0
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "The screen went blank at 0:08 (frame 480) and stayed blank until the run ended",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 2,
+   "lit": 2,
+   "same at end": 1,
+   "shots": 2
+  },
+  "sheet": "build/check/Pokemon Snap (U) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 32020,
+   "refused": 0,
+   "sent": 32011,
+   "unknown": 0,
+   "wants": 32000
+  },
+  "title": "Pokemon Snap"
+ },
+ "NPNE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NPNE",
+  "file": "Pokemon Puzzle League (U) [!].zip",
+  "findings": [
+   "The game froze at 0:00 (frame 0): no new picture for five seconds",
+   "The game's sound program made 17144 samples a second but 20813 reached the sound chip",
+   "The game sends 20813 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 15%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.042,
+   "quiet": 0.787,
+   "seconds": 56.6
+  },
+  "pace": 47,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "froze at 0:00: no new picture for five seconds or more",
+  "script": false,
+  "seen": {
+   "different": 2,
+   "lit": 1,
+   "same at end": 1,
+   "shots": 2
+  },
+  "sheet": "build/check/Pokemon Puzzle League (U) [!]/sheet.png",
+  "sound": "sends 20813 a second, wants 22050 (-6%)",
+  "sound numbers": {
+   "made": 17144,
+   "refused": 0,
+   "sent": 20813,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Pokemon Puzzle League"
+ },
+ "NPOE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NPOE",
+  "file": "Pokemon Stadium (U) (V1.1) [!].zip",
+  "findings": [
+   "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
+   "1685 drawing commands were skipped because we do not handle them",
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 29%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 60.0
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 2,
+   "lit": 1,
+   "same at end": 1,
+   "shots": 3
+  },
+  "sheet": "build/check/Pokemon Stadium (U) (V1.1) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 31994,
+   "unknown": 0,
+   "wants": 32000
+  },
+  "title": "Pokemon Stadium"
+ },
+ "NREE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NREE",
+  "file": "Resident Evil 2 (U) (V1.1) [!].zip",
+  "findings": [
+   "The screen never showed anything (blank and stayed blank until the run ended)",
+   "The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.06  Yoshitaka Yasumot",
+   "1786 drawing commands were skipped because we do not handle them",
+   "The game sends 11468 samples of sound a second but asked to play 22050"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 31.2
+  },
+  "pace": 120,
+  "pace verdict": "too fast",
+  "picture": "The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.0",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 3,
+   "lit": 12,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Resident Evil 2 (U) (V1.1) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; sends 11468 a second, wants 22050 (-48%); recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 11468,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Resident Evil 2"
+ },
+ "NROE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NROE",
+  "file": "Road Rash 64 (U) [!].zip",
+  "findings": [],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 60.0
+  },
+  "pace": 60,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 13,
+   "lit": 12,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Road Rash 64 (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 44083,
+   "unknown": 0,
+   "wants": 44100
+  },
+  "title": "Road Rash 64"
+ },
+ "NRPE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NRPE",
+  "file": "Rampage - World Tour (U) [!].zip",
+  "findings": [
+   "The game sends 18792 samples of sound a second but asked to play 32000"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.002,
+   "quiet": 0.129,
+   "seconds": 35.2
+  },
+  "pace": 180,
+  "pace verdict": "too fast",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 12,
+   "lit": 13,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Rampage - World Tour (U) [!]/sheet.png",
+  "sound": "sends 18792 a second, wants 32000 (-42%)",
+  "sound numbers": {
+   "made": 18798,
+   "refused": 0,
+   "sent": 18792,
+   "unknown": 0,
+   "wants": 32000
+  },
+  "title": "Rampage: World Tour"
+ },
+ "NSME": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NSME",
+  "file": "sm64.us.z64",
+  "findings": [],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.002,
+   "quiet": 0.147,
+   "seconds": 59.7
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 12,
+   "lit": 11,
+   "same at end": 1,
+   "shots": 12
+  },
+  "sheet": "build/check/sm64.us/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 31854,
+   "refused": 0,
+   "sent": 31851,
+   "unknown": 0,
+   "wants": 32000
+  },
+  "title": "Super Mario 64"
+ },
+ "NSZE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NSZE",
+  "file": "NFL Blitz - Special Edition (U) [!].zip",
+  "findings": [
+   "The game froze at 0:09 (frame 540): no new picture for five seconds",
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 27%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 60.0
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "ok",
+  "runs": "froze at 0:09: no new picture for five seconds or more",
+  "script": false,
+  "seen": {
+   "different": 1,
+   "lit": 2,
+   "same at end": 2,
+   "shots": 2
+  },
+  "sheet": "build/check/NFL Blitz - Special Edition (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 22043,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "NFL Blitz: Special Edition"
+ },
+ "NW3E": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NW3E",
+  "file": "WCW Nitro (U) [!].zip",
+  "findings": [
+   "94580 drawing commands were skipped because we do not handle them",
+   "It ran slowly: under 90% speed for 42 of 42 seconds (worst 17%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.006,
+   "quiet": 0.431,
+   "seconds": 59.5
+  },
+  "pace": 180,
+  "pace verdict": "too fast",
+  "picture": "94580 drawing commands were skipped because we do not handle them",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 10,
+   "lit": 9,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/WCW Nitro (U) [!]/sheet.png",
+  "sound": "ok",
+  "sound numbers": {
+   "made": 21885,
+   "refused": 0,
+   "sent": 21879,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "WCW Nitro"
+ },
+ "NWNE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NWNE",
+  "file": "WCW vs. nWo - World Tour (U) (V1.1) [!].zip",
+  "findings": [
+   "20954 drawing commands were skipped because we do not handle them",
+   "The game sends 21182 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 19%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.004,
+   "quiet": 0.8,
+   "seconds": 57.6
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "20954 drawing commands were skipped because we do not handle them",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 1,
+   "lit": 12,
+   "same at end": 12,
+   "shots": 12
+  },
+  "sheet": "build/check/WCW vs. nWo - World Tour (U) (V1.1) [!]/sheet.png",
+  "sound": "sends 21182 a second, wants 22050 (-4%)",
+  "sound numbers": {
+   "made": 21182,
+   "refused": 0,
+   "sent": 21182,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "WCW vs. nWo: World Tour"
+ },
+ "NWRE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NWRE",
+  "file": "wr64.us.z64",
+  "findings": [
+   "18409 drawing commands were skipped because we do not handle them",
+   "The game sends 28605 samples of sound a second but asked to play 26900",
+   "It ran slowly: under 90% speed for 3 of 10 seconds (worst 85%)"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.014,
+   "quiet": 0.088,
+   "seconds": 63.8
+  },
+  "pace": 20,
+  "pace verdict": "ok",
+  "picture": "18409 drawing commands were skipped because we do not handle them",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 11,
+   "lit": 10,
+   "same at end": 1,
+   "shots": 12
+  },
+  "sheet": "build/check/wr64.us/sheet.png",
+  "sound": "sends 28605 a second, wants 26900 (+6%)",
+  "sound numbers": {
+   "made": 28431,
+   "refused": 0,
+   "sent": 28605,
+   "unknown": 0,
+   "wants": 26900
+  },
+  "title": "Wave Race 64"
+ },
+ "NXOE": {
+  "asked": 3600,
+  "checked": "2026-10-10",
+  "code": "NXOE",
+  "file": "Cruis'n Exotica (U) [!].zip",
+  "findings": [
+   "The screen went blank at 0:10 (frame 600) for 5 seconds",
+   "1249140 drawing commands were skipped because we do not handle them"
+  ],
+  "frames": 3600,
+  "heard": {
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 1.0,
+   "seconds": 60.0
+  },
+  "pace": 30,
+  "pace verdict": "ok",
+  "picture": "The screen went blank at 0:10 (frame 600) for 5 seconds",
+  "runs": "ok",
+  "script": false,
+  "seen": {
+   "different": 11,
+   "lit": 10,
+   "same at end": 1,
+   "shots": 13
+  },
+  "sheet": "build/check/Cruis'n Exotica (U) [!]/sheet.png",
+  "sound": "its sound lists produce nothing; recording is silent",
+  "sound numbers": {
+   "made": 0,
+   "refused": 0,
+   "sent": 22049,
+   "unknown": 0,
+   "wants": 22050
+  },
+  "title": "Cruis'n Exotica"
+ }
+}

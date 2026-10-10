@@ -1,0 +1,13 @@
+# What people (and Claude, looking at pictures) have found that a machine cannot.
+# One line each:   game code   played|seen   good|bad   date   what was found
+#   played: someone played it.      seen: someone looked at pictures of a check.
+# The newest line of each kind for a game is what STATUS.md shows.
+NSM played good 2026-10-10 Picture, sound, controls and saving work (carried over from the README)
+NET seen bad 2026-10-10 Pink boxes behind text (seen in an earlier survey)
+NMF seen bad 2026-10-10 White ground, garbled text in the HUD, a blue box in the corner
+NPO seen bad 2026-10-10 Corrupt textures (seen in an earlier survey)
+NXO seen bad 2026-10-10 Picture is garbage (seen in an earlier survey)
+NDN seen bad 2026-10-10 White patches in the level (seen in an earlier survey)
+NFW seen bad 2026-10-10 Some wrong colours (seen in an earlier survey)
+NRE seen bad 2026-10-10 Only ever shows "No Controller"
+NKT seen good 2026-10-10 Scripted run: menus and a Luigi Raceway race look right

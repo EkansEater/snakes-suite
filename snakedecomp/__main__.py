@@ -6,6 +6,7 @@ import re
 import subprocess
 import zipfile
 
+from . import check as checker
 from . import diagnose
 from .cheats import find_cheats, read_cheat_file, write_cheat_file
 from .build import build, game_names, game_source, host_addresses, host_replacements, sdl_flags
@@ -276,7 +277,10 @@ def cmd_list(args: argparse.Namespace) -> None:
         stem = os.path.splitext(os.path.basename(path))[0]
         # A file name like "Star Fox 64 (U) (V1.1) [!]" without the brackets.
         plain = re.sub(r"\s*[\(\[].*", "", stem).strip() or stem
-        title, rank, note = TRIED.get(rom.header.game_code[:3], (plain, *UNTRIED))
+        title, _, note = TRIED.get(rom.header.game_code[:3], (plain, *UNTRIED))
+        # How well it works comes from its last check (see check.py); a game
+        # never checked sorts last, with whatever was written about it by hand.
+        rank, note = checker.launcher_line(rom.header.game_code) or (UNTRIED[0], note)
         built = os.path.exists(os.path.join("build", stem, "game"))
         print(f"{path}\t{title}\t{rank}\t{note}\t{len(find_cheats(rom))}\t{int(built)}")
 
@@ -303,6 +307,15 @@ def cmd_survey(args: argparse.Namespace) -> None:
     working = sum(1 for r in results if r["pictures"] and not r["note"])
     print(f"\n{working} of {len(results)} ran to the end and drew pictures. Report saved to {report}")
     print("Each game's last screenshots and full output are in its folder there.")
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    checker.check(args.roms or ["roms"], args.frames, args.jobs, args.only, prepare_game)
+
+
+def cmd_note(args: argparse.Namespace) -> None:
+    checker.add_note(args.game, args.kind, args.verdict, " ".join(args.text))
+    print(f"Noted in {checker.NOTES}; {checker.STATUS} is up to date.")
 
 
 def cmd_diagnose(args: argparse.Namespace) -> None:
@@ -401,15 +414,33 @@ def main() -> None:
         "--replay", action="store_true", help="also play each troubled run again by itself and save pictures of it"
     )
 
+    check_command = commands.add_parser(
+        "check", help="run every game by itself, judge picture, sound and pace, and update STATUS.md",
+        description="Builds each ROM, runs it with no window pressing buttons from a script, and says what a machine "
+        "can tell: whether it stops, shows a blank screen, makes the right amount of sound, or runs too fast. "
+        "Compares with the last check and says what got better or worse. See check.py.",
+    )
+    check_command.add_argument("roms", nargs="*", help="ROM files, or folders of them (default: roms)")
+    check_command.add_argument("--only", action="append", default=[], help="only games with this in their file name (may be repeated)")
+    check_command.add_argument("--frames", type=parse_int, default=3600, help="how long to run each (default: 3600, a minute)")
+    check_command.add_argument("--jobs", type=parse_int, default=4, help="games to work on at once (default: 4)")
+
+    note_command = commands.add_parser("note", help="write down what you found playing a game, for STATUS.md")
+    note_command.add_argument("game", help="the game's code, as in STATUS.md's notes (NSM for Super Mario 64)")
+    note_command.add_argument("kind", choices=("played", "seen"), help="played it, or only looked at pictures of a check")
+    note_command.add_argument("verdict", choices=("good", "bad"))
+    note_command.add_argument("text", nargs="+", help="what you found")
+
     for command in (disasm, functions, recompile, run, learn_command):
         command.add_argument("-s", "--symbols", help="linker map with function names")
 
     # Options we do not recognise are handed on to the game itself.
     args, extra = parser.parse_known_args()
-    if args.command in ("survey", "list", "build", "diagnose"):
+    if args.command in ("survey", "list", "build", "diagnose", "check", "note"):
         if extra:
             parser.error(f"unrecognised arguments: {' '.join(extra)}")
-        {"survey": cmd_survey, "list": cmd_list, "build": cmd_build, "diagnose": cmd_diagnose}[args.command](args)
+        {"survey": cmd_survey, "list": cmd_list, "build": cmd_build, "diagnose": cmd_diagnose,
+         "check": cmd_check, "note": cmd_note}[args.command](args)
     elif args.func is cmd_run:
         cmd_run(Rom.from_file(args.rom), args, extra)
     elif extra:
