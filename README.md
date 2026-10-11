@@ -196,9 +196,48 @@ python3 -m snakedecomp build roms
 The list's window and the game's window each come back the size they were
 last (maximised too, if that is how they were left). It is kept in
 `settings/launcher.txt` and `settings/window.txt`; delete those to start
-afresh. Where the window was on the screen is remembered as well, except on a
-Wayland desktop: there a program is not allowed to know or choose where its
-window goes, so the desktop puts it where it likes.
+afresh.
+
+**Where the windows open.** Where the window was on the screen is remembered
+too. On most desktops the tool does that itself. On a Wayland desktop a
+program is not allowed to know or choose where its window goes, so there the
+desktop has to do the remembering. On KDE that is a "window rule" for each of
+our two windows, which the desktop knows as `snakes-n64-decompiler` (a game)
+and `snakes-n64-decompiler-list` (the list). Put this in
+`~/.config/kwinrulesrc` (if the file already has rules, add the two names to
+its `rules=` line and raise `count` instead of replacing them):
+
+```ini
+[General]
+count=2
+rules=snake-n64-game,snake-n64-list
+
+[snake-n64-game]
+Description=Snake's N64 decompiler: game window remembers its place
+position=480,166
+positionrule=4
+wmclass=snakes-n64-decompiler
+wmclasscomplete=false
+wmclassmatch=1
+
+[snake-n64-list]
+Description=Snake's N64 decompiler: game list remembers its place
+position=480,166
+positionrule=4
+wmclass=snakes-n64-decompiler-list
+wmclasscomplete=false
+wmclassmatch=1
+```
+
+and tell the desktop to read it again:
+
+```bash
+qdbus6 org.kde.KWin /KWin org.kde.KWin.reconfigure
+```
+
+`positionrule=4` means "remember", and `position` is only where the window
+goes the first time (the rule does nothing without it). The same rules can be
+seen and removed in System Settings, under Window Management, Window Rules.
 
 A gamepad can be switched on after the list is open, wireless ones included. The first run
 of each game translates and compiles it, which takes a minute or two. Later

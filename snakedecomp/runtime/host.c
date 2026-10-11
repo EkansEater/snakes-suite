@@ -2166,6 +2166,14 @@ static int on_a_screen(int x, int y) {
 }
 
 static void open_window(void) {
+    /* A name the desktop knows our window by (otherwise it would be the
+     * program file's name, "game"). The desktop can then keep settings for
+     * it: on KDE with Wayland that is how the window's place on the screen
+     * is remembered, by a window rule (see "Where the windows open" in
+     * README.md), since there a program cannot place its own window. */
+    setenv("SDL_VIDEO_WAYLAND_WMCLASS", "snakes-n64-decompiler", 0);
+    setenv("SDL_VIDEO_X11_WMCLASS", "snakes-n64-decompiler", 0);
+    SDL_SetHint("SDL_APP_ID", "snakes-n64-decompiler");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
         fatal(SDL_GetError(), 0);
     int w, h;
