@@ -99,6 +99,14 @@ static int dialect;          /* which set of drawing commands the game uses: GFX
  * an in-between picture. Used to place shadows; see command_vertices. */
 static float camera_exact[4][4], camera_blended[4][4];
 static int have_camera;
+/* A frame can hold more than one 3D scene, each with a lens and a camera of
+ * its own: Wave Race 64's watercraft select has the rider on the water and,
+ * above, four small jet skis turning on the spot. The camera above is the
+ * first scene's. While a later scene with another lens is being drawn,
+ * side_scene is set and its camera is kept here instead. */
+static float lens_exact[4][4], scene_lens[4][4]; /* the lens last loaded; the first scene's */
+static float side_camera_exact[4][4], side_camera_blended[4][4];
+static int side_scene, have_side_camera;
 
 /* World positions of the corners of each see-through shape, this frame and
  * the previous one (see command_vertices). */
@@ -566,16 +574,24 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
     matrix_index++;
 
     if (projection) {
-        if (load)
+        if (load) {
             memcpy(rsp.projection, m, sizeof m);
-        else
+            if (is_perspective(exact)) {
+                /* A lens unlike the first scene's begins another scene. */
+                memcpy(lens_exact, exact, sizeof m);
+                side_scene = have_camera && memcmp(lens_exact, scene_lens, sizeof m) != 0;
+                have_side_camera = 0;
+            }
+        } else {
             multiply(rsp.projection, m, rsp.projection);
+        }
         split_projection();
         if (is_perspective(rsp.projection)) {
             seen_perspective = 1;
             if (proj_has_view && !have_camera) { /* the camera came with the lens */
                 memcpy(camera_exact, proj_view, sizeof m);
                 memcpy(camera_blended, proj_view, sizeof m);
+                memcpy(scene_lens, lens_exact, sizeof m);
                 have_camera = 1;
                 prepare_free_turn();
             }
@@ -595,8 +611,13 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
             if (!have_camera && is_perspective(rsp.projection) && !proj_has_view) {
                 memcpy(camera_exact, exact, sizeof m);
                 memcpy(camera_blended, m, sizeof m);
+                memcpy(scene_lens, lens_exact, sizeof m);
                 have_camera = 1;
                 prepare_free_turn();
+            } else if (side_scene && !have_side_camera && is_perspective(rsp.projection) && !proj_has_view) {
+                memcpy(side_camera_exact, exact, sizeof m); /* likewise, for a later scene */
+                memcpy(side_camera_blended, m, sizeof m);
+                have_side_camera = 1;
             }
         } else {
             multiply(top, m, top);
@@ -648,8 +669,16 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
      * to remove. Removing it all the same sent every see-through shape
      * somewhere else in each in-between picture: spray, buoys and
      * shadows flashed on and off as you raced. */
-    int track = (decal || see_through) && have_camera && is_perspective(rsp.projection) &&
-                tracked_count < MAX_TRACKED && (proj_has_view || invert(to_world, camera_exact));
+    /* The camera to remove is the one of the scene being drawn. Using the
+     * first scene's for all of them gave the small jet skis of Wave Race
+     * 64's watercraft select "world" positions that slid along with the
+     * rider's camera below, far enough each frame for a piece to be taken
+     * for its neighbour: the rear of the chosen jet ski jumped back and
+     * forth. */
+    float (*scene_camera)[4] = side_scene ? side_camera_exact : camera_exact;
+    int have_scene_camera = side_scene ? have_side_camera || proj_has_view : have_camera;
+    int track = (decal || see_through) && have_scene_camera && is_perspective(rsp.projection) &&
+                tracked_count < MAX_TRACKED && (proj_has_view || invert(to_world, scene_camera));
     Tracked *now = NULL;
     const Tracked *before = NULL;
     if (track) {
@@ -687,7 +716,7 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
             }
             float no_change[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
             /* (the lens matrix, blended like any other, holds the camera in those games) */
-            combine_with(world_to_screen, proj_has_view ? no_change : camera_blended);
+            combine_with(world_to_screen, proj_has_view ? no_change : side_scene ? side_camera_blended : camera_blended);
         }
     }
 
@@ -1898,6 +1927,7 @@ static void run_list(uint32_t address) {
     matrix_index = 0;
     seen_perspective = 0;
     have_camera = 0;
+    side_scene = have_side_camera = 0;
     free_turn_ready = 0;
     tracked_count = 0;
     int depth = 0;

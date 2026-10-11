@@ -967,9 +967,7 @@
   "checked": "2026-10-11",
   "code": "NSME",
   "file": "sm64.us.z64",
-  "findings": [
-   "It ran slowly: under 90% speed for 9 of 27 seconds (worst 69%)"
-  ],
+  "findings": [],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,

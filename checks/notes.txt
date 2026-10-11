@@ -16,3 +16,4 @@ NFX seen good 2026-10-10 Map, briefing and the flight into Corneria look right
 NDZ seen good 2026-10-10 Menus, the opening scene and the briefing screen look right
 NWR played bad 2026-10-11 Controls and movement great; rider, jet ski, buoys and checkpoint jitter or flash
 NWR played bad 2026-10-11 Controls and movement great. With smooth motion on, spray, buoys and rider flashed; fixed since, not yet played again
+NWR played good 2026-10-11 Intro and two Championship races (Sunny Beach, Sunset Bay) play right. Left: rank portraits 3 and 4 went black for a few seconds once; a rival marker's red ring blinks; window is made afresh on reset
