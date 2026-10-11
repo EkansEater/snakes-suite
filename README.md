@@ -193,6 +193,13 @@ every game in a folder ahead of time:
 python3 -m snakedecomp build roms
 ```
 
+The list's window and the game's window each come back the size they were
+last (maximised too, if that is how they were left). It is kept in
+`settings/launcher.txt` and `settings/window.txt`; delete those to start
+afresh. Where the window was on the screen is remembered as well, except on a
+Wayland desktop: there a program is not allowed to know or choose where its
+window goes, so the desktop puts it where it likes.
+
 A gamepad can be switched on after the list is open, wireless ones included. The first run
 of each game translates and compiles it, which takes a minute or two. Later
 runs start straight away.

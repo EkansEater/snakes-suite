@@ -38,14 +38,21 @@ typedef struct {
 #define MAX_GAMES 512
 static Game games[MAX_GAMES];
 static int game_count, chosen, first_shown;
+static SDL_Window *window;
 static const char *folder;
 
 /* The orders the list can be put in. S (or X on a gamepad) steps through
- * them, and the choice is remembered in a small file for next time. */
+ * them, and the choice is remembered in a small file for next time, along
+ * with the size and place of this window. */
 enum { BY_STATE, BY_NAME, WORST_FIRST, ORDER_COUNT };
 static const char *const order_words[] = {"by state", "by name", "worst first"};
-static const char *const order_file = "settings/launcher.txt";
+static const char *const memory_file = "settings/launcher.txt";
 static int order = BY_STATE;
+/* The window as it was last: its ordinary size and place (not counting
+ * maximised or full screen, which are remembered as such). On a Wayland
+ * desktop a program cannot find out or choose where its window is, so there
+ * only the size is kept. */
+static int window_w0 = 960, window_h0 = 720, window_x0, window_y0, window_placed, window_maximised, fullscreen;
 
 static int in_order(const void *a, const void *b) {
     const Game *x = a, *y = b;
@@ -66,23 +73,41 @@ static void sort_list(void) {
             chosen = i;
 }
 
-static void load_order(void) {
-    FILE *file = fopen(order_file, "r");
-    int number;
-    if (file && fscanf(file, "order = %d", &number) == 1 && number >= 0 && number < ORDER_COUNT)
-        order = number;
+static void load_memory(void) {
+    FILE *file = fopen(memory_file, "r");
+    char line[120];
+    int number, w, h;
+    while (file && fgets(line, sizeof line, file)) {
+        if (sscanf(line, "order = %d", &number) == 1 && number >= 0 && number < ORDER_COUNT)
+            order = number;
+        if (sscanf(line, "size = %d %d", &w, &h) == 2 && w >= 320 && h >= 240 && w < 16000 && h < 16000)
+            window_w0 = w, window_h0 = h;
+        if (sscanf(line, "position = %d %d", &window_x0, &window_y0) == 2)
+            window_placed = 1;
+        sscanf(line, "maximised = %d", &window_maximised);
+        sscanf(line, "fullscreen = %d", &fullscreen);
+    }
     if (file)
         fclose(file);
+}
+
+static void save_memory(void) {
+    FILE *file = fopen(memory_file, "w");
+    if (!file)
+        return;
+    fprintf(file, "# The game list: its order and where its window was. Written by the list.\n");
+    fprintf(file, "order = %d\n", order);
+    fprintf(file, "size = %d %d\n", window_w0, window_h0);
+    if (window_placed)
+        fprintf(file, "position = %d %d\n", window_x0, window_y0);
+    fprintf(file, "maximised = %d\nfullscreen = %d\n", window_maximised, fullscreen);
+    fclose(file);
 }
 
 static void next_order(void) {
     order = (order + 1) % ORDER_COUNT;
     sort_list();
-    FILE *file = fopen(order_file, "w");
-    if (file) {
-        fprintf(file, "order = %d\n", order);
-        fclose(file);
-    }
+    save_memory();
 }
 
 /* Copy one tab-separated part of a line; returns where the next one starts. */
@@ -123,7 +148,6 @@ static void read_list(void) {
 
 /* ---- Drawing ----------------------------------------------------------------- */
 
-static SDL_Window *window;
 static SDL_Renderer *renderer;
 static SDL_Texture *font;
 static int size = 2; /* text size: a letter is 8 x 16 dots times this */
@@ -332,21 +356,58 @@ static int game_at(int mouse_y) {
     return row >= 0 && row < rows_shown && first_shown + row < game_count ? first_shown + row : -1;
 }
 
+static int positions_work(void) {
+    return strcmp(SDL_GetCurrentVideoDriver(), "wayland") != 0;
+}
+
+/* The window was moved or resized: note how it is now. Returns 1 if that
+ * differs from what we had. */
+static int note_window(void) {
+    Uint32 flags = SDL_GetWindowFlags(window);
+    int before[5] = {window_w0, window_h0, window_x0, window_y0, window_maximised};
+    if (!(flags & SDL_WINDOW_FULLSCREEN))
+        window_maximised = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+    if (!(flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN))) {
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+        if (w >= 320 && h >= 240)
+            window_w0 = w, window_h0 = h;
+        if (positions_work())
+            SDL_GetWindowPosition(window, &window_x0, &window_y0), window_placed = 1;
+    }
+    int now[5] = {window_w0, window_h0, window_x0, window_y0, window_maximised};
+    return memcmp(before, now, sizeof now) != 0;
+}
+
+/* Is this spot on a screen that is plugged in now? */
+static int on_a_screen(int x, int y) {
+    for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
+        SDL_Rect area;
+        if (SDL_GetDisplayBounds(i, &area) == 0 && x + 80 >= area.x && x + 80 < area.x + area.w && y >= area.y &&
+            y + 40 < area.y + area.h)
+            return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     folder = argc > 1 ? argv[1] : "roms";
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "launcher: %s\n", SDL_GetError());
         return 1;
     }
-    window = SDL_CreateWindow("Snake's N64 decompiler", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 960, 720,
-                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    load_memory();
+    int place = window_placed && positions_work() && on_a_screen(window_x0, window_y0);
+    window = SDL_CreateWindow("Snake's N64 decompiler", place ? window_x0 : SDL_WINDOWPOS_CENTERED,
+                              place ? window_y0 : SDL_WINDOWPOS_CENTERED, window_w0, window_h0,
+                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (window_maximised ? SDL_WINDOW_MAXIMIZED : 0) |
+                                  (fullscreen && !getenv("LAUNCHER_SHOT") ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (!renderer) {
         fprintf(stderr, "launcher: %s\n", SDL_GetError());
         return 1;
     }
     make_font();
-    load_order();
     draw("Looking for games...", folder);
     read_list();
     if (getenv("LAUNCHER_SHOT")) { /* for testing: draw once, save the picture, stop */
@@ -366,7 +427,9 @@ int main(int argc, char **argv) {
     /* A direction held down moves once, then after a pause keeps moving. */
     int held = 0;
     Uint32 next_repeat = 0;
-    int running = 1, fullscreen = 0;
+    int running = 1;
+    int window_changed = 0; /* the window's size or place wants writing down... */
+    Uint32 window_changed_at = 0; /* ...once it has stopped changing */
     int armed = 0; /* may "play" be acted on yet? See further down. */
     Uint32 armed_after = 0;
     while (running) {
@@ -375,6 +438,12 @@ int main(int argc, char **argv) {
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
             case SDL_QUIT: running = 0; break;
+            case SDL_WINDOWEVENT:
+                if ((event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_MOVED ||
+                     event.window.event == SDL_WINDOWEVENT_MAXIMIZED || event.window.event == SDL_WINDOWEVENT_RESTORED) &&
+                    note_window())
+                    window_changed = 1, window_changed_at = SDL_GetTicks();
+                break;
             case SDL_CONTROLLERDEVICEADDED: /* plugged in, or a wireless one woke up */
                 /* Every gamepad is opened, so that a press on any of them
                  * arrives; "pad" is whichever was touched last. */
@@ -406,6 +475,7 @@ int main(int argc, char **argv) {
                 case SDL_SCANCODE_F11:
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                    save_memory();
                     break;
                 default: break;
                 }
@@ -472,9 +542,13 @@ int main(int argc, char **argv) {
             held = direction; /* (a direction still held is not a new push) */
             armed = 0, armed_after = SDL_GetTicks() + 500;
         }
+        if (window_changed && SDL_GetTicks() - window_changed_at > 500)
+            window_changed = 0, save_memory();
         draw(NULL, NULL);
         SDL_Delay(8);
     }
+    if (window_changed)
+        save_memory();
     SDL_Quit();
     return 0;
 }

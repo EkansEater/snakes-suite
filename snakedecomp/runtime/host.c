@@ -2064,19 +2064,130 @@ static float binding_amount(const Binding *b) {
     return amount;
 }
 
+/* ---- Remembering the window ------------------------------------------------------
+ * Where the window was and how big, kept in one small file next to the
+ * settings files so that every game opens the way the last one was left.
+ * (Full screen is a setting of each game and is remembered with those.)
+ *
+ * What is kept is the window's ordinary size and place: while it is
+ * maximised or full screen we leave those numbers alone, so that coming out
+ * of either goes back to something sensible.
+ *
+ * One thing we cannot do everywhere: on a Wayland desktop a program is
+ * neither told where its window is nor allowed to say where it should go.
+ * The desktop alone decides. There only the size is remembered. */
+typedef struct {
+    int w, h;         /* 0 = nothing remembered */
+    int x, y, placed; /* placed: x and y mean something */
+    int maximised;
+    int fitted;       /* the window was exactly the shape of the picture */
+} WindowMemory;
+static WindowMemory window_memory;
+static int window_changed;          /* something to write down... */
+static Uint32 window_changed_at;    /* ...since this moment */
+
+static int positions_work(void) {
+    return strcmp(SDL_GetCurrentVideoDriver(), "wayland") != 0;
+}
+
+/* "settings/Some Game.txt" -> "settings/window.txt" */
+static const char *window_file(void) {
+    static char path[600];
+    if (!settings_path)
+        return NULL;
+    const char *slash = strrchr(settings_path, '/');
+    snprintf(path, sizeof path, "%.*swindow.txt", slash ? (int)(slash - settings_path + 1) : 0, settings_path);
+    return path;
+}
+
+static void load_window_memory(void) {
+    FILE *file = window_file() ? fopen(window_file(), "r") : NULL;
+    char line[120];
+    while (file && fgets(line, sizeof line, file)) {
+        WindowMemory *m = &window_memory;
+        if (sscanf(line, "size = %d %d", &m->w, &m->h) == 2) continue;
+        if (sscanf(line, "position = %d %d", &m->x, &m->y) == 2) m->placed = 1;
+        sscanf(line, "maximised = %d", &m->maximised);
+        sscanf(line, "fits picture = %d", &m->fitted);
+    }
+    if (file)
+        fclose(file);
+    if (window_memory.w < 160 || window_memory.h < 120 || window_memory.w > 16000 || window_memory.h > 16000)
+        window_memory.w = window_memory.h = 0; /* nonsense: as if nothing were remembered */
+}
+
+static void save_window_memory(void) {
+    FILE *file = window_changed && window_file() ? fopen(window_file(), "w") : NULL;
+    window_changed = 0;
+    if (!file)
+        return;
+    const WindowMemory *m = &window_memory;
+    fprintf(file, "# Where the game window was last, and how big. Written by the game.\n");
+    fprintf(file, "size = %d %d\n", m->w, m->h);
+    if (m->placed)
+        fprintf(file, "position = %d %d\n", m->x, m->y);
+    fprintf(file, "maximised = %d\n", m->maximised);
+    fprintf(file, "fits picture = %d\n", m->fitted);
+    fclose(file);
+}
+
+/* Called when the window has been moved or resized: note how it is now. */
+static void window_was_changed(void) {
+    Uint32 flags = SDL_GetWindowFlags(window);
+    WindowMemory now = window_memory;
+    if (!(flags & SDL_WINDOW_FULLSCREEN))
+        now.maximised = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+    if (!(flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED))) {
+        int w, h, picture_w, picture_h;
+        SDL_GetWindowSize(window, &w, &h);
+        if (w >= 160 && h >= 120)
+            now.w = w, now.h = h;
+        gfx_picture(1, &picture_w, &picture_h);
+        now.fitted = abs(now.w - now.h * picture_w / picture_h) <= 2;
+        if (positions_work())
+            SDL_GetWindowPosition(window, &now.x, &now.y), now.placed = 1;
+    }
+    if (memcmp(&now, &window_memory, sizeof now) != 0) {
+        window_memory = now;
+        window_changed = 1, window_changed_at = SDL_GetTicks();
+    }
+}
+
+/* Is this spot (the window's top left corner, more or less) on a screen
+ * that is plugged in now? A screen may have been taken away since. */
+static int on_a_screen(int x, int y) {
+    for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
+        SDL_Rect area;
+        if (SDL_GetDisplayBounds(i, &area) == 0 && x + 80 >= area.x && x + 80 < area.x + area.w && y >= area.y &&
+            y + 40 < area.y + area.h)
+            return 1;
+    }
+    return 0;
+}
+
 static void open_window(void) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
         fatal(SDL_GetError(), 0);
     int w, h;
     gfx_picture(1, &w, &h);
+    /* The size and place it had last time, if we know them. A window that
+     * was the picture's shape is made this picture's shape (one game may be
+     * widescreen and the next not); a window the player pulled into some
+     * other shape is given back exactly as it was. */
+    load_window_memory();
+    const WindowMemory *m = &window_memory;
+    int start_h = m->h ? m->h : 720, start_w = m->h && !m->fitted ? m->w : start_h * w / h;
+    int place = m->placed && positions_work() && on_a_screen(m->x, m->y);
     /* Ask for a window we can draw into with the graphics card (OpenGL 3.3). */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    window = SDL_CreateWindow("Snake's N64 decompiler", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              720 * w / h, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+    window = SDL_CreateWindow("Snake's N64 decompiler", place ? m->x : SDL_WINDOWPOS_CENTERED,
+                              place ? m->y : SDL_WINDOWPOS_CENTERED, start_w, start_h,
+                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | (m->maximised ? SDL_WINDOW_MAXIMIZED : 0));
     if (!window || !SDL_GL_CreateContext(window))
         fatal(SDL_GetError(), 0);
+    atexit(save_window_memory); /* (whichever way the game is left) */
     SDL_GL_SetSwapInterval(0); /* we keep time ourselves (wait_for_next_frame) */
     glb_init();
     if (fullscreen) /* remembered from last time */
@@ -2322,6 +2433,7 @@ static void reset_game(void) {
     }
     arguments[count] = NULL;
     save_settings();
+    window_was_changed(), save_window_memory(); /* the fresh copy opens where this one was */
     if (run_log)
         fprintf(stderr, "event %ld: reset\n", frames);
     SDL_Quit(); /* close the window and the sound first */
@@ -2703,9 +2815,18 @@ static void overlay_key(SDL_Scancode key) {
 static void read_keyboard_and_gamepad(void) {
     SDL_Event event;
     float turn_right = 0, turn_down = 0; /* how far the player turns the camera this refresh */
+    /* Write down the window's new size or place once it has settled (while
+     * an edge is being dragged it changes many times a second). */
+    if (window_changed && SDL_GetTicks() - window_changed_at > 500)
+        save_window_memory();
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) /* the window's close button */
             exit(0);
+        if (event.type == SDL_WINDOWEVENT && (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                                              event.window.event == SDL_WINDOWEVENT_MOVED ||
+                                              event.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
+                                              event.window.event == SDL_WINDOWEVENT_RESTORED))
+            window_was_changed();
         if (event.type == SDL_KEYDOWN && !event.key.repeat)
             overlay_key(event.key.keysym.scancode);
 
