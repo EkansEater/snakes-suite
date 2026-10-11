@@ -76,4 +76,5 @@ TRIED = {
     "NEP": ("Star Wars Episode I: Racer", 4, "Runs, but the screen stays black."),
     "NWN": ("WCW vs. nWo: World Tour", 4, "Runs, but the screen stays black."),
 }
-UNTRIED = (9, "Not tried yet, or does not start yet.")
+# A game never checked counts as "Untested" in the game list (see STATES in check.py).
+UNTRIED = (2, "Not tested yet.")

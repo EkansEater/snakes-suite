@@ -399,27 +399,27 @@ def has_names(result: dict) -> bool:
 
 # The states a game can be in, best first, and what each means.
 STATES = (
-    ("PLAYS", "A person has played it and found it good."),
-    ("CHECKS OUT", "No fault found by machine, and its pictures have been looked at. Waiting to be played."),
-    ("MACHINE OK", "No fault found by machine. Nobody has looked at its pictures yet."),
-    ("FAULTS", "It runs, with faults listed in its row."),
-    ("BLACK", "It runs, but shows nothing."),
-    ("STOPS", "It stops, freezes or crashes."),
-    ("NOT CHECKED", "Not checked yet."),
+    ("Ready", "Playable 100%: a person has played it and found it good, and the machine finds no fault."),
+    ("In Progress", "Still being tested, somewhat playable: it runs, but has faults listed in its row or has not been played yet."),
+    ("Untested", "Not tested: the machine finds no fault, but nobody has looked at it or played it."),
+    ("Broken", "Tested, unplayable: it stops, freezes, crashes or shows nothing."),
 )
+# The number the game list (launcher/launcher.c) sorts by: 0 is best.
+RANKS = {name: number for number, (name, _) in enumerate(STATES)}
 
 
 def state_of(result: dict, notes: dict) -> str:
     played, seen = notes.get("played"), notes.get("seen")
     if result.get("runs", "ok") != "ok":
-        return "STOPS"
+        return "Broken"
     if result.get("picture", "ok").startswith(("black", "The screen never")):
-        return "BLACK"
-    if faults(result) or (played and played[0] == "bad") or (seen and seen[0] == "bad"):
-        return "FAULTS"
-    if played:
-        return "PLAYS"
-    return "CHECKS OUT" if seen else "MACHINE OK"
+        return "Broken"
+    if not played and not seen and not faults(result):
+        return "Untested"
+    # (Someone playing it counts for more than someone looking at pictures of it.)
+    if played and played[0] == "good" and not faults(result):
+        return "Ready"
+    return "In Progress"
 
 
 def launcher_line(code: str) -> tuple[int, str] | None:
@@ -429,7 +429,7 @@ def launcher_line(code: str) -> tuple[int, str] | None:
         return None
     notes = read_notes().get(code[:3], {})
     state = state_of(result, notes)
-    rank = {"PLAYS": 0, "CHECKS OUT": 1, "MACHINE OK": 2, "FAULTS": 3, "BLACK": 4, "STOPS": 5}[state]
+    rank = RANKS[state]
     wrong = [f"{key.split()[0]}: {result[key]}" for key in VERDICTS if result.get(key, "ok") != "ok"]
     wrong += [text for verdict, _, text in notes.values() if verdict == "bad"]
     if not wrong:

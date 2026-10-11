@@ -225,7 +225,7 @@
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
    "The game sends 27506 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 26 of 29 seconds (worst 56%)"
+   "It ran slowly: under 90% speed for 12 of 28 seconds (worst 69%)"
   ],
   "frames": 3600,
   "heard": {
@@ -299,9 +299,7 @@
   "checked": "2026-10-11",
   "code": "NDZE",
   "file": "Duke Nukem - ZER0 H0UR (U) [!].zip",
-  "findings": [
-   "It ran slowly: under 90% speed for 6 of 12 seconds (worst 71%)"
-  ],
+  "findings": [],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -411,7 +409,7 @@
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 16%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 35%)"
   ],
   "frames": 3600,
   "heard": {
@@ -634,7 +632,7 @@
   "code": "NN6E",
   "file": "Dr. Mario 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 13%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 17%)"
   ],
   "frames": 3600,
   "heard": {
@@ -780,7 +778,7 @@
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
    "The game's sound program made 17144 samples a second but 20813 reached the sound chip",
    "The game sends 20813 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 15%)"
+   "It ran slowly: under 90% speed for 9 of 10 seconds (worst 21%)"
   ],
   "frames": 3600,
   "heard": {
@@ -819,7 +817,7 @@
   "findings": [
    "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
    "602 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 34%)"
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 27%)"
   ],
   "frames": 3600,
   "heard": {
@@ -895,7 +893,9 @@
   "checked": "2026-10-11",
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
-  "findings": [],
+  "findings": [
+   "It ran slowly: under 90% speed for 4 of 19 seconds (worst 60%)"
+  ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -1004,7 +1004,7 @@
   "file": "NFL Blitz - Special Edition (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 31%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 35%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1042,7 +1042,7 @@
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
    "47290 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 41 of 42 seconds (worst 16%)"
+   "It ran slowly: under 90% speed for 42 of 42 seconds (worst 20%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1081,7 +1081,7 @@
   "findings": [
    "16004 drawing commands were skipped because we do not handle them",
    "The game sends 21182 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 19%)"
+   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 24%)"
   ],
   "frames": 3600,
   "heard": {

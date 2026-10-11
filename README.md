@@ -178,12 +178,14 @@ the game and you are back at the list.
 | Move | Up, Down, Page Up, Page Down | pointer, wheel | D-pad or left stick; LB, RB a page |
 | Play | Enter | click | A or Start |
 | Look at the folder again | F5 | | Y |
+| Change the order of the list | S | | X |
 | Full screen | F11 | | |
 | Quit | Esc | close the window | B |
 
 Each game has a word in front saying where it stood at its last check
-(PLAYS, CHECKS OUT, MACHINE OK, FAULTS, BLACK, STOPS; STATUS.md says what
-each means), and a line at the bottom saying more. Games are sorted best first. Two dots at the right mean the game has
+(Ready, In Progress, Untested, Broken; STATUS.md says what
+each means), and a line at the bottom saying more. Games are sorted best first to begin with;
+S (or X on a gamepad) changes the order: by state, by name, or worst first. The order you chose is remembered. Two dots at the right mean the game has
 not been built yet, so its first start takes a minute or two; this builds
 every game in a folder ahead of time:
 

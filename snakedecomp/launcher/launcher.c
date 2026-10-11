@@ -30,7 +30,7 @@
 
 typedef struct {
     char path[512], title[80], note[120];
-    int rank;   /* how well it works: 0 best (the states in check.py) */
+    int rank;   /* its state: 0 Ready, 1 In Progress, 2 Untested, 3 Broken (see check.py) */
     int cheats; /* how many ready-made cheats it has */
     int built;  /* has it been translated and compiled already? */
 } Game;
@@ -40,9 +40,49 @@ static Game games[MAX_GAMES];
 static int game_count, chosen, first_shown;
 static const char *folder;
 
-static int by_rank_then_title(const void *a, const void *b) {
+/* The orders the list can be put in. S (or X on a gamepad) steps through
+ * them, and the choice is remembered in a small file for next time. */
+enum { BY_STATE, BY_NAME, WORST_FIRST, ORDER_COUNT };
+static const char *const order_words[] = {"by state", "by name", "worst first"};
+static const char *const order_file = "settings/launcher.txt";
+static int order = BY_STATE;
+
+static int in_order(const void *a, const void *b) {
     const Game *x = a, *y = b;
-    return x->rank != y->rank ? x->rank - y->rank : strcasecmp(x->title, y->title);
+    if (order != BY_NAME && x->rank != y->rank)
+        return order == WORST_FIRST ? y->rank - x->rank : x->rank - y->rank;
+    return strcasecmp(x->title, y->title);
+}
+
+/* Put the list in the chosen order, staying on the same game. */
+static void sort_list(void) {
+    char was[512] = "";
+    if (chosen < game_count)
+        strcpy(was, games[chosen].path);
+    qsort(games, (size_t)game_count, sizeof games[0], in_order);
+    chosen = 0;
+    for (int i = 0; i < game_count; i++)
+        if (!strcmp(games[i].path, was))
+            chosen = i;
+}
+
+static void load_order(void) {
+    FILE *file = fopen(order_file, "r");
+    int number;
+    if (file && fscanf(file, "order = %d", &number) == 1 && number >= 0 && number < ORDER_COUNT)
+        order = number;
+    if (file)
+        fclose(file);
+}
+
+static void next_order(void) {
+    order = (order + 1) % ORDER_COUNT;
+    sort_list();
+    FILE *file = fopen(order_file, "w");
+    if (file) {
+        fprintf(file, "order = %d\n", order);
+        fclose(file);
+    }
 }
 
 /* Copy one tab-separated part of a line; returns where the next one starts. */
@@ -72,11 +112,13 @@ static void read_list(void) {
     }
     if (list)
         pclose(list);
-    qsort(games, (size_t)game_count, sizeof games[0], by_rank_then_title);
-    chosen = 0;
+    /* (sort_list keeps its place by the game at "chosen", which the fresh
+     * list has just overwritten: so find the old game first) */
+    chosen = game_count;
     for (int i = 0; i < game_count; i++)
         if (!strcmp(games[i].path, was))
             chosen = i;
+    sort_list();
 }
 
 /* ---- Drawing ----------------------------------------------------------------- */
@@ -118,8 +160,8 @@ static void box(int x, int y, int w, int h, int r, int g, int b) {
 }
 
 /* A word and a colour for each rank. */
-static const char *const rank_words[] = {"PLAYS", "CHECKS OUT", "MACHINE OK", "FAULTS", "BLACK", "STOPS"};
-static const int rank_colours[][3] = {{110, 255, 120}, {150, 230, 255}, {150, 190, 255}, {255, 200, 90}, {255, 140, 90}, {255, 90, 90}};
+static const char *const rank_words[] = {"Ready", "In Progress", "Untested", "Broken"};
+static const int rank_colours[][3] = {{110, 255, 120}, {255, 200, 90}, {150, 190, 255}, {255, 90, 90}};
 
 static int rows_shown; /* how many games fit in the window */
 static int row_height, list_top, window_w, window_h;
@@ -148,21 +190,20 @@ static void draw(const char *banner, const char *banner_detail) {
     char line[200];
 
     text(margin, 6 * size, "SNAKE'S N64 DECOMPILER", 255, 255, 255);
-    snprintf(line, sizeof line, "%d games in %s", game_count, folder);
+    snprintf(line, sizeof line, "%d games, %s (X/S)", game_count, order_words[order]);
     text(window_w - margin - (int)strlen(line) * letter, 6 * size, line, 130, 130, 140);
     box(margin, 25 * size, window_w - 2 * margin, size, 70, 70, 80);
 
     int name_room = (window_w - 2 * margin) / letter - 15; /* letters left for the title */
     for (int i = first_shown; i < game_count && i < first_shown + rows_shown; i++) {
         const Game *g = &games[i];
-        int y = list_top + (i - first_shown) * row_height, known = g->rank >= 0 && g->rank <= 5;
+        int y = list_top + (i - first_shown) * row_height, known = g->rank >= 0 && g->rank <= 3;
         if (i == chosen)
             box(margin - letter / 2, y - size, window_w - 2 * margin + letter, row_height - size, 50, 56, 80);
-        /* Games that are not ready for testing (faults, black screen, not
-         * starting, never tried) are greyed out. They can still be started. */
+        /* Broken games have their names greyed out. They can still be started. */
         int ready = known && g->rank <= 2;
-        const int *colour = ready ? rank_colours[g->rank] : (const int[]){95, 95, 105};
-        text(margin, y, known ? rank_words[g->rank] : "UNCHECKED", colour[0], colour[1], colour[2]);
+        const int *colour = known ? rank_colours[g->rank] : (const int[]){95, 95, 105};
+        text(margin, y, known ? rank_words[g->rank] : "Untested", colour[0], colour[1], colour[2]);
         snprintf(line, sizeof line, "%.*s", name_room, g->title);
         int bright = !ready ? (i == chosen ? 150 : 95) : i == chosen ? 255 : 205;
         text(margin + 12 * letter, y, line, bright, bright, ready && i == chosen ? 120 : bright + (ready ? 0 : 10));
@@ -183,7 +224,7 @@ static void draw(const char *banner, const char *banner_detail) {
         snprintf(line, sizeof line, "%.*s", room, g->note);
         text(margin, y + 6 * size, line, 230, 230, 230);
         snprintf(line, sizeof line, "%d cheats.  %s", g->cheats,
-                 g->built ? "Ready to play." : "First start takes a minute or two.");
+                 g->built ? "Starts straight away." : "First start takes a minute or two.");
         line[room < (int)sizeof line ? room : (int)sizeof line - 1] = 0;
         text(margin, y + 24 * size, line, 150, 150, 160);
         if (first_shown > 0 || first_shown + rows_shown < game_count) {
@@ -305,11 +346,14 @@ int main(int argc, char **argv) {
         return 1;
     }
     make_font();
+    load_order();
     draw("Looking for games...", folder);
     read_list();
     if (getenv("LAUNCHER_SHOT")) { /* for testing: draw once, save the picture, stop */
         if (getenv("LAUNCHER_ROW"))
             move(atoi(getenv("LAUNCHER_ROW")));
+        if (getenv("LAUNCHER_ORDER")) /* 0 by state, 1 by name, 2 worst first */
+            order = atoi(getenv("LAUNCHER_ORDER")) % ORDER_COUNT, sort_list();
         draw(NULL, NULL);
         draw(NULL, NULL); /* (twice: the picture read back is the one before last) */
         SDL_Surface *shot = SDL_CreateRGBSurfaceWithFormat(0, window_w, window_h, 32, SDL_PIXELFORMAT_ARGB8888);
@@ -358,6 +402,7 @@ int main(int argc, char **argv) {
                 case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: case SDL_SCANCODE_SPACE: go = !event.key.repeat; break;
                 case SDL_SCANCODE_ESCAPE: running = 0; break;
                 case SDL_SCANCODE_F5: read_list(); break;
+                case SDL_SCANCODE_S: next_order(); break;
                 case SDL_SCANCODE_F11:
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -371,6 +416,7 @@ int main(int argc, char **argv) {
                 case SDL_CONTROLLER_BUTTON_A: case SDL_CONTROLLER_BUTTON_START: go = 1; break;
                 case SDL_CONTROLLER_BUTTON_B: running = 0; break;
                 case SDL_CONTROLLER_BUTTON_Y: read_list(); break;
+                case SDL_CONTROLLER_BUTTON_X: next_order(); break;
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: move(-rows_shown); break;
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: move(rows_shown); break;
                 default: break;

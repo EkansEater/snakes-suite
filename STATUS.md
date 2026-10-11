@@ -7,16 +7,14 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-11 03:34. 2 PLAYS, 3 CHECKS OUT, 2 MACHINE OK, 16 FAULTS, 2 BLACK, 7 STOPS.
+Last written 2026-10-11 14:16. 5 Ready, 16 In Progress, 2 Untested, 9 Broken.
 
 | State | Meaning |
 |---|---|
-| PLAYS | A person has played it and found it good. |
-| CHECKS OUT | No fault found by machine, and its pictures have been looked at. Waiting to be played. |
-| MACHINE OK | No fault found by machine. Nobody has looked at its pictures yet. |
-| FAULTS | It runs, with faults listed in its row. |
-| BLACK | It runs, but shows nothing. |
-| STOPS | It stops, freezes or crashes. |
+| Ready | Playable 100%: a person has played it and found it good, and the machine finds no fault. |
+| In Progress | Still being tested, somewhat playable: it runs, but has faults listed in its row or has not been played yet. |
+| Untested | Not tested: the machine finds no fault, but nobody has looked at it or played it. |
+| Broken | Tested, unplayable: it stops, freezes, crashes or shows nothing. |
 
 The machine's columns come from running each game by itself for a while with no window. **Runs**: did it
 reach the end. **Picture**: was the screen blank or were drawing commands not understood (it cannot see
@@ -28,35 +26,35 @@ decompilation project's list of function names is in `symbols/`.
 
 | Game | State | Runs | Picture | Sound | Pace | Script | Names | Looked at | Played | Checked |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Super Mario 64 | PLAYS | ok | ok | ok | 30 |  | yes |  | good, 2026-10-10: Picture, sound, controls and saving work (carried over from the README) | 2026-10-11 |
-| Wave Race 64 | PLAYS | ok | ok | ok | 20 |  |  | good, 2026-10-10: Menus, the round screen and a Sunny Beach race look right | good, 2026-10-11: Intro and two Championship races (Sunny Beach, Sunset Bay) play right. Left: rank portraits 3 and 4 went black for a few seconds once; a rival marker's red ring blinks; window is made afresh on reset | 2026-10-11 |
-| Duke Nukem: Zero Hour | CHECKS OUT | ok | ok | ok | 30 |  | yes | good, 2026-10-10: Menus, the opening scene and the briefing screen look right |  | 2026-10-11 |
-| Mario Kart 64 | CHECKS OUT | ok | ok | ok | 30 | own |  | good, 2026-10-10: Scripted run: menus and a Luigi Raceway race look right |  | 2026-10-11 |
-| Star Fox 64 | CHECKS OUT | ok | ok | ok | 30 |  |  | good, 2026-10-10: Map, briefing and the flight into Corneria look right |  | 2026-10-11 |
-| Dr. Mario 64 | MACHINE OK | ok | ok | ok | 60 |  |  |  |  | 2026-10-11 |
-| Rampage 2: Universal Tour | MACHINE OK | ok | ok | ok | 60 |  |  |  |  | 2026-10-11 |
-| Army Men: Sarge's Heroes | FAULTS | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
-| Army Men: Sarge's Heroes 2 | FAULTS | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
-| Chameleon Twist | FAULTS | ok | ok | **1780 blocks thrown away** | 60 |  |  |  |  | 2026-10-11 |
-| Cruis'n Exotica | FAULTS | ok | **The screen went blank at 0:10 (frame 600) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Picture is garbage (seen in an earlier survey) |  | 2026-10-11 |
-| Cruis'n USA | FAULTS | ok | ok | **recording is silent** | 0 |  |  |  |  | 2026-10-11 |
-| Duke Nukem 64 | FAULTS | ok | ok | **sends 27506 a second, wants 22050 (+24%)** | 60 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) |  | 2026-10-11 |
-| F-1 World Grand Prix | FAULTS | ok | **6868 drawing commands were skipped because we do not handle them** | **sends 20433 a second, wants 22050 (-8%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) |  | 2026-10-11 |
-| Jet Force Gemini | FAULTS | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
-| Pokemon Snap | FAULTS | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-11 |
-| Pokemon Stadium | FAULTS | ok | **The screen went blank at 0:14 (frame 840) and stayed blank until the run ended** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Corrupt textures (seen in an earlier survey) |  | 2026-10-11 |
-| Quest 64 | FAULTS | ok | ok | ok | 30 |  |  | bad, 2026-10-10: Pink boxes behind text (seen in an earlier survey) |  | 2026-10-11 |
-| Rampage: World Tour | FAULTS | ok | ok | **sends 18792 a second, wants 32000 (-42%)** | 180 **too fast** |  |  |  |  | 2026-10-11 |
-| Resident Evil 2 | FAULTS | ok | **The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.0** | **its sound lists produce nothing; sends 11468 a second, wants 22050 (-48%); recording is silent** | 120 **too fast** |  |  | bad, 2026-10-10: Only ever shows "No Controller" |  | 2026-10-11 |
-| Road Rash 64 | FAULTS | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
-| WCW Nitro | FAULTS | ok | **47290 drawing commands were skipped because we do not handle them** | ok | 180 **too fast** |  |  |  |  | 2026-10-11 |
-| WCW vs. nWo: World Tour | FAULTS | ok | **16004 drawing commands were skipped because we do not handle them** | **sends 21182 a second, wants 22050 (-4%)** | 30 |  |  |  |  | 2026-10-11 |
-| Diddy Kong Racing | BLACK | ok | **The screen never showed anything (blank and stayed blank until the run ended)** | ok | 5 |  |  |  |  | 2026-10-11 |
-| Star Wars Episode I: Racer | BLACK | ok | **black: never showed anything** | **sends 223 a second, wants 22050 (-99%); recording is silent** | 1 |  |  |  |  | 2026-10-11 |
-| 007: The World Is Not Enough | STOPS | **stops at 0:47: bad memory access at 0x00000000** | ok | **its sound lists produce nothing; sends 11487 a second, wants 22050 (-48%); recording is silent** | 30 |  |  |  |  | 2026-10-11 |
-| Army Men: Air Combat | STOPS | **stops at 0:28: bad memory access at 0xFFFFFFFF** | **The screen went blank at 0:08 (frame 480) for 10 seconds** | **its sound lists produce nothing; sends 21366 a second, wants 22050 (-4%); recording is silent** | 40 |  |  |  |  | 2026-10-11 |
-| Mario Golf | STOPS | **froze at 0:26: no new picture for five seconds or more** | **105 drawing commands were skipped because we do not handle them** | **its sound lists produce nothing; sends 16142 a second, wants 32000 (-50%); recording is silent** | 30 |  |  | bad, 2026-10-10: White ground, garbled text in the HUD, a blue box in the corner |  | 2026-10-11 |
-| NFL Blitz 2001 | STOPS | **froze at 0:09: no new picture for five seconds or more** | ok | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
-| NFL Blitz: Special Edition | STOPS | **froze at 0:09: no new picture for five seconds or more** | ok | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
-| Pokemon Puzzle League | STOPS | **froze at 0:00: no new picture for five seconds or more** | ok | **sends 20813 a second, wants 22050 (-6%)** | 47 |  |  |  |  | 2026-10-11 |
-| Pokemon Stadium 2 | STOPS | **froze at 0:01: no new picture for five seconds or more** | ok | **silent: sound program not understood; recording is silent** | 0 |  |  |  |  | 2026-10-11 |
+| Duke Nukem: Zero Hour | Ready | ok | ok | ok | 30 |  | yes | good, 2026-10-10: Menus, the opening scene and the briefing screen look right | good, 2026-10-11: Opening scene, briefing and the start of the first level play right. Very few visual glitches | 2026-10-11 |
+| Mario Kart 64 | Ready | ok | ok | ok | 30 | own |  | good, 2026-10-10: Scripted run: menus and a Luigi Raceway race look right | good, 2026-10-11: Mushroom Cup: a full Luigi Raceway race and the start of Moo Moo Farm play right. Very few visual glitches. Fixed since: in widescreen a strip of old picture stayed down the right of the results screen | 2026-10-11 |
+| Star Fox 64 | Ready | ok | ok | ok | 30 |  |  | good, 2026-10-10: Map, briefing and the flight into Corneria look right | good, 2026-10-11: All of Corneria to the boss and the map play right. Very few visual glitches. Added since: a volume-boost sound command the game uses from Corneria on; not yet listened to | 2026-10-11 |
+| Super Mario 64 | Ready | ok | ok | ok | 30 |  | yes |  | good, 2026-10-10: Picture, sound, controls and saving work (carried over from the README) | 2026-10-11 |
+| Wave Race 64 | Ready | ok | ok | ok | 20 |  |  | good, 2026-10-10: Menus, the round screen and a Sunny Beach race look right | good, 2026-10-11: Intro and two Championship races (Sunny Beach, Sunset Bay) play right. Left: rank portraits 3 and 4 went black for a few seconds once; a rival marker's red ring blinks; window is made afresh on reset | 2026-10-11 |
+| Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
+| Army Men: Sarge's Heroes 2 | In Progress | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
+| Chameleon Twist | In Progress | ok | ok | **1780 blocks thrown away** | 60 |  |  |  |  | 2026-10-11 |
+| Cruis'n Exotica | In Progress | ok | **The screen went blank at 0:10 (frame 600) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Picture is garbage (seen in an earlier survey) |  | 2026-10-11 |
+| Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  |  | 2026-10-11 |
+| Duke Nukem 64 | In Progress | ok | ok | **sends 27506 a second, wants 22050 (+24%)** | 60 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) |  | 2026-10-11 |
+| F-1 World Grand Prix | In Progress | ok | **6868 drawing commands were skipped because we do not handle them** | **sends 20433 a second, wants 22050 (-8%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) |  | 2026-10-11 |
+| Jet Force Gemini | In Progress | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
+| Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-11 |
+| Pokemon Stadium | In Progress | ok | **The screen went blank at 0:14 (frame 840) and stayed blank until the run ended** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Corrupt textures (seen in an earlier survey) |  | 2026-10-11 |
+| Quest 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: Pink boxes behind text (seen in an earlier survey) |  | 2026-10-11 |
+| Rampage: World Tour | In Progress | ok | ok | **sends 18792 a second, wants 32000 (-42%)** | 180 **too fast** |  |  |  |  | 2026-10-11 |
+| Resident Evil 2 | In Progress | ok | **The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.0** | **its sound lists produce nothing; sends 11468 a second, wants 22050 (-48%); recording is silent** | 120 **too fast** |  |  | bad, 2026-10-10: Only ever shows "No Controller" |  | 2026-10-11 |
+| Road Rash 64 | In Progress | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
+| WCW Nitro | In Progress | ok | **47290 drawing commands were skipped because we do not handle them** | ok | 180 **too fast** |  |  |  |  | 2026-10-11 |
+| WCW vs. nWo: World Tour | In Progress | ok | **16004 drawing commands were skipped because we do not handle them** | **sends 21182 a second, wants 22050 (-4%)** | 30 |  |  |  |  | 2026-10-11 |
+| Dr. Mario 64 | Untested | ok | ok | ok | 60 |  |  |  |  | 2026-10-11 |
+| Rampage 2: Universal Tour | Untested | ok | ok | ok | 60 |  |  |  |  | 2026-10-11 |
+| 007: The World Is Not Enough | Broken | **stops at 0:47: bad memory access at 0x00000000** | ok | **its sound lists produce nothing; sends 11487 a second, wants 22050 (-48%); recording is silent** | 30 |  |  |  |  | 2026-10-11 |
+| Army Men: Air Combat | Broken | **stops at 0:28: bad memory access at 0xFFFFFFFF** | **The screen went blank at 0:08 (frame 480) for 10 seconds** | **its sound lists produce nothing; sends 21366 a second, wants 22050 (-4%); recording is silent** | 40 |  |  |  |  | 2026-10-11 |
+| Diddy Kong Racing | Broken | ok | **The screen never showed anything (blank and stayed blank until the run ended)** | ok | 5 |  |  |  |  | 2026-10-11 |
+| Mario Golf | Broken | **froze at 0:26: no new picture for five seconds or more** | **105 drawing commands were skipped because we do not handle them** | **its sound lists produce nothing; sends 16142 a second, wants 32000 (-50%); recording is silent** | 30 |  |  | bad, 2026-10-10: White ground, garbled text in the HUD, a blue box in the corner |  | 2026-10-11 |
+| NFL Blitz 2001 | Broken | **froze at 0:09: no new picture for five seconds or more** | ok | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
+| NFL Blitz: Special Edition | Broken | **froze at 0:09: no new picture for five seconds or more** | ok | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
+| Pokemon Puzzle League | Broken | **froze at 0:00: no new picture for five seconds or more** | ok | **sends 20813 a second, wants 22050 (-6%)** | 47 |  |  |  |  | 2026-10-11 |
+| Pokemon Stadium 2 | Broken | **froze at 0:01: no new picture for five seconds or more** | ok | **silent: sound program not understood; recording is silent** | 0 |  |  |  |  | 2026-10-11 |
+| Star Wars Episode I: Racer | Broken | ok | **black: never showed anything** | **sends 223 a second, wants 22050 (-99%); recording is silent** | 1 |  |  |  |  | 2026-10-11 |
