@@ -980,7 +980,6 @@ static uint32_t as_cpu_address(uint32_t address) { return address < RAM_SIZE ? a
 /* Carry out a task for the signal chip. "task" is the game's 64-byte
  * description of it: its kind at +0, the chip program at +0x10 and its
  * data at +0x18, and the list of commands at +0x30 (length at +0x34). */
-static int picture_pace = 1; /* refreshes each picture takes at least (--pace) */
 static void run_task(const uint8_t *task) {
 #define FIELD(offset) ((uint32_t)task[offset] << 24 | (uint32_t)task[(offset) + 1] << 16 | (uint32_t)task[(offset) + 2] << 8 | task[(offset) + 3])
 #define POINTER(offset) as_cpu_address(FIELD(offset))
@@ -1001,20 +1000,6 @@ static void run_task(const uint8_t *task) {
                 exit(0);
             drawn_at_frame = frames, drawn_this_frame = 1;
         }
-        /* Other games drew so much that each picture took the console
-         * two refreshes or more, and they have no other brake: given a
-         * console that draws in no time they run at double speed, sound
-         * and all. For those, --pace N says a picture takes N refreshes
-         * (see PACE in profiles.py), and the game is kept waiting here
-         * until that long after its last picture. */
-        static long picture_at_frame = -1000;
-        while (picture_pace > 1 && current && frames < picture_at_frame + picture_pace) {
-            next_frame();
-            if (max_frames >= 0 && frames >= max_frames)
-                exit(0);
-            drawn_at_frame = frames, drawn_this_frame = 1;
-        }
-        picture_at_frame = frames;
         graphics_tasks++;
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -3582,7 +3567,6 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--cheats")) i++;   /* ...and so was this */
         else if (!strcmp(argv[i], "--states")) states_path = next, i++;
         else if (!strcmp(argv[i], "--headless")) headless = 1;
-        else if (!strcmp(argv[i], "--pace")) picture_pace = atoi(next) < 1 ? 1 : atoi(next) > 6 ? 6 : atoi(next), i++;
         else if (!strcmp(argv[i], "--wide")) aspect = 16.0f / 9;
         else if (!strcmp(argv[i], "--stats")) start_with_stats = 1;
         else if (!strcmp(argv[i], "--smooth")) smooth_motion = 1;
