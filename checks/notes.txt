@@ -14,3 +14,5 @@ NKT seen good 2026-10-10 Scripted run: menus and a Luigi Raceway race look right
 NWR seen good 2026-10-10 Menus, the round screen and a Sunny Beach race look right
 NFX seen good 2026-10-10 Map, briefing and the flight into Corneria look right
 NDZ seen good 2026-10-10 Menus, the opening scene and the briefing screen look right
+NWR played bad 2026-10-11 Controls and movement great; rider, jet ski, buoys and checkpoint jitter or flash
+NWR played bad 2026-10-11 Controls and movement great. With smooth motion on, spray, buoys and rider flashed; fixed since, not yet played again

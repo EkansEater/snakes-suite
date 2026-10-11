@@ -87,6 +87,10 @@ static float view_back[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; /* undoes the 
 #define MAX_MATRICES 4096
 static float previous_matrices[MAX_MATRICES][4][4], current_matrices[MAX_MATRICES][4][4];
 static int previous_matrix_count, matrix_index;
+/* Where in the game's memory each matrix came from. A game keeps the matrix
+ * of each thing it draws (an arm, a buoy) in the same place from one frame
+ * to the next, which tells us which is which. */
+static uint32_t previous_sources[MAX_MATRICES], current_sources[MAX_MATRICES];
 static float blend = 1;      /* 1 = this frame as is, 0.5 = halfway from the previous */
 static int measuring;        /* a dry run: read the matrices, draw nothing */
 static int seen_perspective; /* has this frame started its 3D scene yet? */
@@ -515,16 +519,33 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
      * its scene the same way), so this one's counterpart in the previous
      * frame is at or near the same place in the list. Objects appearing and
      * disappearing shift the list a little, so look a few places either
-     * side and take the closest match. */
+     * side.
+     *
+     * The counterpart is the one that came from the same place in the
+     * game's memory, if there is one. Only failing that do we take the one
+     * that looks most alike, because looks deceive: the parts of one
+     * moving figure (Wave Race 64's rider and jet ski are some thirty
+     * pieces, a few units apart) are closer to each other than to where
+     * they themselves were a frame ago. Paired by looks, each piece was
+     * drawn halfway to its neighbour in every in-between picture, and the
+     * figure flickered. */
     if (matrix_index < MAX_MATRICES) {
         memcpy(current_matrices[matrix_index], m, sizeof m);
+        current_sources[matrix_index] = w1;
         float (*best)[4] = NULL, best_score = 0;
+        int same_source = 0;
+        for (int j = matrix_index - 8; blend < 1 && j <= matrix_index + 8; j++)
+            same_source |= j >= 0 && j < previous_matrix_count && previous_sources[j] == w1;
         for (int j = matrix_index - 8; blend < 1 && j <= matrix_index + 8; j++) {
             if (j < 0 || j >= previous_matrix_count)
+                continue;
+            if (same_source && previous_sources[j] != w1)
                 continue;
             float (*old)[4] = previous_matrices[j], score = 0, jump = 0;
             if (is_perspective(m) != is_perspective(old))
                 continue;
+            if (same_source) /* (drawn twice from one place: the nearer in the list is the one) */
+                score = (float)abs(j - matrix_index) * 1e6f;
             for (int i = 0; i < 3; i++) {
                 jump = fmaxf(jump, fabsf(m[3][i] - old[3][i]));
                 for (int k = 0; k < 3; k++)
@@ -621,12 +642,21 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
      * ends lie on the floor, so the in-between does too. */
     int decal = ((rdp.other_mode_l >> 10) & 3) == 3, see_through = (rdp.other_mode_l & 0x40000) == 0;
     float to_world[4][4], world_to_screen[4][4];
+    /* Most games put the camera into the position matrix, so removing it
+     * gives the world. A few (Wave Race 64) put it into the lens instead:
+     * their position matrices are the world already, and there is nothing
+     * to remove. Removing it all the same sent every see-through shape
+     * somewhere else in each in-between picture: spray, buoys and
+     * shadows flashed on and off as you raced. */
     int track = (decal || see_through) && have_camera && is_perspective(rsp.projection) &&
-                tracked_count < MAX_TRACKED && invert(to_world, camera_exact);
+                tracked_count < MAX_TRACKED && (proj_has_view || invert(to_world, camera_exact));
     Tracked *now = NULL;
     const Tracked *before = NULL;
     if (track) {
-        multiply(to_world, rsp.modelview_exact[rsp.modelview_top], to_world);
+        if (proj_has_view)
+            memcpy(to_world, rsp.modelview_exact[rsp.modelview_top], sizeof to_world);
+        else
+            multiply(to_world, rsp.modelview_exact[rsp.modelview_top], to_world);
         now = &tracked_now[tracked_count++];
         now->count = count;
         for (int i = 0; i < count; i++) {
@@ -655,7 +685,9 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
                 if (distance < nearest)
                     nearest = distance, before = t;
             }
-            combine_with(world_to_screen, camera_blended);
+            float no_change[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+            /* (the lens matrix, blended like any other, holds the camera in those games) */
+            combine_with(world_to_screen, proj_has_view ? no_change : camera_blended);
         }
     }
 
@@ -2051,7 +2083,8 @@ int gfx_run(uint32_t address, int smooth) {
     Tracked *swap = tracked_before;
     tracked_before = tracked_now, tracked_now = swap, tracked_before_count = tracked_count;
     if (matrix_index <= MAX_MATRICES)
-        memcpy(previous_matrices, current_matrices, (size_t)matrix_index * sizeof previous_matrices[0]);
+        memcpy(previous_matrices, current_matrices, (size_t)matrix_index * sizeof previous_matrices[0]),
+        memcpy(previous_sources, current_sources, (size_t)matrix_index * sizeof previous_sources[0]);
 
     /* Things the free camera wants to know about the frame just drawn. */
     free_before = free_now;
