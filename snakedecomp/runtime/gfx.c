@@ -1608,6 +1608,14 @@ static void command_fill_rectangle(uint32_t w0, uint32_t w1) {
     int fill = CYCLE_TYPE == CYCLE_FILL;
     if (fill || CYCLE_TYPE == CYCLE_COPY)
         right += 4, bottom += 4; /* these modes include the last row and column */
+    /* Some games wipe the screen with a box that stops one column short of
+     * the right edge (Mario Kart 64's results screen asks for 0..319 in a
+     * mode that leaves the last column out). On a TV nobody could see that
+     * column. In widescreen it would leave a whole strip of the old picture
+     * down the right side, so a box from the left edge to within one column
+     * of the right edge is taken to mean "the whole width". */
+    if (left <= 0 && (float)right >= (SCREEN_W - 1) * 4 * hires_x)
+        right = (int)(SCREEN_W * 4 * hires_x);
 
     if (measuring)
         return;
@@ -1662,10 +1670,13 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
     if (fabsf(shape->ds) == 1 && fabsf(shape->dt) == 1)
         shape->state.bilinear = 0;
     if (getenv("SHOW_RECTANGLES")) /* for testing */
-        fprintf(stderr, "rect x %d..%d y %d..%d s %.2f t %.2f ds %.4f dt %.4f tile %d..%d clamp %d mask %d size %d fmt %d line %u\n",
+        fprintf(stderr, "rect x %d..%d y %d..%d s %.2f t %.2f ds %.4f dt %.4f tile %d..%d clamp %d mask %d size %d fmt %d line %u from %06X cycle %d cc %d %d %d %d / %d %d %d %d prim %d %d %d %d env %d %d %d %d modes %06X %08X\n",
                 left / 4, right / 4, top / 4, bottom / 4, shape->s, shape->t, shape->ds, shape->dt, shape->state.tile.uls / 4,
                 shape->state.tile.lrs / 4, shape->state.tile.clamp_s, shape->state.tile.mask_s, shape->state.tile.size,
-                shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes);
+                shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes, shape->state.loaded.source, (int)CYCLE_TYPE,
+                rdp.cc[0][0], rdp.cc[0][1], rdp.cc[0][2], rdp.cc[0][3], rdp.cc[1][0], rdp.cc[1][1], rdp.cc[1][2], rdp.cc[1][3],
+                rdp.prim[0], rdp.prim[1], rdp.prim[2], rdp.prim[3], rdp.env[0], rdp.env[1], rdp.env[2], rdp.env[3],
+                rdp.other_mode_h, rdp.other_mode_l);
     /* (left, top and the steps are kept in units of a 320-wide screen) */
     shape->left = (float)left / (4 * hires_x) + wide_offset, shape->top = (float)top / (4 * hires_y), shape->flip = flip;
     shape->ds *= flip ? hires_y : hires_x, shape->dt *= flip ? hires_x : hires_y; /* (flipped: ds goes downwards) */

@@ -339,6 +339,17 @@ static void repeat(uint32_t in_offset, uint32_t out_offset, uint32_t times) {
         memcpy(out, wave, sizeof wave);
 }
 
+/* Make a stretch of sound louder (or quieter). The gain is a small
+ * fraction in sixteenths: 16 leaves the sound as it is, 30 is nearly twice
+ * as loud. Star Fox 64 uses it on voices that have to carry over the rest. */
+static void boost(uint32_t offset, uint32_t bytes, int sixteenths) {
+    uint8_t *out = at(offset);
+    if (bytes > SCRATCH_SIZE - (offset & (SCRATCH_SIZE - 1))) /* (never past the end of the scratch space) */
+        bytes = SCRATCH_SIZE - (offset & (SCRATCH_SIZE - 1));
+    for (uint32_t i = 0; i + 2 <= bytes; i += 2, out += 2)
+        put16(out, clamp16(get16(out) * sixteenths >> 4));
+}
+
 /* Weave separate left and right buffers into left, right, left, right... */
 static void interleave(uint32_t left_offset, uint32_t right_offset) {
     uint8_t *left = at(left_offset), *right = at(right_offset), *out = at(state.out);
@@ -467,11 +478,16 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
         case 0x15: memcpy(game(w1), at(w0 & 0xFFFF), ((w0 >> 16) & 255) << 4); break; /* save */
         case 0x11: take_every_second(w1 >> 16, w1 & 0xFFFF, w0 & 0xFFFF); break;
         case 0x1A: repeat(w0 & 0xFFFF, w1 >> 16, (w0 >> 16) & 255); break;
+        case 0x18: boost(w1 >> 16, w0 & 0xFFFF, flags); break;
         case 13: interleave(w1 >> 16, w1 & 0xFFFF); break;
         case 14: pole_filter(flags, (int)(w0 & 0xFFFF), w1); break;
         case 15: state.loop_state = w1; break;
         case 0: case 7: break; /* "do nothing", and a table of addresses we have no need of */
-        default: audio_commands_unknown++; break;
+        default:
+            if (getenv("SHOW_SOUND") && audio_commands_unknown < 40) /* for testing: the first commands we do not know */
+                fprintf(stderr, "sound command not known: %08X %08X (list %ld)\n", w0, w1, list_number);
+            audio_commands_unknown++;
+            break;
         }
     }
 }
