@@ -213,6 +213,7 @@ static struct {
     float prim_depth; /* one depth for a whole shape, 0 (nearest) to 1, for when the game asks for that */
     int cc[2][4], ac[2][4]; /* colour and alpha combiner settings, two cycles */
     int prim[4], env[4], fog[4], blend[4];
+    int prim_lod_fraction; /* a number sent along with the prim colour: how far to fade between two textures (0..255) */
     uint32_t fill_color;
     uint32_t texture_image, texture_format, texture_size, texture_width;
     uint32_t color_image, depth_image, palette_address;
@@ -1324,8 +1325,14 @@ static void draw_rectangle(const Shape *shape, Pixel *p, int strip_top, int stri
         return;
     }
     prepare_pixel(d, p);
+    /* "Shade" is the light worked out at a triangle's corners. A rectangle
+     * has no corners with light on them, and the console mixes in nothing
+     * (zero) where a game asks for shade there. We used to give textured
+     * rectangles full white instead, and Duke Nukem 64, which draws its
+     * weapon, HUD and menus as "(env - shade) * texture + shade", came out
+     * plain white. */
     for (int i = 0; i < 4; i++)
-        p->shade[i] = shape->kind == COMBINED_RECTANGLE ? 0 : 255;
+        p->shade[i] = 0;
 
     for (int y = y0; y < y1; y++) {
         size_t index = (size_t)y * (size_t)width + (size_t)x0;
@@ -1569,8 +1576,9 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
             if (scissor[2] > box[2]) scissor[2] = box[2];
             if (scissor[3] > box[3]) scissor[3] = box[3];
         }
-        if (getenv("SHOW_RECTANGLES") && !is_perspective(rsp.projection) && shape->state.use_texture) /* for testing */
-            fprintf(stderr, "flat tri u %.1f %.1f %.1f v %.1f %.1f %.1f x %.0f %.0f %.0f tile %d..%d,%d..%d clamp %d%d mask %d%d size %d fmt %d line %u scale %.3f q %.3f %.3f %.3f y %.0f %.0f %.0f from %06X rows %d tmem %d cyc %d cc %d %d %d %d prim %d %d %d %d ac %d %d %d %d ac0 %d %d %d %d modes %06X %08X env %d shade %.0f %.0f %.0f %.0f\n",
+        /* for testing: flat (menu and HUD) triangles with SHOW_RECTANGLES, every triangle with SHOW_TRIANGLES */
+        if (getenv("SHOW_TRIANGLES") || (getenv("SHOW_RECTANGLES") && !is_perspective(rsp.projection) && shape->state.use_texture))
+            fprintf(stderr, "flat tri u %.1f %.1f %.1f v %.1f %.1f %.1f x %.0f %.0f %.0f tile %d..%d,%d..%d clamp %d%d mask %d%d size %d fmt %d line %u scale %.3f q %.3f %.3f %.3f y %.0f %.0f %.0f from %06X rows %d tmem %d cyc %d cc %d %d %d %d prim %d %d %d %d ac %d %d %d %d ac0 %d %d %d %d modes %06X %08X env %d shade %.0f %.0f %.0f %.0f cc0 %d %d %d %d lodfrac %d\n",
                     s[0].u, s[i].u, s[i + 1].u, s[0].v, s[i].v, s[i + 1].v, s[0].x, s[i].x, s[i + 1].x,
                     shape->state.tile.uls / 4, shape->state.tile.lrs / 4, shape->state.tile.ult / 4, shape->state.tile.lrt / 4,
                     shape->state.tile.clamp_s, shape->state.tile.clamp_t, shape->state.tile.mask_s, shape->state.tile.mask_t,
@@ -1580,7 +1588,8 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
                     shape->state.cc[1][3], shape->state.prim[0], shape->state.prim[1], shape->state.prim[2], shape->state.prim[3],
                     shape->state.ac[1][0], shape->state.ac[1][1], shape->state.ac[1][2], shape->state.ac[1][3],
                     shape->state.ac[0][0], shape->state.ac[0][1], shape->state.ac[0][2], shape->state.ac[0][3],
-                    rdp.other_mode_h, rdp.other_mode_l, shape->state.env[3], s[0].r, s[0].g, s[0].b, s[0].a);
+                    rdp.other_mode_h, rdp.other_mode_l, shape->state.env[3], s[0].r, s[0].g, s[0].b, s[0].a,
+                    shape->state.cc[0][0], shape->state.cc[0][1], shape->state.cc[0][2], shape->state.cc[0][3], rdp.prim_lod_fraction);
         /* The rasteriser wants a consistent winding; flip if needed. */
         float area = (s[i].x - s[0].x) * (s[i + 1].y - s[0].y) - (s[i].y - s[0].y) * (s[i + 1].x - s[0].x);
         shape->v[0] = s[0];
@@ -1670,13 +1679,14 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
     if (fabsf(shape->ds) == 1 && fabsf(shape->dt) == 1)
         shape->state.bilinear = 0;
     if (getenv("SHOW_RECTANGLES")) /* for testing */
-        fprintf(stderr, "rect x %d..%d y %d..%d s %.2f t %.2f ds %.4f dt %.4f tile %d..%d clamp %d mask %d size %d fmt %d line %u from %06X cycle %d cc %d %d %d %d / %d %d %d %d prim %d %d %d %d env %d %d %d %d modes %06X %08X\n",
+        fprintf(stderr, "rect x %d..%d y %d..%d s %.2f t %.2f ds %.4f dt %.4f tile %d..%d clamp %d mask %d size %d fmt %d line %u from %06X cycle %d cc %d %d %d %d / %d %d %d %d prim %d %d %d %d env %d %d %d %d modes %06X %08X ac %d %d %d %d / %d %d %d %d\n",
                 left / 4, right / 4, top / 4, bottom / 4, shape->s, shape->t, shape->ds, shape->dt, shape->state.tile.uls / 4,
                 shape->state.tile.lrs / 4, shape->state.tile.clamp_s, shape->state.tile.mask_s, shape->state.tile.size,
                 shape->state.tile.format, (unsigned)shape->state.loaded.row_bytes, shape->state.loaded.source, (int)CYCLE_TYPE,
                 rdp.cc[0][0], rdp.cc[0][1], rdp.cc[0][2], rdp.cc[0][3], rdp.cc[1][0], rdp.cc[1][1], rdp.cc[1][2], rdp.cc[1][3],
                 rdp.prim[0], rdp.prim[1], rdp.prim[2], rdp.prim[3], rdp.env[0], rdp.env[1], rdp.env[2], rdp.env[3],
-                rdp.other_mode_h, rdp.other_mode_l);
+                rdp.other_mode_h, rdp.other_mode_l, rdp.ac[0][0], rdp.ac[0][1], rdp.ac[0][2], rdp.ac[0][3], rdp.ac[1][0],
+                rdp.ac[1][1], rdp.ac[1][2], rdp.ac[1][3]);
     /* (left, top and the steps are kept in units of a 320-wide screen) */
     shape->left = (float)left / (4 * hires_x) + wide_offset, shape->top = (float)top / (4 * hires_y), shape->flip = flip;
     shape->ds *= flip ? hires_y : hires_x, shape->dt *= flip ? hires_x : hires_y; /* (flipped: ds goes downwards) */
@@ -1802,6 +1812,20 @@ static void set_light(int n, uint32_t address) {
         rsp.lights[n].direction[i] = length > 0 ? d[i] / length : 0;
 }
 
+/* A game can also change just the colour of a light it has already set up,
+ * with a single number (red, green and blue in its top three bytes). It is
+ * sent twice, to two copies the chip keeps; either one will do for us.
+ * F-1 World Grand Prix colours all its lights this way: without it every
+ * lit surface kept the colour its lights were first loaded with, plain red. */
+static void set_light_color(int n, uint32_t rgb) {
+    if (n < 0 || n > 7)
+        return;
+    if (getenv("SHOW_LIGHTS")) /* for testing */
+        fprintf(stderr, "light %d of %d coloured %06X (picture %ld)\n", n, rsp.light_count, rgb >> 8, gfx_frame_number);
+    rsp.lights[n].color[0] = (float)(rgb >> 24), rsp.lights[n].color[1] = (float)((rgb >> 16) & 255);
+    rsp.lights[n].color[2] = (float)((rgb >> 8) & 255);
+}
+
 static void command_move_memory(uint32_t w0, uint32_t w1) {
     uint32_t index = (w0 >> 16) & 255, address = segmented(w1);
     if (index == 0x80)
@@ -1871,6 +1895,8 @@ static void command_ex2(uint32_t w0, uint32_t w1) {
             rsp.segments[offset / 4 & 15] = w1 & 0xFFFFFF;
         else if (index == 0x08)
             rsp.fog_multiply = (float)(int16_t)(w1 >> 16), rsp.fog_offset = (float)(int16_t)w1;
+        else if (index == 0x0A) /* one light's colour (each light is 0x18 apart in this dialect) */
+            set_light_color((int)(offset / 0x18), w1);
         if (rsp.light_count < 0 || rsp.light_count > 7)
             rsp.light_count = 0;
         break;
@@ -1917,6 +1943,7 @@ static void command_move_word(uint32_t w0, uint32_t w1) {
         rsp.fog_multiply = (float)(int16_t)(w1 >> 16);
         rsp.fog_offset = (float)(int16_t)w1;
         break;
+    case 0x0A: set_light_color((int)(((w0 >> 8) & 0xFFFF) / 0x20), w1); break; /* (each light is 0x20 apart here) */
     }
     if (rsp.light_count < 0 || rsp.light_count > 7)
         rsp.light_count = 0;
@@ -2057,7 +2084,7 @@ static void run_list(uint32_t address) {
         case 0xF7: rdp.fill_color = w1; break;
         case 0xF8: set_color(rdp.fog, w1); break;
         case 0xF9: set_color(rdp.blend, w1); break;
-        case 0xFA: set_color(rdp.prim, w1); break;
+        case 0xFA: set_color(rdp.prim, w1), rdp.prim_lod_fraction = (int)(w0 & 0xFF); break;
         case 0xFB: set_color(rdp.env, w1); break;
         case 0xFC: set_combine(w0, w1); break;
         case 0xFD:

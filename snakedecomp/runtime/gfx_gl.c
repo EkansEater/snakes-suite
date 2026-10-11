@@ -393,8 +393,7 @@ static void draw(const Shape *shapes, int count, int width, int height, int scal
                             (v->v - (float)d->tile.ult / 4 + shift) / (float)texture_h, v->fog / 255);
             }
         } else { /* a rectangle: two triangles */
-            float shade = s->kind == COMBINED_RECTANGLE ? 0 : 1;
-            float color[4] = {shade, shade, shade, shade};
+            float color[4] = {0, 0, 0, 0}; /* no shade on a rectangle: see draw_rectangle in gfx.c */
             int xs[2] = {s->x0, s->x1}, ys[2] = {s->y0, s->y1};
             static const int corners[6][2] = {{0, 0}, {1, 0}, {0, 1}, {1, 0}, {1, 1}, {0, 1}};
             for (int k = 0; k < 6; k++) {

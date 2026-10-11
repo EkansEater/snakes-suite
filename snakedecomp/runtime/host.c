@@ -422,6 +422,7 @@ void hle_osInitialize(Context *ctx) {
  * and tick the "screen refreshed" event 60 times a (virtual) second. */
 
 static uint32_t vi_queue, vi_message, framebuffer;
+static int vi_every = 1, vi_since; /* the game is told of every Nth refresh; refreshes since it last was */
 static long frames;
 static long max_frames = -1; /* stop after this many (--frames), for testing */
 /* --log: tell the story of this run as it goes, for working out afterwards
@@ -465,6 +466,12 @@ void hle_osViSetSpecialFeatures(Context *ctx) {
 }
 void hle_osViSetEvent(Context *ctx) {
     vi_queue = ARG0, vi_message = ARG1;
+    /* The third number says how often the game wants to be told: 1 is every
+     * screen refresh, 2 every other one (a game that runs at 30 a second,
+     * sound included, may set its whole pace by asking for 2). */
+    vi_every = ARG2 >= 1 && ARG2 <= 60 ? (int)ARG2 : 1;
+    if (run_log)
+        fprintf(stderr, "refresh message every %d refresh%s\n", vi_every, vi_every == 1 ? "" : "es");
     if (video_records)
         RUN_ORIGINAL(osViSetEvent);
 }
@@ -492,6 +499,23 @@ void hle_osViGetNextFramebuffer(Context *ctx) { RETURN(framebuffer); }
 long loop_budget = LOOP_BUDGET_PER_FRAME;
 static uint64_t ticks;
 #define TICKS_PER_FRAME (46875000 / 60)
+/* The clock as it stood when this refresh began. Reading the clock moves it
+ * on a little (see clock_read), but never past the end of the refresh: each
+ * refresh is exactly a sixtieth of a second, however often a game looks. */
+static uint64_t frame_ticks;
+
+/* A game that looks at the clock gets a slightly later time on each look,
+ * as it would on the console, where looking takes time. (A game waiting in
+ * a loop for a moment to arrive would otherwise see time standing still.)
+ * These little steps must not add up to more than the refresh they happen
+ * in. They used to: Duke Nukem 64 looks at the clock thousands of times a
+ * refresh, which made its clock, and so the whole game, run a quarter too
+ * fast. */
+static uint64_t clock_read(uint64_t step) {
+    if (ticks + step < frame_ticks + TICKS_PER_FRAME)
+        ticks += step;
+    return ticks;
+}
 
 static void present_frame(void); /* further down: window, input, screenshots */
 static void run_timers(void);
@@ -504,7 +528,8 @@ static long most_loops; /* the most of the loop budget any one refresh has used 
 
 static void next_frame(void) {
     frames++;
-    ticks += TICKS_PER_FRAME;
+    frame_ticks += TICKS_PER_FRAME;
+    ticks = frame_ticks;
     if (frames > 1000 && LOOP_BUDGET_PER_FRAME - loop_budget > most_loops)
         most_loops = LOOP_BUDGET_PER_FRAME - loop_budget; /* (after start-up, which is always busy) */
     loop_budget = LOOP_BUDGET_PER_FRAME;
@@ -512,8 +537,10 @@ static void next_frame(void) {
     run_timers();
     sound_chip_update();
     swap_video_records();
-    if (vi_queue)
+    if (vi_queue && ++vi_since >= vi_every) {
+        vi_since = 0;
         queue_put(vi_queue, vi_message, 0);
+    }
 }
 
 /* Called from recompiled code when a thread has been looping for about a
@@ -583,12 +610,12 @@ static void run_timers(void) {
 }
 
 void hle_osGetTime(Context *ctx) {
-    ticks += 100;
+    clock_read(100);
     ctx->v0 = S32(ticks >> 32); /* 64-bit results come back in two registers */
     ctx->v1 = S32(ticks);
 }
 void hle_osGetCount(Context *ctx) {
-    ticks += 100;
+    clock_read(100);
     RETURN(ticks);
 }
 
@@ -953,6 +980,7 @@ static uint32_t as_cpu_address(uint32_t address) { return address < RAM_SIZE ? a
 /* Carry out a task for the signal chip. "task" is the game's 64-byte
  * description of it: its kind at +0, the chip program at +0x10 and its
  * data at +0x18, and the list of commands at +0x30 (length at +0x34). */
+static int picture_pace = 1; /* refreshes each picture takes at least (--pace) */
 static void run_task(const uint8_t *task) {
 #define FIELD(offset) ((uint32_t)task[offset] << 24 | (uint32_t)task[(offset) + 1] << 16 | (uint32_t)task[(offset) + 2] << 8 | task[(offset) + 3])
 #define POINTER(offset) as_cpu_address(FIELD(offset))
@@ -973,6 +1001,20 @@ static void run_task(const uint8_t *task) {
                 exit(0);
             drawn_at_frame = frames, drawn_this_frame = 1;
         }
+        /* Other games drew so much that each picture took the console
+         * two refreshes or more, and they have no other brake: given a
+         * console that draws in no time they run at double speed, sound
+         * and all. For those, --pace N says a picture takes N refreshes
+         * (see PACE in profiles.py), and the game is kept waiting here
+         * until that long after its last picture. */
+        static long picture_at_frame = -1000;
+        while (picture_pace > 1 && current && frames < picture_at_frame + picture_pace) {
+            next_frame();
+            if (max_frames >= 0 && frames >= max_frames)
+                exit(0);
+            drawn_at_frame = frames, drawn_this_frame = 1;
+        }
+        picture_at_frame = frames;
         graphics_tasks++;
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -1619,9 +1661,9 @@ static uint32_t tlb_raw[TLB_ENTRIES][4]; /* each entry as the game wrote it: mas
 uint64_t cop0_read(Context *ctx, int reg) {
     (void)ctx;
     if (reg == C0_COUNT)
-        return (uint32_t)(ticks += 100);
+        return (uint32_t)clock_read(100);
     if (reg == C0_RANDOM)
-        return (uint64_t)(31 - (ticks++ % 24));
+        return (uint64_t)(31 - (clock_read(1) % 24));
     return control[reg & 31];
 }
 void cop0_write(Context *ctx, int reg, uint64_t value) {
@@ -1688,7 +1730,8 @@ static struct { void *data; size_t size; } state_parts[] = {
     {tlb, sizeof tlb}, {threads, sizeof threads}, {&thread_count, sizeof thread_count},
     {&turn_counter, sizeof turn_counter}, {events, sizeof events},
     {&vi_queue, sizeof vi_queue}, {&vi_message, sizeof vi_message}, {&framebuffer, sizeof framebuffer},
-    {&loop_budget, sizeof loop_budget}, {&ticks, sizeof ticks}, {timers, sizeof timers},
+    {&vi_every, sizeof vi_every}, {&vi_since, sizeof vi_since},
+    {&loop_budget, sizeof loop_budget}, {&ticks, sizeof ticks}, {&frame_ticks, sizeof frame_ticks}, {timers, sizeof timers},
     {&video_records, sizeof video_records}, {eeprom, sizeof eeprom}, {pif, sizeof pif}, {sram, sizeof sram}, {&pi_command_queue, sizeof pi_command_queue},
     {hardware, sizeof hardware}, {hardware_spare, sizeof hardware_spare}, {control, sizeof control}, {tlb_raw, sizeof tlb_raw},
 };
@@ -3539,6 +3582,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--cheats")) i++;   /* ...and so was this */
         else if (!strcmp(argv[i], "--states")) states_path = next, i++;
         else if (!strcmp(argv[i], "--headless")) headless = 1;
+        else if (!strcmp(argv[i], "--pace")) picture_pace = atoi(next) < 1 ? 1 : atoi(next) > 6 ? 6 : atoi(next), i++;
         else if (!strcmp(argv[i], "--wide")) aspect = 16.0f / 9;
         else if (!strcmp(argv[i], "--stats")) start_with_stats = 1;
         else if (!strcmp(argv[i], "--smooth")) smooth_motion = 1;

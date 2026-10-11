@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-11 14:16. 5 Ready, 16 In Progress, 2 Untested, 9 Broken.
+Last written 2026-10-11 15:06. 5 Ready, 15 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -31,13 +31,12 @@ decompilation project's list of function names is in `symbols/`.
 | Star Fox 64 | Ready | ok | ok | ok | 30 |  |  | good, 2026-10-10: Map, briefing and the flight into Corneria look right | good, 2026-10-11: All of Corneria to the boss and the map play right. Very few visual glitches. Added since: a volume-boost sound command the game uses from Corneria on; not yet listened to | 2026-10-11 |
 | Super Mario 64 | Ready | ok | ok | ok | 30 |  | yes |  | good, 2026-10-10: Picture, sound, controls and saving work (carried over from the README) | 2026-10-11 |
 | Wave Race 64 | Ready | ok | ok | ok | 20 |  |  | good, 2026-10-10: Menus, the round screen and a Sunny Beach race look right | good, 2026-10-11: Intro and two Championship races (Sunny Beach, Sunset Bay) play right. Left: rank portraits 3 and 4 went black for a few seconds once; a rival marker's red ring blinks; window is made afresh on reset | 2026-10-11 |
-| Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
-| Army Men: Sarge's Heroes 2 | In Progress | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-11 |
-| Chameleon Twist | In Progress | ok | ok | **1780 blocks thrown away** | 60 |  |  |  |  | 2026-10-11 |
-| Cruis'n Exotica | In Progress | ok | **The screen went blank at 0:10 (frame 600) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Picture is garbage (seen in an earlier survey) |  | 2026-10-11 |
-| Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  |  | 2026-10-11 |
-| Duke Nukem 64 | In Progress | ok | ok | **sends 27506 a second, wants 22050 (+24%)** | 60 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) |  | 2026-10-11 |
-| F-1 World Grand Prix | In Progress | ok | **6868 drawing commands were skipped because we do not handle them** | **sends 20433 a second, wants 22050 (-8%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) |  | 2026-10-11 |
+| Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Reaches the main menu, then crashes before play (bad memory access; a second try read past the end of the ROM). Visual glitches on the way | 2026-10-11 |
+| Army Men: Sarge's Heroes 2 | In Progress | ok | **stuck: the last 10 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game | 2026-10-11 |
+| Chameleon Twist | In Progress | ok | ok | ok | 30 |  |  |  | bad, 2026-10-11: Ran twice too fast; fixed since (now 30 pictures a second, sound in balance), not yet played again | 2026-10-11 |
+| Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  | bad, 2026-10-11: Shows only the copyright screen, then nothing; had to be closed by hand | 2026-10-11 |
+| Duke Nukem 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | bad, 2026-10-11: Too fast and white menus, HUD and weapon; both fixed since, not yet played again | 2026-10-11 |
+| F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 19621 a second, wants 22050 (-12%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-11 |
 | Jet Force Gemini | In Progress | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
 | Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-11 |
 | Pokemon Stadium | In Progress | ok | **The screen went blank at 0:14 (frame 840) and stayed blank until the run ended** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Corrupt textures (seen in an earlier survey) |  | 2026-10-11 |
@@ -50,11 +49,12 @@ decompilation project's list of function names is in `symbols/`.
 | Dr. Mario 64 | Untested | ok | ok | ok | 60 |  |  |  |  | 2026-10-11 |
 | Rampage 2: Universal Tour | Untested | ok | ok | ok | 60 |  |  |  |  | 2026-10-11 |
 | 007: The World Is Not Enough | Broken | **stops at 0:47: bad memory access at 0x00000000** | ok | **its sound lists produce nothing; sends 11487 a second, wants 22050 (-48%); recording is silent** | 30 |  |  |  |  | 2026-10-11 |
-| Army Men: Air Combat | Broken | **stops at 0:28: bad memory access at 0xFFFFFFFF** | **The screen went blank at 0:08 (frame 480) for 10 seconds** | **its sound lists produce nothing; sends 21366 a second, wants 22050 (-4%); recording is silent** | 40 |  |  |  |  | 2026-10-11 |
+| Army Men: Air Combat | Broken | **stops at 0:28: bad memory access at 0x0000000C** | **The screen went blank at 0:08 (frame 480) for 10 seconds** | **its sound lists produce nothing; sends 21347 a second, wants 22050 (-4%); recording is silent** | 40 |  |  |  |  | 2026-10-11 |
+| Cruis'n Exotica | Broken | **stops at 0:39: bad memory access at 0xCA000004** | **The screen went blank at 0:08 (frame 480) for 7 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Picture is garbage (seen in an earlier survey) | bad, 2026-10-11: Gets into a race, but the textures there are garbage; then the game stops itself (break at 0x800205D0) | 2026-10-11 |
 | Diddy Kong Racing | Broken | ok | **The screen never showed anything (blank and stayed blank until the run ended)** | ok | 5 |  |  |  |  | 2026-10-11 |
-| Mario Golf | Broken | **froze at 0:26: no new picture for five seconds or more** | **105 drawing commands were skipped because we do not handle them** | **its sound lists produce nothing; sends 16142 a second, wants 32000 (-50%); recording is silent** | 30 |  |  | bad, 2026-10-10: White ground, garbled text in the HUD, a blue box in the corner |  | 2026-10-11 |
+| Mario Golf | Broken | **froze at 0:26: no new picture for five seconds or more** | **105 drawing commands were skipped because we do not handle them** | **its sound lists produce nothing; sends 16136 a second, wants 32000 (-50%); recording is silent** | 30 |  |  | bad, 2026-10-10: White ground, garbled text in the HUD, a blue box in the corner |  | 2026-10-11 |
 | NFL Blitz 2001 | Broken | **froze at 0:09: no new picture for five seconds or more** | ok | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
 | NFL Blitz: Special Edition | Broken | **froze at 0:09: no new picture for five seconds or more** | ok | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-11 |
-| Pokemon Puzzle League | Broken | **froze at 0:00: no new picture for five seconds or more** | ok | **sends 20813 a second, wants 22050 (-6%)** | 47 |  |  |  |  | 2026-10-11 |
+| Pokemon Puzzle League | Broken | **froze at 0:00: no new picture for five seconds or more** | ok | **sends 20812 a second, wants 22050 (-6%)** | 47 |  |  |  |  | 2026-10-11 |
 | Pokemon Stadium 2 | Broken | **froze at 0:01: no new picture for five seconds or more** | ok | **silent: sound program not understood; recording is silent** | 0 |  |  |  |  | 2026-10-11 |
 | Star Wars Episode I: Racer | Broken | ok | **black: never showed anything** | **sends 223 a second, wants 22050 (-99%); recording is silent** | 1 |  |  |  |  | 2026-10-11 |

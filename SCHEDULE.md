@@ -6,7 +6,8 @@ and A now and then. The numbers below are from that audit. "Sound made /
 wanted" is how many samples a second the game produced against how many it
 asked to play.
 
-Nothing here has been fixed yet. This is the list to work from.
+This is the list to work from. What has been done since is under
+"Progress" at the end.
 
 ## The causes, and which games each one touches
 
@@ -73,3 +74,35 @@ possible so later batches inherit them.
 Where a game has a public decompilation, its name list goes in `symbols/`
 first (see the README): it removes the guesswork about which functions are
 the console's library.
+
+## Progress
+
+**Batch 1: done 2026-10-11** (tagged `batch-1`). All five played and found
+good. Fixed on the way: sound rate changes, missing sound commands, Wave
+Race 64's smooth-motion faults, Mario Kart 64's widescreen results screen.
+
+**Batch 2: in hand.** Played 2026-10-11 (with five games from later batches,
+below). Cause A turned out to be three different things, none of them
+"drawing takes no time":
+
+| Fixed 2026-10-11 | What it was | Games it cured |
+|---|---|---|
+| Refresh message | A game can ask to be told of every second refresh; we told it of every one, so it ran twice too fast, sound and all | Chameleon Twist (60 to 30 pictures a second; no sound thrown away now) |
+| The clock | Each look at the clock moved it on, and a game that looks thousands of times a refresh had a clock running fast | Duke Nukem 64 (60 to 30; sound was 24% over, now in balance) |
+| Shade on rectangles | Flat pictures were mixed with full white light where the console uses none | Duke Nukem 64 (white menus, HUD and weapon) |
+| Light colours | A light's colour set by a single number was ignored | F-1 World Grand Prix (race washed red). Also changes Duke Nukem: Zero Hour, which lights every object this way: it is darker now. To be confirmed by eye |
+
+Still to do in batch 2: Rampage World Tour and WCW Nitro (180 pictures a
+second) and Resident Evil 2 (120) are still too fast, so they have a fourth
+cause; Quest 64's pink text boxes; WCW Nitro's skipped drawing commands.
+Chameleon Twist and Duke Nukem 64 need playing again.
+
+**Found by play-testing, for their own batches:**
+
+| Game | Batch | What was found |
+|---|---|---|
+| Army Men: Sarge's Heroes | 3 | Reaches the main menu, then stops: bad memory access; another time, a read past the end of the ROM |
+| Army Men: Sarge's Heroes 2 | 3 | Stops at the Controller Pak question: calls an address that is not code |
+| F-1 World Grand Prix | 4 | Sound choppy: it makes 7% too little, and a large part of its code is interpreted rather than translated, which is slow |
+| Cruis'n Exotica | 4 | Gets into a race with garbage textures, then stops itself (break) |
+| Cruis'n USA | 7 | One picture (the copyright screen), then nothing |
