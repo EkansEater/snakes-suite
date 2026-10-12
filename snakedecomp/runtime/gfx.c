@@ -518,7 +518,8 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
     float m[4][4], exact[4][4];
     load_matrix(segmented(w1), m);
     memcpy(exact, m, sizeof exact);
-    if (getenv("SHOW_MATRICES") && !measuring && gfx_frame_number == atol(getenv("SHOW_MATRICES"))) /* for testing */
+    /* for testing: SHOW_MATRICES=N lists the matrices of picture N and the one after, to compare */
+    if (getenv("SHOW_MATRICES") && !measuring && blend == 1 && (gfx_frame_number == atol(getenv("SHOW_MATRICES")) || gfx_frame_number == atol(getenv("SHOW_MATRICES")) + 1))
         fprintf(stderr, "matrix #%d %s%s%s top %d at %08X: %8.3f %8.3f %8.3f | %8.3f %8.3f %8.3f | %8.3f %8.3f %8.3f | move %9.2f %9.2f %9.2f | w %.3f %.3f %.3f %.3f\n",
                 matrix_index, projection ? "PROJ " : "", load ? "load" : "mul", push ? " push" : "", rsp.modelview_top, w1,
                 m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2], m[3][0], m[3][1], m[3][2],
@@ -662,7 +663,14 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
      * those from the previous frame, find the same shape among them, and put
      * each corner partway between where it was and where it is now. Both
      * ends lie on the floor, so the in-between does too. */
-    int decal = ((rdp.other_mode_l >> 10) & 3) == 3, see_through = (rdp.other_mode_l & 0x40000) == 0;
+    /* (Whether a shape is see-through is in the settings for the last step
+     * of its drawing. Games that add fog draw in two steps, and the first
+     * step, the fog, always reads as "see-through". Looking at that step
+     * took every wall of Duke Nukem: Zero Hour for a see-through shape: a
+     * piece of wall coming into view was then paired with some other piece
+     * nearby and drawn stretched halfway to it, across doorways.) */
+    int decal = ((rdp.other_mode_l >> 10) & 3) == 3;
+    int see_through = (rdp.other_mode_l & (CYCLE_TYPE == CYCLE_2 ? 0x10000 : 0x40000)) == 0;
     float to_world[4][4], world_to_screen[4][4];
     /* Most games put the camera into the position matrix, so removing it
      * gives the world. A few (Wave Race 64) put it into the lens instead:
