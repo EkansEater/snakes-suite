@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-12 06:03. 6 Ready, 14 In Progress, 2 Untested, 10 Broken.
+Last written 2026-10-12 06:27. 5 Ready, 15 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -26,7 +26,6 @@ decompilation project's list of function names is in `symbols/`.
 
 | Game | State | Runs | Picture | Sound | Pace | Script | Names | Looked at | Played | Checked |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Chameleon Twist | Ready | ok | ok | ok | 30 |  |  |  | good, 2026-10-12: A level played at the right speed with sound; fine apart from some HUD glitches, not yet pinned down (the hearts and crown count slide in and out by the game's own doing) | 2026-10-11 |
 | Duke Nukem: Zero Hour | Ready | ok | ok | ok | 30 |  | yes | good, 2026-10-10: Menus, the opening scene and the briefing screen look right | good, 2026-10-12: Opening cutscenes and the first level look perfect with smooth motion and widescreen on | 2026-10-11 |
 | Mario Kart 64 | Ready | ok | ok | ok | 30 | own |  | good, 2026-10-10: Scripted run: menus and a Luigi Raceway race look right | good, 2026-10-11: Mushroom Cup: a full Luigi Raceway race and the start of Moo Moo Farm play right. Very few visual glitches. Fixed since: in widescreen a strip of old picture stayed down the right of the results screen | 2026-10-11 |
 | Star Fox 64 | Ready | ok | ok | ok | 30 |  |  | good, 2026-10-10: Map, briefing and the flight into Corneria look right | good, 2026-10-11: All of Corneria to the boss and the map play right. Very few visual glitches. Added since: a volume-boost sound command the game uses from Corneria on; not yet listened to | 2026-10-11 |
@@ -34,6 +33,7 @@ decompilation project's list of function names is in `symbols/`.
 | Wave Race 64 | Ready | ok | ok | ok | 20 |  |  | good, 2026-10-10: Menus, the round screen and a Sunny Beach race look right | good, 2026-10-11: Intro and two Championship races (Sunny Beach, Sunset Bay) play right. Left: rank portraits 3 and 4 went black for a few seconds once; a rival marker's red ring blinks; window is made afresh on reset | 2026-10-11 |
 | Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Reaches the main menu, then crashes before play (bad memory access; a second try read past the end of the ROM). Visual glitches on the way | 2026-10-11 |
 | Army Men: Sarge's Heroes 2 | In Progress | ok | **stuck: the last 10 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game | 2026-10-11 |
+| Chameleon Twist | In Progress | ok | ok | ok | 30 |  |  |  | bad, 2026-10-12: Plays at the right speed with sound. With smooth motion on, the hearts and crown count flickered and jittered; fixed since, not yet played again | 2026-10-11 |
 | Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  | bad, 2026-10-11: Shows only the copyright screen, then nothing; had to be closed by hand | 2026-10-11 |
 | Duke Nukem 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | bad, 2026-10-11: Too fast and white menus, HUD and weapon; both fixed since, not yet played again | 2026-10-11 |
 | F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 19621 a second, wants 22050 (-12%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-11 |

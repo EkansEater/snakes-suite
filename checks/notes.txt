@@ -34,3 +34,4 @@ NDZ played bad 2026-10-12 With smooth motion on, walls showed through doorways w
 NDZ played bad 2026-10-12 Smooth motion on: glitches in the cutscenes and a few walls still showing through. Fixed since (figures vanishing or squashed, a flash at scene cuts); walls not seen again in a replay. Not yet played again
 NDZ played good 2026-10-12 Opening cutscenes and the first level look perfect with smooth motion and widescreen on
 NCT played good 2026-10-12 A level played at the right speed with sound; fine apart from some HUD glitches, not yet pinned down (the hearts and crown count slide in and out by the game's own doing)
+NCT played bad 2026-10-12 Plays at the right speed with sound. With smooth motion on, the hearts and crown count flickered and jittered; fixed since, not yet played again

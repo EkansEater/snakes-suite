@@ -712,7 +712,15 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
      * forth. */
     float (*scene_camera)[4] = side_scene ? side_camera_exact : camera_exact;
     int have_scene_camera = side_scene ? have_side_camera || proj_has_view : have_camera;
-    int track = (decal || see_through) && have_scene_camera && is_perspective(rsp.projection) &&
+    /* A shape drawn with no position matrix at all (the matrix that changes
+     * nothing) is not in the world: its corners are given as the camera
+     * sees them, to stay put on the screen. Chameleon Twist draws its hearts
+     * and crown count that way. Taking the camera out of those gave them
+     * "world" positions that swung about as the camera moved, and in every
+     * in-between picture they jittered or lost a heart. */
+    static const float nothing[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+    int on_screen = !proj_has_view && memcmp(rsp.modelview_exact[rsp.modelview_top], nothing, sizeof nothing) == 0;
+    int track = (decal || see_through) && !on_screen && have_scene_camera && is_perspective(rsp.projection) &&
                 tracked_count < MAX_TRACKED && (proj_has_view || invert(to_world, scene_camera));
     Tracked *now = NULL;
     const Tracked *before = NULL;
