@@ -1871,6 +1871,82 @@ static int screenshot_every = 60;
 static float look_test_yaw;
 static int start_with_stats;
 static long screenshot_from;
+
+/* ---- Settings: for all games, and for this game ---------------------------------
+ * Two files hold the menu's choices. "global.txt" has the settings every
+ * game starts from. Each game's own file, next to it, has only what that
+ * game does differently, and wins. So setting the controls up once does for
+ * every game, and one game can still have its own.
+ *
+ * A setting is a line of text, "name = value", in either file. */
+typedef struct { char key[64], value[48]; } Setting;
+#define MAX_SETTINGS 512
+static Setting global_settings[MAX_SETTINGS]; /* what is in global.txt */
+static int global_setting_count;
+static int changes_for_all; /* do changes made in the menu go to every game, or to this one? */
+#define OWN_FILE_MARK "# Only what this game does differently from the settings for all games (global.txt)."
+
+static const char *setting_value(const Setting *list, int count, const char *key) {
+    for (int i = 0; i < count; i++)
+        if (!strcmp(list[i].key, key))
+            return list[i].value;
+    return NULL;
+}
+
+static void setting_put(Setting *list, int *count, const char *key, const char *value) {
+    int i = 0;
+    while (i < *count && strcmp(list[i].key, key))
+        i++;
+    if (i == *count && *count < MAX_SETTINGS)
+        snprintf(list[(*count)++].key, sizeof list[0].key, "%s", key);
+    if (i < *count)
+        snprintf(list[i].value, sizeof list[0].value, "%s", value);
+}
+
+/* Some things only ever belong to one game: its cheats and fixes, which
+ * save-state slot is chosen, and the free camera with the two choices about
+ * the stick and D-pad, which start out differently from game to game
+ * because games differ in what they do with them. */
+static int setting_is_own(const char *key) {
+    return !strncmp(key, "cheat ", 6) || !strncmp(key, "mod ", 4) || !strcmp(key, "state slot") ||
+           !strcmp(key, "free camera") || !strcmp(key, "dpad moves stick") || !strcmp(key, "stick follows camera");
+}
+
+/* Read a settings file into a list. Returns how many settings; *marked says
+ * whether the file carries the mark of a game's own file as now written
+ * (older ones listed every setting, not only the game's own). */
+static int settings_read(const char *path, Setting *list, int *marked) {
+    FILE *file = path ? fopen(path, "r") : NULL;
+    char line[160];
+    int count = 0;
+    *marked = 0;
+    while (file && fgets(line, sizeof line, file)) {
+        if (!strncmp(line, OWN_FILE_MARK, strlen(OWN_FILE_MARK)))
+            *marked = 1;
+        char *equals = strchr(line, '=');
+        if (line[0] == '#' || !equals)
+            continue;
+        char *value = equals + 1 + strspn(equals + 1, " ");
+        value[strcspn(value, "\r\n")] = 0;
+        while (equals > line && equals[-1] == ' ') /* end the name where the spaces before the '=' begin */
+            equals--;
+        *equals = 0;
+        setting_put(list, &count, line, value);
+    }
+    if (file)
+        fclose(file);
+    return count;
+}
+
+/* "settings/Some Game.txt" -> "settings/global.txt" */
+static const char *global_settings_path(void) {
+    static char path[600];
+    if (!settings_path)
+        return NULL;
+    const char *slash = strrchr(settings_path, '/');
+    snprintf(path, sizeof path, "%.*sglobal.txt", slash ? (int)(slash - settings_path + 1) : 0, settings_path);
+    return path;
+}
 static const char *screenshot_dir;
 
 /* Scripted input, for testing without a person at the keyboard. */
@@ -2370,6 +2446,7 @@ enum {
     ACT_CHEAT, /* change cheats[number] (the ready-made ones, see cheats.c) */
     ACT_SLOT, ACT_SAVE_STATE, ACT_LOAD_STATE, ACT_FAST_SPEED,
     ACT_LIMIT, ACT_STATS, ACT_DEFAULTS,
+    ACT_SCOPE, ACT_USE_GLOBAL, ACT_MAKE_GLOBAL, /* settings for all games, or for this one */
     ACT_RESET, ACT_QUIT,
 };
 
@@ -2393,40 +2470,105 @@ static int menu_column;       /* which cell of a controls row is chosen */
 static int waiting_for_press; /* the chosen cell is waiting for its new key or button */
 static int mods_at_start[64]; /* which mods the game's file has on to begin with */
 
-/* Write the menu's choices to the settings file, so they are still there
- * next time. Done after every change, so nothing is lost if the game stops
- * unexpectedly. */
-static void save_settings(void) {
-    FILE *file = settings_path ? fopen(settings_path, "w") : NULL;
+/* Every setting as it stands now, as lines of text. */
+static int settings_now(Setting *list) {
+    int count = 0;
+    char value[48];
+#define PUT_NUMBER(key, number) (snprintf(value, sizeof value, "%d", (int)(number)), setting_put(list, &count, key, value))
+    PUT_NUMBER("wide", current_aspect > 1.5f);
+    PUT_NUMBER("smooth", smooth_motion);
+    PUT_NUMBER("scale", current_scale);
+    PUT_NUMBER("fullscreen", fullscreen);
+    PUT_NUMBER("smooth textures", gfx_texture_smoothing);
+    PUT_NUMBER("stats", stats_shown);
+    PUT_NUMBER("sound", !sound_muted);
+    PUT_NUMBER("volume", sound_volume);
+    PUT_NUMBER("sound buffer", sound_cushion_ms);
+    PUT_NUMBER("speed limit", speed_limit);
+    PUT_NUMBER("fast forward speed", fast_speed);
+    PUT_NUMBER("state slot", state_slot);
+    PUT_NUMBER("free camera", free_camera);
+    PUT_NUMBER("dpad moves stick", dpad_moves_stick);
+    PUT_NUMBER("camera circles", camera_circles);
+    PUT_NUMBER("stick follows camera", stick_follows_camera);
+    char key[64];
+    for (int i = 0; i < BINDING_COUNT; i++)
+        for (int device = 0; device < DEVICE_COUNT; device++) {
+            snprintf(key, sizeof key, "%s %s", device_names[device], bindings[i].name);
+            setting_put(list, &count, key, code_name(device, bindings[i].now[device], 1));
+        }
+    for (int i = 0; i < game_mod_count; i++) {
+        snprintf(key, sizeof key, "mod %s", game_mods[i].name);
+        PUT_NUMBER(key, game_mods[i].on);
+    }
+    for (int i = 0; i < cheat_count; i++)
+        if (cheats[i].on) { /* (only the ones in use: the list can be long) */
+            snprintf(key, sizeof key, "cheat %s", cheats[i].name);
+            PUT_NUMBER(key, cheats[i].on);
+        }
+#undef PUT_NUMBER
+    return count;
+}
+
+/* The settings as the program has them before any file is read (taken in
+ * load_settings), and as they stood when last written down. */
+static Setting built_in_settings[MAX_SETTINGS], settings_before[MAX_SETTINGS];
+static int built_in_setting_count, settings_before_count;
+
+/* What a setting is for every game: from global.txt, or failing that as built in. */
+static const char *setting_for_all(const char *key) {
+    const char *value = setting_value(global_settings, global_setting_count, key);
+    return value ? value : setting_value(built_in_settings, built_in_setting_count, key);
+}
+
+/* Remember how the settings stand now, to tell later which ones a change touched. */
+static void note_settings(void) {
+    settings_before_count = settings_now(settings_before);
+}
+
+static void write_global_settings(void) {
+    FILE *file = global_settings_path() ? fopen(global_settings_path(), "w") : NULL;
     if (!file)
         return;
-    fprintf(file, "# Choices made in the menu. 1 is on, 0 is off.\n");
-    fprintf(file, "wide = %d\n", current_aspect > 1.5f);
-    fprintf(file, "smooth = %d\n", smooth_motion);
-    fprintf(file, "scale = %d\n", current_scale);
-    fprintf(file, "fullscreen = %d\n", fullscreen);
-    fprintf(file, "smooth textures = %d\n", gfx_texture_smoothing);
-    fprintf(file, "stats = %d\n", stats_shown);
-    fprintf(file, "sound = %d\n", !sound_muted);
-    fprintf(file, "volume = %d\n", sound_volume);
-    fprintf(file, "sound buffer = %d\n", sound_cushion_ms);
-    fprintf(file, "speed limit = %d\n", speed_limit);
-    fprintf(file, "fast forward speed = %d\n", fast_speed);
-    fprintf(file, "state slot = %d\n", state_slot);
-    fprintf(file, "free camera = %d\n", free_camera);
-    fprintf(file, "dpad moves stick = %d\n", dpad_moves_stick);
-    fprintf(file, "camera circles = %d\n", camera_circles);
-    fprintf(file, "stick follows camera = %d\n", stick_follows_camera);
-    for (int i = 0; i < BINDING_COUNT; i++)
-        for (int device = 0; device < DEVICE_COUNT; device++)
-            fprintf(file, "%s %s = %s\n", device_names[device], bindings[i].name,
-                    code_name(device, bindings[i].now[device], 1));
-    for (int i = 0; i < game_mod_count; i++)
-        fprintf(file, "mod %s = %d\n", game_mods[i].name, game_mods[i].on);
-    for (int i = 0; i < cheat_count; i++)
-        if (cheats[i].on) /* (only the ones in use: the list can be long) */
-            fprintf(file, "cheat %s = %d\n", cheats[i].name, cheats[i].on);
+    fprintf(file, "# The settings every game starts from. A game's own file, next to this one,\n");
+    fprintf(file, "# holds what that game does differently. 1 is on, 0 is off.\n");
+    fprintf(file, "menu changes are for all games = %d\n", changes_for_all);
+    for (int i = 0; i < global_setting_count; i++)
+        fprintf(file, "%s = %s\n", global_settings[i].key, global_settings[i].value);
     fclose(file);
+}
+
+/* Write the menu's choices down, so they are still there next time. Done
+ * after every change, so nothing is lost if the game stops unexpectedly.
+ *
+ * A setting that has changed since last time goes into global.txt if
+ * changes are being made for all games. This game's own file then gets
+ * whatever differs from the settings for all games, and nothing else. */
+static void save_settings(void) {
+    static Setting now[MAX_SETTINGS];
+    int count = settings_now(now), global_changed = 0;
+    if (!settings_path)
+        return;
+    for (int i = 0; changes_for_all && i < count; i++) {
+        const char *before = setting_value(settings_before, settings_before_count, now[i].key);
+        if (!setting_is_own(now[i].key) && before && strcmp(before, now[i].value)) {
+            setting_put(global_settings, &global_setting_count, now[i].key, now[i].value);
+            global_changed = 1;
+        }
+    }
+    if (global_changed)
+        write_global_settings();
+    FILE *file = fopen(settings_path, "w");
+    if (file) {
+        fprintf(file, "%s\n# 1 is on, 0 is off.\n", OWN_FILE_MARK);
+        for (int i = 0; i < count; i++) {
+            const char *for_all = setting_for_all(now[i].key);
+            if (setting_is_own(now[i].key) || !for_all || strcmp(for_all, now[i].value))
+                fprintf(file, "%s = %s\n", now[i].key, now[i].value);
+        }
+        fclose(file);
+    }
+    note_settings();
 }
 
 /* Make the window and the picture match the settings. Safe at any moment
@@ -2515,6 +2657,7 @@ static int menu_rows(int page, Row *rows) {
     case PAGE_MAIN:
         ROW(ACT_RESUME, 0, "Resume");
         ROW(ACT_OPEN, PAGE_STATES, "Save states");
+        ROW(ACT_SCOPE, 0, "%-26s< %s >", "Change settings for", changes_for_all ? "all games" : "this game");
         ROW(ACT_OPEN, PAGE_GRAPHICS, "Graphics");
         ROW(ACT_OPEN, PAGE_SOUND, "Sound");
         ROW(ACT_OPEN, PAGE_CONTROLS, "Controls");
@@ -2596,6 +2739,8 @@ static int menu_rows(int page, Row *rows) {
             ROW(ACT_FAST_SPEED, 0, "%-26s< no limit >", "Fast forward speed");
         ROW(ACT_STATS, 0, "%-26s%s", "Statistics display (F3)", ON(stats_shown));
         ROW(ACT_DEFAULTS, 0, "Put every setting back to usual");
+        ROW(ACT_USE_GLOBAL, 0, "Use the all-games settings in this game");
+        ROW(ACT_MAKE_GLOBAL, 0, "Make these the settings for all games");
         break;
     case PAGE_ASK_RESET:
         ROW(ACT_BACK, 0, "No, go back");
@@ -2631,6 +2776,7 @@ static void menu_back(void) {
  * selected says the row was chosen with Enter (or A on a gamepad). Rows
  * that lead somewhere or do something drastic want Enter; rows that hold a
  * setting change with Left, Right or Enter alike. */
+static void apply_setting(const char *line, const char *text, int *scale, float *aspect); /* (with load_settings) */
 static void menu_act(int action, int number, int direction, int selected) {
     switch (action) {
     case ACT_RESUME: if (selected) menu_open = 0; return;
@@ -2641,6 +2787,36 @@ static void menu_act(int action, int number, int direction, int selected) {
     case ACT_BIND: if (selected) waiting_for_press = 1; return; /* the next press is the answer */
     case ACT_USUAL_CONTROLS: if (!selected) return; usual_controls(number); break;
     case ACT_DEFAULTS: if (!selected) return; restore_defaults(); break;
+    case ACT_SCOPE: /* (which file later changes go to; nothing about the game changes) */
+        changes_for_all = !changes_for_all;
+        write_global_settings();
+        return;
+    case ACT_USE_GLOBAL: { /* drop what this game does differently */
+        if (!selected)
+            return;
+        for (int pass = 0; pass < 2; pass++) { /* as built in, then the all-games file on top */
+            const Setting *list = pass ? global_settings : built_in_settings;
+            for (int i = 0; i < (pass ? global_setting_count : built_in_setting_count); i++)
+                if (!setting_is_own(list[i].key))
+                    apply_setting(list[i].key, list[i].value, &current_scale, &current_aspect);
+        }
+        stats_shown = start_with_stats;
+        apply_picture_settings();
+        note_settings(); /* (nothing here is a change to pass on to the all-games file) */
+        break;
+    }
+    case ACT_MAKE_GLOBAL: { /* every game without a choice of its own gets these */
+        if (!selected)
+            return;
+        static Setting now[MAX_SETTINGS];
+        int count = settings_now(now);
+        for (int i = 0; i < count; i++)
+            if (!setting_is_own(now[i].key))
+                setting_put(global_settings, &global_setting_count, now[i].key, now[i].value);
+        write_global_settings();
+        say("These are now the settings for all games");
+        break;
+    }
     case ACT_LOOK: if (!selected) return; reset_camera(); break;
     /* Saving and loading happen a moment later, between two steps of the
      * game (see carry_out_state_request). */
@@ -2746,7 +2922,13 @@ static void draw_overlay(void) {
     int box_w = (table ? MENU_WIDTH_WITH_CELLS : MENU_WIDTH) * letter, box_h = (visible + 4) * line;
     int x = (window_w - box_w) / 2, y = (window_h - box_h) / 2, text_x = x + 3 * letter;
     draw_box(x, y, box_w, box_h, 235);
-    draw_text(x + letter, y + 6 * size, page_titles[menu_page], 255, 255, 255);
+    /* The pages of settings say whose settings a change will be. */
+    char title[64];
+    int settings_page = menu_page == PAGE_GRAPHICS || menu_page == PAGE_SOUND || menu_page == PAGE_CONTROLS ||
+                        menu_page == PAGE_SHORTCUTS || menu_page == PAGE_SYSTEM;
+    snprintf(title, sizeof title, "%s%s", page_titles[menu_page],
+             !settings_page ? "" : changes_for_all ? "  (for all games)" : "  (for this game)");
+    draw_text(x + letter, y + 6 * size, title, 255, 255, 255);
     if (table) { /* headings for the three cells */
         const char *pad_heading = pad_is_playstation() ? "PlayStation" : gamepad ? "Controller" : "(no gamepad)";
         draw_text(text_x + cell_column[DEVICE_KEY] * letter, y + 6 * size, "Keyboard", 150, 150, 150);
@@ -3188,72 +3370,84 @@ static void apply_mods(void) {
     cheats_apply(ram, RAM_SIZE, cheat_button_held);
 }
 
-/* Read the settings file written by the menu (see save_settings). Each line
- * is "name = number". Anything we do not recognise is skipped, so a file
- * from an older or newer version does no harm. */
-static void load_settings(int *scale, float *aspect) {
-    FILE *file = settings_path ? fopen(settings_path, "r") : NULL;
-    if (!file)
-        return;
-    char line[160];
-    while (fgets(line, sizeof line, file)) {
-        char *equals = strchr(line, '=');
-        if (line[0] == '#' || !equals)
-            continue;
-        char *text = equals + 1; /* what comes after the '=' */
-        int value = atoi(text);
-        /* End the name where the spaces before the '=' begin. */
-        while (equals > line && equals[-1] == ' ')
-            equals--;
-        *equals = 0;
-        if (!strcmp(line, "wide")) *aspect = value ? 16.0f / 9 : 4.0f / 3;
-        else if (!strcmp(line, "smooth")) smooth_motion = value != 0;
-        else if (!strcmp(line, "scale")) *scale = value < 1 ? 1 : value > 6 ? 6 : value;
-        else if (!strcmp(line, "stats")) start_with_stats = value != 0;
-        else if (!strcmp(line, "sound")) sound_muted = value == 0;
-        else if (!strcmp(line, "speed limit")) speed_limit = value != 0;
-        else if (!strcmp(line, "smooth textures")) gfx_texture_smoothing = value != 0;
-        else if (!strcmp(line, "volume")) sound_volume = value < 0 ? 0 : value > 10 ? 10 : value;
-        else if (!strcmp(line, "sound buffer")) sound_cushion_ms = value < 25 ? 25 : value > 200 ? 200 : value;
-        else if (!strcmp(line, "fast forward speed")) fast_speed = value < 0 || value > 8 ? 4 : value;
-        else if (!strcmp(line, "camera circles")) camera_circles = value != 0;
-        else if (!strcmp(line, "stick follows camera")) stick_follows_camera = value != 0;
-        else if (!strcmp(line, "state slot")) state_slot = value < 1 || value > 9 ? 1 : value;
-        else if (!strncmp(line, "cheat ", 6)) {
-            for (int i = 0; i < cheat_count; i++)
-                if (!strcmp(line + 6, cheats[i].name))
-                    cheats[i].on = value < 0 || value > (cheats[i].choice_count ? cheats[i].choice_count : 1) ? 0 : value;
-        }
-        else if (!strncmp(line, "mod ", 4)) {
-            for (int i = 0; i < game_mod_count; i++)
-                if (!strcmp(line + 4, game_mods[i].name))
-                    game_mods[i].on = value != 0;
-        }
-#ifdef USE_SDL
-        else if (!strcmp(line, "fullscreen")) fullscreen = value != 0;
-        else if (!strcmp(line, "free camera")) free_camera = value != 0;
-        else if (!strcmp(line, "dpad moves stick")) dpad_moves_stick = value != 0;
-        else {
-            /* "key A = J", "pad A = a", "mouse Look (hold) = Right": cut off
-             * the spaces and line end around the name of the key or button. */
-            char *code = text + strspn(text, " "), *row = line;
-            code[strcspn(code, "\r\n")] = 0;
-            if (!strncmp(row, "shortcut ", 9)) /* how older versions wrote the shortcuts */
-                row += 9;
-            for (int device = 0; device < DEVICE_COUNT; device++) {
-                size_t length = strlen(device_names[device]);
-                if (strncmp(row, device_names[device], length) || row[length] != ' ')
-                    continue;
-                for (int i = 0; i < BINDING_COUNT; i++)
-                    if (!strcmp(row + length + 1, bindings[i].name) ||
-                        (row != line && bindings[i].shortcut && /* older names had more on the end */
-                         !strncmp(row + length + 1, bindings[i].name, strlen(bindings[i].name))))
-                        bindings[i].now[device] = code_from_name(device, code);
-            }
-        }
-#endif
+/* Take one setting, "name = value", into use. Anything we do not recognise
+ * is skipped, so a file from an older or newer version does no harm. */
+static void apply_setting(const char *line, const char *text, int *scale, float *aspect) {
+    int value = atoi(text);
+    if (!strcmp(line, "wide")) *aspect = value ? 16.0f / 9 : 4.0f / 3;
+    else if (!strcmp(line, "smooth")) smooth_motion = value != 0;
+    else if (!strcmp(line, "scale")) *scale = value < 1 ? 1 : value > 6 ? 6 : value;
+    else if (!strcmp(line, "stats")) start_with_stats = value != 0;
+    else if (!strcmp(line, "sound")) sound_muted = value == 0;
+    else if (!strcmp(line, "speed limit")) speed_limit = value != 0;
+    else if (!strcmp(line, "smooth textures")) gfx_texture_smoothing = value != 0;
+    else if (!strcmp(line, "volume")) sound_volume = value < 0 ? 0 : value > 10 ? 10 : value;
+    else if (!strcmp(line, "sound buffer")) sound_cushion_ms = value < 25 ? 25 : value > 200 ? 200 : value;
+    else if (!strcmp(line, "fast forward speed")) fast_speed = value < 0 || value > 8 ? 4 : value;
+    else if (!strcmp(line, "camera circles")) camera_circles = value != 0;
+    else if (!strcmp(line, "stick follows camera")) stick_follows_camera = value != 0;
+    else if (!strcmp(line, "state slot")) state_slot = value < 1 || value > 9 ? 1 : value;
+    else if (!strncmp(line, "cheat ", 6)) {
+        for (int i = 0; i < cheat_count; i++)
+            if (!strcmp(line + 6, cheats[i].name))
+                cheats[i].on = value < 0 || value > (cheats[i].choice_count ? cheats[i].choice_count : 1) ? 0 : value;
     }
-    fclose(file);
+    else if (!strncmp(line, "mod ", 4)) {
+        for (int i = 0; i < game_mod_count; i++)
+            if (!strcmp(line + 4, game_mods[i].name))
+                game_mods[i].on = value != 0;
+    }
+#ifdef USE_SDL
+    else if (!strcmp(line, "fullscreen")) fullscreen = value != 0;
+    else if (!strcmp(line, "free camera")) free_camera = value != 0;
+    else if (!strcmp(line, "dpad moves stick")) dpad_moves_stick = value != 0;
+    else {
+        /* "key A = J", "pad A = a", "mouse Look (hold) = Right" */
+        const char *code = text, *row = line;
+        if (!strncmp(row, "shortcut ", 9)) /* how older versions wrote the shortcuts */
+            row += 9;
+        for (int device = 0; device < DEVICE_COUNT; device++) {
+            size_t length = strlen(device_names[device]);
+            if (strncmp(row, device_names[device], length) || row[length] != ' ')
+                continue;
+            for (int i = 0; i < BINDING_COUNT; i++)
+                if (!strcmp(row + length + 1, bindings[i].name) ||
+                    (row != line && bindings[i].shortcut && /* older names had more on the end */
+                     !strncmp(row + length + 1, bindings[i].name, strlen(bindings[i].name))))
+                    bindings[i].now[device] = code_from_name(device, code);
+        }
+    }
+#endif
+}
+
+/* Read the settings: those for all games first, then this game's own on top. */
+static void load_settings(int *scale, float *aspect) {
+    static Setting own[MAX_SETTINGS];
+    int marked, own_count;
+#ifdef USE_SDL
+    built_in_setting_count = settings_now(built_in_settings); /* (nothing has been read yet) */
+#endif
+    global_setting_count = settings_read(global_settings_path(), global_settings, &marked);
+    for (int i = 0; i < global_setting_count; i++) {
+        if (!strcmp(global_settings[i].key, "menu changes are for all games")) {
+            changes_for_all = atoi(global_settings[i].value) != 0;
+            global_settings[i--] = global_settings[--global_setting_count]; /* (not a setting of the game) */
+        } else if (!setting_is_own(global_settings[i].key))
+            apply_setting(global_settings[i].key, global_settings[i].value, scale, aspect);
+    }
+    own_count = settings_read(settings_path, own, &marked);
+    for (int i = 0; i < own_count; i++) {
+#ifdef USE_SDL
+        /* A file from before there were settings for all games lists every
+         * setting, including the ones the player never touched. Those are
+         * not this game's own choices, and must not stand in the way of
+         * the settings for all games. */
+        const char *built_in = setting_value(built_in_settings, built_in_setting_count, own[i].key);
+        if (!marked && !setting_is_own(own[i].key) && built_in && !strcmp(built_in, own[i].value))
+            continue;
+#endif
+        apply_setting(own[i].key, own[i].value, scale, aspect);
+    }
 }
 
 /* ---- The run log --------------------------------------------------------------
@@ -3372,6 +3566,18 @@ static void present_frame(void) {
             for (size_t i = 0; i < sizeof steps / sizeof steps[0]; i++)
                 if (steps[i].frame == frames)
                     menu_act(steps[i].action, 0, steps[i].direction, 0);
+        }
+        if (getenv("MENU_DO")) { /* for testing: MENU_DO="100:wide,160:scope,220:volume-" does those at those frames */
+            static const struct { const char *name; int action, direction, selected; } known[] = {
+                {"wide", ACT_WIDE, 1, 0}, {"smooth", ACT_SMOOTH, 1, 0}, {"volume-", ACT_VOLUME, -1, 0},
+                {"scope", ACT_SCOPE, 1, 0}, {"useglobal", ACT_USE_GLOBAL, 0, 1}, {"makeglobal", ACT_MAKE_GLOBAL, 0, 1},
+                {"usual", ACT_DEFAULTS, 0, 1},
+            };
+            for (const char *p = getenv("MENU_DO"); p && *p; p = strchr(p, ',') ? strchr(p, ',') + 1 : NULL)
+                for (size_t i = 0; atol(p) == frames && strchr(p, ':') && i < sizeof known / sizeof known[0]; i++)
+                    if (!strncmp(strchr(p, ':') + 1, known[i].name, strlen(known[i].name)) &&
+                        strchr(",", strchr(p, ':')[1 + strlen(known[i].name)]))
+                        menu_act(known[i].action, 0, known[i].direction, known[i].selected);
         }
         if (getenv("MENU_STRESS") && frames % 3 == 0) { /* for testing: change things at random, all the time */
             static const int actions[] = {ACT_WIDE, ACT_SCALE, ACT_SMOOTH, ACT_TEXTURES, ACT_SOUND,
@@ -3655,6 +3861,7 @@ int main(int argc, char **argv) {
 #ifdef USE_SDL
     if (!headless)
         current_scale = scale, current_aspect = aspect, stats_shown = start_with_stats;
+    note_settings();
     if (getenv("MENU_TEST")) /* for testing: start with the menu and statistics showing */
         menu_open = stats_shown = 1;
     if (getenv("MENU_PAGE")) /* ...and on this page of it */

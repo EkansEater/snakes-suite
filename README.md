@@ -315,12 +315,26 @@ It works in every game, in one of two ways:
   | Controls | Keyboard key, mouse button and gamepad button for each N64 button; free camera and how it behaves |
   | Shortcuts | The same for fast forward, save state, load state, look, reset camera, camera nearer and farther, cheat button, screenshot |
   | Cheats, Fixes | For games that have them (see below) |
-  | System | Speed limit, fast forward speed, statistics, put every setting back to usual |
+  | Change settings for | This game, or all games (see below) |
+  | System | Speed limit, fast forward speed, statistics, put every setting back to usual, all-games settings |
   | Reset game | Starts the game again from the beginning |
   | Quit | |
 
-  Everything chosen here is remembered for next time, separately for each
-  game, in `settings/`.
+  Everything chosen here is remembered for next time, in `settings/`. There
+  are settings **for all games** (`settings/global.txt`), which every game
+  starts from, and settings **for this game** (a file named after the game),
+  which hold only what that game does differently and win over the others.
+
+  "Change settings for" on the main menu says where your changes go: to this
+  game only, or to all games. The title of each settings page says which it
+  is. A change made for all games reaches every game that has no choice of
+  its own for that setting. Two rows under System move settings between the
+  two: "Use the all-games settings in this game" drops this game's own
+  choices, and "Make these the settings for all games" copies them across.
+
+  Always kept per game: cheats and fixes, the save-state slot, the free
+  camera, and the two choices about the D-pad and the stick (games differ in
+  what they do with those).
 - **Tab**, held: fast forward, 4 times normal (no gamepad button to begin with; choose one under Shortcuts)
   speed unless changed in the menu. It is silent.
 - **F5**: save state. **F7**: load state. No gamepad buttons are set for
