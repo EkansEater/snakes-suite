@@ -1532,6 +1532,9 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
         &rsp.vertices[(b & 255) / unit & 63],
         &rsp.vertices[(c & 255) / unit & 63],
     };
+    if (getenv("SHOW_DROPPED") && !measuring && rdp.other_mode_l == strtoul(getenv("SHOW_DROPPED"), NULL, 16)) /* for testing: flat triangles, drawn or not */
+        fprintf(stderr, "flat3 %ld clip %d %d %d x %.1f %.1f %.1f y %.1f %.1f %.1f w %.2f %.2f %.2f z %.2f geom %08X\n", gfx_frame_number, v[0]->clip, v[1]->clip, v[2]->clip,
+                v[0]->x, v[1]->x, v[2]->x, v[0]->y, v[1]->y, v[2]->y, v[0]->w, v[1]->w, v[2]->w, v[0]->z, rsp.geometry_mode);
     if (measuring || (v[0]->clip & v[1]->clip & v[2]->clip))
         return; /* all three corners are off the same side of the screen */
 
