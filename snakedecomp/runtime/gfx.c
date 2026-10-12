@@ -91,7 +91,15 @@ static int previous_matrix_count, matrix_index;
  * of each thing it draws (an arm, a buoy) in the same place from one frame
  * to the next, which tells us which is which. */
 static uint32_t previous_sources[MAX_MATRICES], current_sources[MAX_MATRICES];
+/* What kind of command each matrix came with (see matrix_kind), and which of
+ * the previous frame's matrices each of this frame's has been paired with
+ * ahead of time: PAIR_NONE for "nothing", PAIR_BY_LOOKS for "not decided,
+ * look for one" (see pair_figures). */
+static uint8_t previous_kinds[MAX_MATRICES], current_kinds[MAX_MATRICES];
+static int paired_with[MAX_MATRICES];
+enum { PAIR_NONE = -1, PAIR_BY_LOOKS = -2 };
 static float blend = 1;      /* 1 = this frame as is, 0.5 = halfway from the previous */
+static int pair_total, pair_none, pair_shifted; /* for testing: see SHOW_PAIRS */
 static int measuring;        /* a dry run: read the matrices, draw nothing */
 static int seen_perspective; /* has this frame started its 3D scene yet? */
 static int dialect;          /* which set of drawing commands the game uses: GFX_FAST3D, ... (gfx.h) */
@@ -542,11 +550,20 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
     if (matrix_index < MAX_MATRICES) {
         memcpy(current_matrices[matrix_index], m, sizeof m);
         current_sources[matrix_index] = w1;
+        current_kinds[matrix_index] = (uint8_t)((projection != 0) | (load != 0) << 1 | (push != 0) << 2 | (rsp.modelview_top & 15) << 3);
         float (*best)[4] = NULL, best_score = 0;
         int same_source = 0;
-        for (int j = matrix_index - 8; blend < 1 && j <= matrix_index + 8; j++)
+        /* Paired ahead of time (pair_figures)? Then that is the one, or none. */
+        int decided = blend < 1 ? paired_with[matrix_index] : PAIR_NONE, search = blend < 1 && decided == PAIR_BY_LOOKS;
+        if (blend < 1 && decided >= 0 && decided < previous_matrix_count) {
+            float (*old)[4] = previous_matrices[decided];
+            float jump = fmaxf(fabsf(m[3][0] - old[3][0]), fmaxf(fabsf(m[3][1] - old[3][1]), fabsf(m[3][2] - old[3][2])));
+            if (jump < 300 && is_perspective(m) == is_perspective(old))
+                best = old;
+        }
+        for (int j = matrix_index - 8; search && j <= matrix_index + 8; j++)
             same_source |= j >= 0 && j < previous_matrix_count && previous_sources[j] == w1;
-        for (int j = matrix_index - 8; blend < 1 && j <= matrix_index + 8; j++) {
+        for (int j = matrix_index - 8; search && j <= matrix_index + 8; j++) {
             if (j < 0 || j >= previous_matrix_count)
                 continue;
             if (same_source && previous_sources[j] != w1)
@@ -566,6 +583,15 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
              * a new shot; blending would smear it across the screen. */
             if (jump < 300 && (!best || score < best_score))
                 best = old, best_score = score;
+        }
+        if (blend < 1) { /* for testing (SHOW_PAIRS): how this picture's matrices were paired */
+            pair_total++;
+            pair_none += !best;
+            pair_shifted += best && best != previous_matrices[matrix_index];
+            if (getenv("SHOW_PAIRS") && atol(getenv("SHOW_PAIRS")) == gfx_frame_number)
+                fprintf(stderr, "  pair #%d %s%s%s top %d at %08X -> %d (score %.1f) move %.1f %.1f %.1f\n", matrix_index,
+                        projection ? "PROJ " : "", load ? "load" : "mul", push ? " push" : "", rsp.modelview_top, w1,
+                        best ? (int)((float (*)[4][4])best - previous_matrices) : -1, best_score, m[3][0], m[3][1], m[3][2]);
         }
         if (best) {
             for (int i = 0; i < 4; i++)
@@ -2130,6 +2156,99 @@ static void run_list(uint32_t address) {
     draw_all_shapes();
 }
 
+/* Pair the matrices of jointed figures with their own of the frame before.
+ *
+ * Many games send a figure (a soldier, say) as one matrix that places it in
+ * the world, followed by one for each joint, each relative to the one
+ * before: hip, knee, foot. Paired one at a time by looks, a joint is easily
+ * taken for another: a running man's left knee this frame looks more like
+ * his right knee of the frame before than like itself, and when a figure
+ * comes into view or leaves it, the whole list moves along and every
+ * matrix after it finds a stranger. In-between pictures of Duke Nukem: Zero
+ * Hour's opening then showed soldiers squashed thin, or not at all.
+ *
+ * So figures are paired whole. A figure is a "load" matrix and the run of
+ * matrices that follow it up to the next load. Its counterpart in the frame
+ * before is the figure of exactly the same build (as many matrices, of the
+ * same kinds) whose placing matrix is nearest, and each of its matrices is
+ * then paired with the one in the same place within that figure. A figure
+ * with no counterpart is new, and is drawn where it is rather than halfway
+ * from somewhere. Single matrices are left to be paired by looks as before.
+ *
+ * Games that keep each matrix at the same place in memory from frame to
+ * frame are left alone as well: there the place says which is which (see
+ * command_matrix). */
+static void pair_figures(void) {
+    static int starts[2][MAX_MATRICES], lengths[2][MAX_MATRICES], used[MAX_MATRICES];
+    int counts[2] = {0, 0}, total[2] = {previous_matrix_count, matrix_index}, same_place = 0;
+    const uint8_t *kinds[2] = {previous_kinds, current_kinds};
+    for (int i = 0; i < matrix_index; i++)
+        paired_with[i] = PAIR_BY_LOOKS;
+    for (int i = 0; i < matrix_index && i < previous_matrix_count; i++)
+        same_place += current_sources[i] == previous_sources[i];
+    if (same_place * 2 > matrix_index)
+        return;
+    for (int which = 0; which < 2; which++) /* find the figures of each frame */
+        for (int i = 0; i < total[which]; i++) {
+            int kind = kinds[which][i] & 3; /* bit 0: for the lens; bit 1: a load */
+            if (kind == 2)
+                starts[which][counts[which]] = i, lengths[which][counts[which]++] = 1;
+            else if (kind == 0 && counts[which] && starts[which][counts[which] - 1] + lengths[which][counts[which] - 1] == i)
+                lengths[which][counts[which] - 1]++;
+        }
+    memset(used, 0, (size_t)counts[0] * sizeof used[0]);
+    for (int g = 0; g < counts[1]; g++) {
+        int start = starts[1][g], length = lengths[1][g], best = -1;
+        float best_score = 0;
+        if (length < 2)
+            continue;
+        for (int h = 0; h < counts[0]; h++) {
+            int old = starts[0][h];
+            if (used[h] || lengths[0][h] != length || memcmp(previous_kinds + old, current_kinds + start, (size_t)length) != 0)
+                continue;
+            float (*a)[4] = current_matrices[start], (*b)[4] = previous_matrices[old], score = 0, jump = 0;
+            for (int i = 0; i < 3; i++) {
+                jump = fmaxf(jump, fabsf(a[3][i] - b[3][i]));
+                score += fabsf(a[3][i] - b[3][i]);
+                for (int k = 0; k < 3; k++)
+                    score += fabsf(a[i][k] - b[i][k]) * 100;
+            }
+            score += (float)abs(old - start) * 0.01f; /* (all else equal, the one nearest in the list) */
+            if (jump < 300 && (best < 0 || score < best_score))
+                best = h, best_score = score;
+        }
+        if (best >= 0)
+            used[best] = 1;
+        for (int k = 0; k < length; k++)
+            paired_with[start + k] = best >= 0 ? starts[0][best] + k : PAIR_NONE;
+    }
+}
+
+/* Has the game cut to another scene or another camera since the last frame?
+ * A picture halfway between two shots is of neither: Zero Hour's logos
+ * flashed up a close view of the wrong thing for one picture at each cut. */
+static int scene_cut(void) {
+    int before = previous_matrix_count, now = matrix_index;
+    if (abs(before - now) * 2 > (before > now ? before : now)) /* far more or far fewer things */
+        return 1;
+    if (have_camera && have_last_camera) {
+        /* Where each camera stands in the world: turning on the spot is no
+         * cut, however fast, but a camera somewhere else is. */
+        float where[2][3];
+        for (int which = 0; which < 2; which++) {
+            float (*c)[4] = which ? camera_exact : last_camera;
+            for (int k = 0; k < 3; k++) { /* minus the move, turned back: the rows are the world's axes as the camera sees them */
+                float length = c[k][0] * c[k][0] + c[k][1] * c[k][1] + c[k][2] * c[k][2];
+                where[which][k] = length > 0 ? -(c[3][0] * c[k][0] + c[3][1] * c[k][1] + c[3][2] * c[k][2]) / length : 0;
+            }
+        }
+        for (int k = 0; k < 3; k++)
+            if (fabsf(where[0][k] - where[1][k]) > 300)
+                return 1;
+    }
+    return 0;
+}
+
 int gfx_run(uint32_t address, int smooth) {
     int count = 1;
     if (smooth) {
@@ -2138,7 +2257,8 @@ int gfx_run(uint32_t address, int smooth) {
         measuring = 1;
         run_list(address);
         measuring = 0;
-        if (previous_matrix_count > 0 && matrix_index <= MAX_MATRICES) {
+        if (previous_matrix_count > 0 && matrix_index <= MAX_MATRICES && !scene_cut()) {
+            pair_figures();
             if (backend) {
                 backend->select_picture(0);
             } else {
@@ -2146,9 +2266,14 @@ int gfx_run(uint32_t address, int smooth) {
                 color_buffer = pictures[0];
             }
             blend = 0.5f;
+            pair_total = pair_none = pair_shifted = 0;
+            int before = gfx_triangle_count;
             run_list(address);
             blend = 1;
             count = 2;
+            if (getenv("SHOW_PAIRS")) /* for testing: one line for each in-between picture */
+                fprintf(stderr, "pairs %ld: matrices %d (before %d) unpaired %d shifted %d triangles %d\n", gfx_frame_number,
+                        pair_total, previous_matrix_count, pair_none, pair_shifted, gfx_triangle_count - before);
         }
     }
     if (backend)
@@ -2160,7 +2285,8 @@ int gfx_run(uint32_t address, int smooth) {
     tracked_before = tracked_now, tracked_now = swap, tracked_before_count = tracked_count;
     if (matrix_index <= MAX_MATRICES)
         memcpy(previous_matrices, current_matrices, (size_t)matrix_index * sizeof previous_matrices[0]),
-        memcpy(previous_sources, current_sources, (size_t)matrix_index * sizeof previous_sources[0]);
+        memcpy(previous_sources, current_sources, (size_t)matrix_index * sizeof previous_sources[0]),
+        memcpy(previous_kinds, current_kinds, (size_t)matrix_index * sizeof previous_kinds[0]);
 
     /* Things the free camera wants to know about the frame just drawn. */
     free_before = free_now;

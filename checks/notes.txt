@@ -31,3 +31,4 @@ NCT played bad 2026-10-11 Ran twice too fast; fixed since (now 30 pictures a sec
 NDN played bad 2026-10-11 Too fast and white menus, HUD and weapon; both fixed since, not yet played again
 NFW played bad 2026-10-11 Race was washed red (fixed since, not yet played again). Sound is still choppy
 NDZ played bad 2026-10-12 With smooth motion on, walls showed through doorways while moving; fixed since, not yet played again
+NDZ played bad 2026-10-12 Smooth motion on: glitches in the cutscenes and a few walls still showing through. Fixed since (figures vanishing or squashed, a flash at scene cuts); walls not seen again in a replay. Not yet played again
