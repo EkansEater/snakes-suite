@@ -15,7 +15,7 @@ void glb_present(int which, int window_width, int window_height);
  * from the top-left; nothing appears until glb_overlay_finish. */
 void glb_overlay_box(int x, int y, int w, int h, int opacity);
 void glb_overlay_bar(int x, int y, int w, int h, int r, int g, int b, int opacity); /* a box of any colour */
-void glb_overlay_text(int x, int y, const char *text, int size, int r, int g, int b);
+void glb_overlay_text(int x, int y, const char *text, float size, int r, int g, int b);
 void glb_overlay_finish(void);
 
 /* For test screenshots: the window's contents, 3 bytes per pixel. */

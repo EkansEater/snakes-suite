@@ -175,12 +175,21 @@ the game and you are back at the list.
 
 | | Keyboard | Mouse | Gamepad |
 |---|---|---|---|
-| Move | Up, Down, Page Up, Page Down | pointer, wheel | D-pad or left stick; LB, RB a page |
+| Move | Up, Down, Page Up, Page Down; Left, Right a page | pointer, wheel | D-pad or left stick; D-pad left, right a page |
 | Play | Enter | click | A or Start |
+| Settings for all games | Tab, Shift+Tab | click a name along the top | LB, RB |
 | Look at the folder again | F5 | | Y |
 | Change the order of the list | S | | X |
 | Full screen | F11 | | |
 | Quit | Esc | close the window | B |
+
+Along the top of the window are tabs. GAMES is the list. The others
+(GAMEPAD, KEYBOARD, GRAPHICS, SOUND, SYSTEM) are the **settings for all
+games**: move to a row and press Left or Right to change it, or Enter (A) to
+switch it or to give a control a new button. On the GAMEPAD tab every N64
+button and every shortcut is given its gamepad button; KEYBOARD does the same
+for keys and mouse buttons. Esc (B) goes back to the games. A game's own menu
+has the same pages, and what is changed there is for that game alone.
 
 Each game has a word in front saying where it stood at its last check
 (Ready, In Progress, Untested, Broken; STATUS.md says what
@@ -259,21 +268,25 @@ runs start straight away.
 
 Super Mario 64 never uses the N64's D-pad, so there the gamepad's D-pad also
 pushes the control stick, which lets it work the game's own menus (the pause
-screen, file select). "D-pad" under Controls switches that.
+screen, file select). "D-pad" on the menu's Gamepad page switches that.
 
-Every row can be given a keyboard key, a mouse button and a gamepad button
-in the menu, under Controls: move to a cell, press Enter, then press what
-you want there. The menu shows the names printed on the gamepad that is
-plugged in. Gamepads can be connected at any time, including over Bluetooth.
+Every row can be given a gamepad button on the menu's Gamepad page, and a
+keyboard key and a mouse button on its Keyboard and mouse page: move to a
+cell, press Enter, then press what you want there. The Gamepad page shows
+the names printed on the gamepad that is plugged in, and has "Stick dead
+zone": how far a stick must move before it counts (raise it if a worn stick
+drifts). Gamepads can be connected at any time, including over Bluetooth.
+What is set in a game's menu is for that game; the same pages in the game
+list set the controls for all games.
 
 **Free camera.** It is off to begin with. Switch on "Free camera", the
-first row under Controls. The right stick then takes over the camera: it
+first row of the menu's Camera page. The right stick then takes over the camera: it
 circles what you are playing and stays where you put it. Click the right
 stick to hand the camera back to the game. (The C buttons then need other
 buttons, if you want them on the gamepad.) Holding the right mouse button
 and moving the mouse does the same. Page Up and Page Down (D-pad up and
 down on a gamepad, or the mouse wheel) move the camera nearer and farther;
-like everything else, those can be changed under Shortcuts. It turns most
+like everything else, those can be changed among the shortcuts on the Gamepad and Keyboard pages. It turns most
 smoothly with "Smooth motion (60 fps)" on; without it the view can only
 change 30 times a second, like the game.
 
@@ -284,7 +297,7 @@ It works in every game, in one of two ways:
   relative to what you see, and the sky turns with you.
 - **Every other game** gets a general one. The tool finds the game's own
   camera in what the game draws, guesses what it is looking at (usually
-  your character), and circles that. Two rows under Controls adjust it:
+  your character), and circles that. Two rows of the Camera page adjust it:
   - "Camera style": circle the middle of the view, or just turn on the
     spot (better for games seen through the character's eyes).
   - "Stick": whether the control stick should follow the free camera. Leave
@@ -295,7 +308,7 @@ It works in every game, in one of two ways:
   The camera nearer and farther buttons start out on the gamepad's D-pad.
   In these games they only act while the free camera is switched on, and
   the game still sees the D-pad too; if a game needs its D-pad, give the
-  two shortcuts other buttons under Shortcuts.
+  two shortcuts other buttons on the Gamepad page.
 
   The general camera does not know where walls are, and the game still
   only draws what its own camera can see, so scenery can be missing when
@@ -312,10 +325,10 @@ It works in every game, in one of two ways:
   | Save states | Choose one of 9 slots, save, load |
   | Graphics | Widescreen, resolution, full screen, 60 fps smooth motion, smooth textures |
   | Sound | On/off, volume, buffer (raise it if the sound crackles) |
-  | Controls | Keyboard key, mouse button and gamepad button for each N64 button; free camera and how it behaves |
-  | Shortcuts | The same for fast forward, save state, load state, look, reset camera, camera nearer and farther, cheat button, screenshot |
+  | Gamepad | The gamepad button for each N64 button and each shortcut (fast forward, save state, load state, look, reset camera, camera nearer and farther, cheat button, screenshot); D-pad; stick dead zone |
+  | Keyboard and mouse | The key and the mouse button for each of the same |
+  | Camera | Free camera and how it behaves |
   | Cheats, Fixes | For games that have them (see below) |
-  | Change settings for | This game, or all games (see below) |
   | System | Speed limit, fast forward speed, statistics, put every setting back to usual, all-games settings |
   | Reset game | Starts the game again from the beginning |
   | Quit | |
@@ -325,21 +338,22 @@ It works in every game, in one of two ways:
   starts from, and settings **for this game** (a file named after the game),
   which hold only what that game does differently and win over the others.
 
-  "Change settings for" on the main menu says where your changes go: to this
-  game only, or to all games. The title of each settings page says which it
-  is. A change made for all games reaches every game that has no choice of
-  its own for that setting. Two rows under System move settings between the
-  two: "Use the all-games settings in this game" drops this game's own
-  choices, and "Make these the settings for all games" copies them across.
+  The settings for all games are made in the game list, on the tabs along
+  its top. What is changed in a game's menu is for that game alone, and the
+  title of each settings page says so. A change made for all games reaches
+  every game that has no choice of its own for that setting. Two rows under
+  System move settings between the two: "Use the all-games settings in this
+  game" drops this game's own choices, and "Make these the settings for all
+  games" copies them across.
 
   Always kept per game: cheats and fixes, the save-state slot, the free
   camera, and the two choices about the D-pad and the stick (games differ in
   what they do with those).
-- **Tab**, held: fast forward, 4 times normal (no gamepad button to begin with; choose one under Shortcuts)
+- **Tab**, held: fast forward, 4 times normal (no gamepad button to begin with; choose one on the Gamepad page)
   speed unless changed in the menu. It is silent.
 - **F5**: save state. **F7**: load state. No gamepad buttons are set for
   these to begin with, so that a slip of the thumb cannot undo your progress;
-  choose them under Shortcuts. A gamepad button given to a shortcut stops
+  choose them on the Gamepad page. A gamepad button given to a shortcut stops
   doing its usual job in the game.
 - **F12** (click the left stick on a gamepad): screenshot. It is saved in
   `screenshots/`, named after the game and numbered.
@@ -385,7 +399,7 @@ game it looks the ROM up by its checksums and takes that exact version's
 cheats, so Wave Race 64 gets "Always First Place" and Mario Kart 64 gets
 "Infinite Items". Most are on/off. Some have a list to choose from (which
 course, which item): left and right step through it. A few only act while
-the "Cheat button" is held (G on the keyboard; change it under Shortcuts).
+the "Cheat button" is held (G on the keyboard; change it on the Keyboard and mouse page).
 These were written by many people over many years for the real console;
 most work, a few do nothing or misbehave. Switching one off simply stops
 it.
@@ -439,7 +453,8 @@ The tools are in `snakedecomp/`, and are meant to be read:
 | `survey.py` | Tries a whole folder of games and reports on each |
 | `check.py` | Runs every game by itself, judges picture, sound and pace, and writes STATUS.md |
 | `diagnose.py` | Keeps a log of every run, and reads the logs back to say what went wrong |
-| `launcher/launcher.c` | The game list window |
+| `launcher/launcher.c` | The game list window, and its tabs of settings for all games |
+| `runtime/controls.h` | The list of things a key or button can be given to, shared by the game list and the games |
 | `cpu.py`, `verify.py` | An interpreter in Python, and a check of the translated C against it |
 | `runtime/host.c` | Stands in for the console: threads, messages, timers, controllers, saves, hardware registers |
 | `runtime/interp.c` | Runs code that could not be translated ahead of time, one instruction at a time |

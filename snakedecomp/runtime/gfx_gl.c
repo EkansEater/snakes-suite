@@ -455,13 +455,15 @@ void glb_overlay_bar(int x, int y, int w, int h, int r, int g, int b, int opacit
     overlay_quad((float)x, (float)y, (float)w, (float)h, -1, -1, color); /* u < 0: no texture */
 }
 
-void glb_overlay_text(int x, int y, const char *text, int size, int r, int g, int b) {
+void glb_overlay_text(int x, int y, const char *text, float size, int r, int g, int b) {
     float color[4] = {(float)r / 255, (float)g / 255, (float)b / 255, 1};
-    for (; *text; text++, x += 8 * size) {
+    /* (size need not be whole: a letter's place is a whole number of dots all the same, so that text lines up in columns) */
+    int letter = (int)(8 * size);
+    for (; *text; text++, x += letter) {
         if (*text < 32 || *text > 126)
             continue;
         float u = (float)((*text - 32) * (FONT_W + FONT_GAP) + FONT_GAP / 2) / FONT_PICTURE_W;
-        overlay_quad((float)x, (float)y, (float)(8 * size), (float)(16 * size), u, u + (float)FONT_W / FONT_PICTURE_W, color);
+        overlay_quad((float)x, (float)y, (float)letter, 16 * size, u, u + (float)FONT_W / FONT_PICTURE_W, color);
     }
 }
 

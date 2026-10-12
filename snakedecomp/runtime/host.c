@@ -1883,7 +1883,6 @@ typedef struct { char key[64], value[48]; } Setting;
 #define MAX_SETTINGS 512
 static Setting global_settings[MAX_SETTINGS]; /* what is in global.txt */
 static int global_setting_count;
-static int changes_for_all; /* do changes made in the menu go to every game, or to this one? */
 #define OWN_FILE_MARK "# Only what this game does differently from the settings for all games (global.txt)."
 
 static const char *setting_value(const Setting *list, int count, const char *key) {
@@ -1987,25 +1986,7 @@ static int fullscreen;
  * the PC does rather than the game). Each row can be given a keyboard key,
  * a mouse button and a gamepad button, all changeable in the menu. */
 
-enum { DEVICE_KEY, DEVICE_MOUSE, DEVICE_PAD, DEVICE_COUNT };
-static const char *device_names[DEVICE_COUNT] = {"key", "mouse", "pad"}; /* as written in the settings file */
-
-/* What can be chosen on a gamepad: SDL's numbered buttons, and after them
- * the two triggers and the eight stick directions, which SDL counts as
- * sticks ("axes") and we give numbers of our own. -1 means "nothing". */
-enum {
-    PAD_NONE = -1,
-    PAD_LEFT_TRIGGER = SDL_CONTROLLER_BUTTON_MAX, PAD_RIGHT_TRIGGER,
-    PAD_LSTICK_UP, PAD_LSTICK_DOWN, PAD_LSTICK_LEFT, PAD_LSTICK_RIGHT,
-    PAD_RSTICK_UP, PAD_RSTICK_DOWN, PAD_RSTICK_LEFT, PAD_RSTICK_RIGHT,
-    PAD_CODE_COUNT
-};
-#define PAD(name) SDL_CONTROLLER_BUTTON_##name
-
-enum {
-    NOT_A_SHORTCUT, SHORTCUT_FAST, SHORTCUT_SAVE, SHORTCUT_LOAD, SHORTCUT_LOOK, SHORTCUT_CAMERA_RESET,
-    SHORTCUT_CAMERA_NEARER, SHORTCUT_CAMERA_FARTHER, SHORTCUT_CHEAT, SHORTCUT_PICTURE, SHORTCUT_COUNT
-};
+#include "controls.h" /* the list itself, shared with the game list's settings pages */
 
 typedef struct {
     const char *name;
@@ -2014,42 +1995,10 @@ typedef struct {
     int now[DEVICE_COUNT], usual[DEVICE_COUNT]; /* key, mouse button, gamepad button: now, and to go back to */
 } Binding;
 
-/* key, mouse button (0: none; 1 left, 2 middle, 3 right), gamepad button */
-#define USUAL(key, mouse, pad) {SDL_SCANCODE_##key, mouse, pad}, {SDL_SCANCODE_##key, mouse, pad}
-static Binding bindings[] = {
-    {"Stick up", 0, 0, 1, 0, USUAL(W, 0, PAD_LSTICK_UP)},
-    {"Stick down", 0, 0, -1, 0, USUAL(S, 0, PAD_LSTICK_DOWN)},
-    {"Stick left", 0, -1, 0, 0, USUAL(A, 0, PAD_LSTICK_LEFT)},
-    {"Stick right", 0, 1, 0, 0, USUAL(D, 0, PAD_LSTICK_RIGHT)},
-    {"A", BTN_A, 0, 0, 0, USUAL(J, 0, PAD(A))},
-    {"B", BTN_B, 0, 0, 0, USUAL(K, 0, PAD(X))},
-    {"Z", BTN_Z, 0, 0, 0, USUAL(L, 0, PAD(LEFTSHOULDER))},
-    {"Start", BTN_START, 0, 0, 0, USUAL(RETURN, 0, PAD(START))},
-    {"C up", BTN_CUP, 0, 0, 0, USUAL(UP, 0, PAD_RSTICK_UP)},
-    {"C down", BTN_CDOWN, 0, 0, 0, USUAL(DOWN, 0, PAD_RSTICK_DOWN)},
-    {"C left", BTN_CLEFT, 0, 0, 0, USUAL(LEFT, 0, PAD_RSTICK_LEFT)},
-    {"C right", BTN_CRIGHT, 0, 0, 0, USUAL(RIGHT, 0, PAD_RSTICK_RIGHT)},
-    {"L", BTN_L, 0, 0, 0, USUAL(Q, 0, PAD(Y))},
-    {"R", BTN_R, 0, 0, 0, USUAL(E, 0, PAD(RIGHTSHOULDER))},
-    {"D-pad up", BTN_DUP, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_UP))},
-    {"D-pad down", BTN_DDOWN, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_DOWN))},
-    {"D-pad left", BTN_DLEFT, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_LEFT))},
-    {"D-pad right", BTN_DRIGHT, 0, 0, 0, USUAL(UNKNOWN, 0, PAD(DPAD_RIGHT))},
-    /* (No gamepad button to begin with: the right trigger used to be it, and
-     * is where a hand rests, so games ran four times too fast with the sound
-     * cutting out, and it looked like a fault.) */
-    {"Fast forward", 0, 0, 0, SHORTCUT_FAST, USUAL(TAB, 0, PAD_NONE)},
-    {"Save state", 0, 0, 0, SHORTCUT_SAVE, USUAL(F5, 0, PAD_NONE)},
-    {"Load state", 0, 0, 0, SHORTCUT_LOAD, USUAL(F7, 0, PAD_NONE)},
-    {"Look (hold)", 0, 0, 0, SHORTCUT_LOOK, USUAL(UNKNOWN, 3, PAD_NONE)},
-    {"Reset camera", 0, 0, 0, SHORTCUT_CAMERA_RESET, USUAL(UNKNOWN, 2, PAD(RIGHTSTICK))},
-    {"Camera nearer", 0, 0, 0, SHORTCUT_CAMERA_NEARER, USUAL(PAGEUP, 0, PAD(DPAD_UP))},
-    {"Camera farther", 0, 0, 0, SHORTCUT_CAMERA_FARTHER, USUAL(PAGEDOWN, 0, PAD(DPAD_DOWN))},
-    /* Some ready-made cheats only act while this is held ("Press GS for..."). */
-    {"Cheat button", 0, 0, 0, SHORTCUT_CHEAT, USUAL(G, 0, PAD_NONE)},
-    /* Saves what is on screen as a picture file (see save_window_picture). */
-    {"Screenshot", 0, 0, 0, SHORTCUT_PICTURE, USUAL(F12, 0, PAD(LEFTSTICK))},
-};
+#define CONTROL(name, button, x, y, shortcut, key, mouse, pad) \
+    {name, button, x, y, shortcut, {SDL_SCANCODE_##key, mouse, pad}, {SDL_SCANCODE_##key, mouse, pad}},
+static Binding bindings[] = {CONTROL_LIST};
+#undef CONTROL
 #define BINDING_COUNT ((int)(sizeof bindings / sizeof bindings[0]))
 
 /* With this on, the right stick turns the camera (see "Free camera" below)
@@ -2060,62 +2009,13 @@ static int free_camera;
  * want the stick even in their menus, where a D-pad feels more natural. It
  * starts on for games whose file says they do not use the D-pad. */
 static int dpad_moves_stick;
+/* How far a stick must be pushed before it counts, as a part in a hundred
+ * of its full travel. A stick at rest is never exactly in the middle, and a
+ * worn one less so. */
+static int stick_dead_zone = 18;
 
-/* The names of gamepad buttons differ between makes, so we show the ones
- * printed on the gamepad that is plugged in. */
-static int pad_is_playstation(void) {
-    if (!gamepad)
-        return 0;
-    SDL_GameControllerType type = SDL_GameControllerGetType(gamepad);
-    return type == SDL_CONTROLLER_TYPE_PS3 || type == SDL_CONTROLLER_TYPE_PS4 || type == SDL_CONTROLLER_TYPE_PS5;
-}
-static const char *pad_label(int pad) {
-    static const char *xbox[PAD_CODE_COUNT] = {
-        "A", "B", "X", "Y", "View", "Guide", "Menu", "LS click", "RS click", "LB", "RB",
-        "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Share", "Paddle 1", "Paddle 2", "Paddle 3",
-        "Paddle 4", "Touchpad",
-        [PAD_LEFT_TRIGGER] = "LT", "RT", "L stick up", "L stick down", "L stick left", "L stick right",
-        "R stick up", "R stick down", "R stick left", "R stick right"};
-    static const char *playstation[PAD_CODE_COUNT] = {
-        "Cross", "Circle", "Square", "Triangle", "Share", "PS", "Options", "L3", "R3", "L1", "R1",
-        [PAD_LEFT_TRIGGER] = "L2", "R2"};
-    if (pad < 0 || pad >= PAD_CODE_COUNT)
-        return "-";
-    const char *name = pad_is_playstation() && playstation[pad] ? playstation[pad] : xbox[pad];
-    return name ? name : "?";
-}
-/* The settings file uses names that do not depend on the gamepad's make. */
-static const char *pad_file_names[] = {"lefttrigger", "righttrigger", "lstick-up", "lstick-down", "lstick-left",
-                                       "lstick-right", "rstick-up", "rstick-down", "rstick-left", "rstick-right"};
-static const char *mouse_names[] = {"-", "Left", "Middle", "Right", "Back", "Forward"};
-
-/* A key, mouse button or gamepad button as text. for_file: the name used in
- * the settings file rather than the one shown in the menu. */
 static const char *code_name(int device, int code, int for_file) {
-    const char *nothing = for_file ? "(none)" : "-"; /* ("-" in the file would be the minus key) */
-    if (device == DEVICE_KEY)
-        return code == SDL_SCANCODE_UNKNOWN ? nothing : SDL_GetScancodeName((SDL_Scancode)code);
-    if (device == DEVICE_MOUSE)
-        return code >= 1 && code <= 5 ? mouse_names[code] : nothing;
-    if (code < 0 || code >= PAD_CODE_COUNT)
-        return nothing;
-    if (!for_file)
-        return pad_label(code);
-    return code >= PAD_LEFT_TRIGGER ? pad_file_names[code - PAD_LEFT_TRIGGER] : SDL_GameControllerGetStringForButton(code);
-}
-static int code_from_name(int device, const char *name) {
-    if (device == DEVICE_KEY)
-        return (int)SDL_GetScancodeFromName(name); /* gives "no key" for anything it does not know */
-    if (device == DEVICE_MOUSE) {
-        for (int i = 1; i <= 5; i++)
-            if (!strcmp(name, mouse_names[i]))
-                return i;
-        return 0;
-    }
-    for (int i = 0; i < PAD_CODE_COUNT - PAD_LEFT_TRIGGER; i++)
-        if (!strcmp(name, pad_file_names[i]))
-            return PAD_LEFT_TRIGGER + i;
-    return (int)SDL_GameControllerGetButtonFromString(name); /* -1 for anything it does not know */
+    return control_code_name(device, code, for_file, pad_is_playstation(gamepad));
 }
 
 /* Give a row a new key or button. If another row was using it, the two
@@ -2135,7 +2035,7 @@ static int shortcut_held[SHORTCUT_COUNT]; /* which shortcuts are being held righ
 static void stick_position(SDL_GameControllerAxis x_axis, float *x, float *y) {
     *x = (float)SDL_GameControllerGetAxis(gamepad, x_axis) / 32767;
     *y = (float)SDL_GameControllerGetAxis(gamepad, (SDL_GameControllerAxis)(x_axis + 1)) / 32767;
-    if (sqrtf(*x * *x + *y * *y) < 0.18f)
+    if (sqrtf(*x * *x + *y * *y) < (float)stick_dead_zone / 100)
         *x = *y = 0;
 }
 
@@ -2325,15 +2225,17 @@ static void open_window(void) {
 
 static int menu_open, menu_row, stats_shown;
 
-/* Text is sized relative to the window so it stays readable. */
-static int text_size(void) {
+/* Text is sized relative to the window so it stays readable: about 30
+ * lines fit the height of the window, whatever its size. (It was 22; the
+ * smaller text lets a whole page of controls be seen at once.) The size is
+ * a multiple of the font's own 8 by 16 dots, in steps of a quarter. The
+ * widest page of the menu is 60 characters and must fit too. */
+static float text_size(void) {
     int w, h;
     SDL_GL_GetDrawableSize(window, &w, &h);
-    /* About 22 lines of text fit the height of the window, whatever its
-     * size; the widest page of the menu is 60 characters and must fit too. */
-    int size = (h + 180) / 360;
-    while (size > 1 && 60 * 8 * size > w)
-        size--;
+    float size = (float)(h * 4 / 480) / 4;
+    while (size > 1 && 60 * 8 * size > (float)w)
+        size -= 0.25f;
     return size < 1 ? 1 : size > 6 ? 6 : size;
 }
 
@@ -2425,15 +2327,15 @@ static void update_stats(int showed_picture) {
  * list for a page, and menu_act() carries an action out. */
 
 enum {
-    PAGE_MAIN, PAGE_GRAPHICS, PAGE_SOUND, PAGE_CONTROLS, PAGE_CHEATS, PAGE_FIXES, PAGE_SYSTEM,
-    PAGE_ASK_RESET, PAGE_ASK_QUIT, PAGE_STATES, PAGE_SHORTCUTS, PAGE_COUNT
+    PAGE_MAIN, PAGE_GRAPHICS, PAGE_SOUND, PAGE_GAMEPAD, PAGE_CHEATS, PAGE_FIXES, PAGE_SYSTEM,
+    PAGE_ASK_RESET, PAGE_ASK_QUIT, PAGE_STATES, PAGE_KEYBOARD, PAGE_CAMERA, PAGE_COUNT
 };
 /* The two pages of mods show one kind each (see mods.h). */
 static const int page_kind[PAGE_COUNT] = {[PAGE_CHEATS] = KIND_CHEAT, [PAGE_FIXES] = KIND_FIX};
 static const char *page_titles[PAGE_COUNT] = {
-    "MENU", "GRAPHICS", "SOUND", "CONTROLS", "CHEATS", "FIXES", "SYSTEM",
+    "MENU", "GRAPHICS", "SOUND", "GAMEPAD", "CHEATS", "FIXES", "SYSTEM",
     "RESET? UNSAVED PROGRESS WILL BE LOST", "QUIT? UNSAVED PROGRESS WILL BE LOST",
-    "SAVE STATES", "SHORTCUTS",
+    "SAVE STATES", "KEYBOARD AND MOUSE", "CAMERA",
 };
 
 enum {
@@ -2441,29 +2343,42 @@ enum {
     ACT_WIDE, ACT_SMOOTH, ACT_SCALE, ACT_FULLSCREEN, ACT_TEXTURES, ACT_LOOK,
     ACT_SOUND, ACT_VOLUME, ACT_SOUND_BUFFER,
     ACT_BIND, ACT_USUAL_CONTROLS, /* ACT_BIND: choose a key or button for bindings[number] */
+    ACT_DEAD_ZONE,
     ACT_FREE_CAMERA, ACT_DPAD, ACT_CAMERA_STYLE, ACT_STICK_FOLLOWS,
     ACT_MOD, /* switch game_mods[number] */
     ACT_CHEAT, /* change cheats[number] (the ready-made ones, see cheats.c) */
     ACT_SLOT, ACT_SAVE_STATE, ACT_LOAD_STATE, ACT_FAST_SPEED,
     ACT_LIMIT, ACT_STATS, ACT_DEFAULTS,
-    ACT_SCOPE, ACT_USE_GLOBAL, ACT_MAKE_GLOBAL, /* settings for all games, or for this one */
+    ACT_USE_GLOBAL, ACT_MAKE_GLOBAL, /* to and from the settings for all games */
     ACT_RESET, ACT_QUIT,
 };
 
 typedef struct {
     char text[64];
     int action, number;
-    /* Rows of the controls table have three cells after the text, one for
-     * each of keyboard, mouse and gamepad. */
+    /* Rows of the controls tables have cells after the text: one for the
+     * gamepad on the gamepad page, one each for keyboard and mouse on
+     * theirs. has_cells says which, a bit for each device. */
     int has_cells;
     char cells[DEVICE_COUNT][16];
+    int heading; /* not a row to choose: the name of the group of rows under it */
 } Row;
 #define MAX_ROWS 420
 /* Where the cells start, counted in characters, and how wide the menu is
  * on pages with and without them. */
-static const int cell_column[DEVICE_COUNT] = {17, 30, 39};
+#define FIRST_CELL_COLUMN 18
+#define CELL_WIDTH 15
 #define MENU_WIDTH 46
-#define MENU_WIDTH_WITH_CELLS 58
+#define MENU_WIDTH_WITH_CELLS 54
+/* Where a device's cell starts on a row, counted in characters: the cells
+ * shown sit side by side. */
+static int cell_column(int shown, int device) {
+    int column = FIRST_CELL_COLUMN;
+    for (int d = 0; d < device; d++)
+        if (shown & 1 << d)
+            column += CELL_WIDTH;
+    return column;
+}
 
 static int menu_page, main_row;
 static int menu_column;       /* which cell of a controls row is chosen */
@@ -2490,6 +2405,7 @@ static int settings_now(Setting *list) {
     PUT_NUMBER("free camera", free_camera);
     PUT_NUMBER("dpad moves stick", dpad_moves_stick);
     PUT_NUMBER("camera circles", camera_circles);
+    PUT_NUMBER("stick dead zone", stick_dead_zone);
     PUT_NUMBER("stick follows camera", stick_follows_camera);
     char key[64];
     for (int i = 0; i < BINDING_COUNT; i++)
@@ -2532,7 +2448,6 @@ static void write_global_settings(void) {
         return;
     fprintf(file, "# The settings every game starts from. A game's own file, next to this one,\n");
     fprintf(file, "# holds what that game does differently. 1 is on, 0 is off.\n");
-    fprintf(file, "menu changes are for all games = %d\n", changes_for_all);
     for (int i = 0; i < global_setting_count; i++)
         fprintf(file, "%s = %s\n", global_settings[i].key, global_settings[i].value);
     fclose(file);
@@ -2541,23 +2456,15 @@ static void write_global_settings(void) {
 /* Write the menu's choices down, so they are still there next time. Done
  * after every change, so nothing is lost if the game stops unexpectedly.
  *
- * A setting that has changed since last time goes into global.txt if
- * changes are being made for all games. This game's own file then gets
- * whatever differs from the settings for all games, and nothing else. */
+ * This game's own file gets whatever differs from the settings for all
+ * games, and nothing else. (The settings for all games are changed in the
+ * game list's settings pages, or by "Make these the settings for all
+ * games" under System.) */
 static void save_settings(void) {
     static Setting now[MAX_SETTINGS];
-    int count = settings_now(now), global_changed = 0;
+    int count = settings_now(now);
     if (!settings_path)
         return;
-    for (int i = 0; changes_for_all && i < count; i++) {
-        const char *before = setting_value(settings_before, settings_before_count, now[i].key);
-        if (!setting_is_own(now[i].key) && before && strcmp(before, now[i].value)) {
-            setting_put(global_settings, &global_setting_count, now[i].key, now[i].value);
-            global_changed = 1;
-        }
-    }
-    if (global_changed)
-        write_global_settings();
     FILE *file = fopen(settings_path, "w");
     if (file) {
         fprintf(file, "%s\n# 1 is on, 0 is off.\n", OWN_FILE_MARK);
@@ -2624,10 +2531,12 @@ static void reset_camera(void) {
     look_yaw = look_pitch = 0, look_zoom = 1;
 }
 
-static void usual_controls(int shortcuts) {
+/* Give back what each row had to begin with, for the devices named (a bit for each). */
+static void usual_controls(int devices) {
     for (int i = 0; i < BINDING_COUNT; i++)
-        if (!bindings[i].shortcut == !shortcuts)
-            memcpy(bindings[i].now, bindings[i].usual, sizeof bindings[i].now);
+        for (int device = 0; device < DEVICE_COUNT; device++)
+            if (devices & 1 << device)
+                bindings[i].now[device] = bindings[i].usual[device];
 }
 
 static void restore_defaults(void) {
@@ -2636,7 +2545,7 @@ static void restore_defaults(void) {
     sound_muted = 0, sound_volume = 10, sound_cushion_ms = 100, speed_limit = 1, fast_speed = 4;
     reset_camera(), free_camera = 0, dpad_moves_stick = game_ignores_dpad;
     camera_circles = 1, stick_follows_camera = game_stick_follows_camera;
-    usual_controls(0), usual_controls(1);
+    usual_controls(-1), stick_dead_zone = 18;
     for (int i = 0; i < game_mod_count && i < 64; i++)
         game_mods[i].on = mods_at_start[i];
     for (int i = 0; i < cheat_count; i++)
@@ -2650,18 +2559,18 @@ static int menu_rows(int page, Row *rows) {
     gfx_picture(1, &w, &h);
 /* Add a row: its action, a number that goes with the action, then the text. */
 #define ROW(act, n, ...) \
-    (rows[count].action = (act), rows[count].number = (n), rows[count].has_cells = 0, \
+    (rows[count].action = (act), rows[count].number = (n), rows[count].has_cells = 0, rows[count].heading = 0, \
      snprintf(rows[count].text, 64, __VA_ARGS__), count++)
 #define ON(value) ((value) ? "ON" : "off")
     switch (page) {
     case PAGE_MAIN:
         ROW(ACT_RESUME, 0, "Resume");
         ROW(ACT_OPEN, PAGE_STATES, "Save states");
-        ROW(ACT_SCOPE, 0, "%-26s< %s >", "Change settings for", changes_for_all ? "all games" : "this game");
         ROW(ACT_OPEN, PAGE_GRAPHICS, "Graphics");
         ROW(ACT_OPEN, PAGE_SOUND, "Sound");
-        ROW(ACT_OPEN, PAGE_CONTROLS, "Controls");
-        ROW(ACT_OPEN, PAGE_SHORTCUTS, "Shortcuts");
+        ROW(ACT_OPEN, PAGE_GAMEPAD, "Gamepad");
+        ROW(ACT_OPEN, PAGE_KEYBOARD, "Keyboard and mouse");
+        ROW(ACT_OPEN, PAGE_CAMERA, "Camera");
         for (int kind_page = PAGE_CHEATS; kind_page <= PAGE_FIXES; kind_page++) {
             int total = 0, on = 0;
             for (int i = 0; i < game_mod_count; i++)
@@ -2689,28 +2598,38 @@ static int menu_rows(int page, Row *rows) {
         ROW(ACT_VOLUME, 0, "%-26s< %d%% >", "Volume", sound_volume * 10);
         ROW(ACT_SOUND_BUFFER, 0, "%-26s< %d ms >", "Buffer (more: no crackle)", sound_cushion_ms);
         break;
-    case PAGE_CONTROLS:
-    case PAGE_SHORTCUTS:
-        if (page == PAGE_CONTROLS)
-            ROW(ACT_FREE_CAMERA, 0, "%-17s%-5s%s", "Free camera", free_camera ? "ON" : "off",
-                "right stick turns the view");
-        if (page == PAGE_CONTROLS && !game_focus)
-            ROW(ACT_CAMERA_STYLE, 0, "%-17s%s", "Camera style", camera_circles ? "circles the middle of the view" : "turns on the spot");
-        if (page == PAGE_CONTROLS)
-            ROW(ACT_STICK_FOLLOWS, 0, "%-17s%s", "Stick", stick_follows_camera ? "follows the free camera" : "as the game expects");
-        if (page == PAGE_CONTROLS)
-            ROW(ACT_DPAD, 0, "%-17s%s", "D-pad", dpad_moves_stick ? "also moves the control stick" : "N64 D-pad only");
-        for (int i = 0; i < BINDING_COUNT; i++) {
-            if (!bindings[i].shortcut != (page == PAGE_CONTROLS))
-                continue;
-            int row = ROW(ACT_BIND, i, "%s", bindings[i].name);
-            rows[row].has_cells = 1;
-            for (int device = 0; device < DEVICE_COUNT; device++)
-                snprintf(rows[row].cells[device], sizeof rows[row].cells[device], "%s",
-                         waiting_for_press && row == menu_row && device == menu_column
-                             ? "press..." : code_name(device, bindings[i].now[device], 0));
+    case PAGE_GAMEPAD:
+    case PAGE_KEYBOARD: {
+        /* The same list of things to do on both pages: what differs is
+         * which devices' cells are shown beside each. */
+        int shown = page == PAGE_GAMEPAD ? 1 << DEVICE_PAD : 1 << DEVICE_KEY | 1 << DEVICE_MOUSE;
+        for (int shortcuts = 0; shortcuts < 2; shortcuts++) {
+            rows[ROW(ACT_NONE, 0, shortcuts ? "SHORTCUTS" : "N64 CONTROLLER")].heading = 1;
+            for (int i = 0; i < BINDING_COUNT; i++) {
+                if ((bindings[i].shortcut != 0) != shortcuts)
+                    continue;
+                int row = ROW(ACT_BIND, i, "%s", bindings[i].name);
+                rows[row].has_cells = shown;
+                for (int device = 0; device < DEVICE_COUNT; device++)
+                    snprintf(rows[row].cells[device], sizeof rows[row].cells[device], "%s",
+                             waiting_for_press && row == menu_row && device == menu_column
+                                 ? "press..." : code_name(device, bindings[i].now[device], 0));
+            }
         }
-        ROW(ACT_USUAL_CONTROLS, page == PAGE_SHORTCUTS, "Put these back to usual");
+        if (page == PAGE_GAMEPAD) {
+            rows[ROW(ACT_NONE, 0, "OPTIONS")].heading = 1;
+            ROW(ACT_DPAD, 0, "%-18s%s", "D-pad", dpad_moves_stick ? "also moves the stick" : "N64 D-pad only");
+            ROW(ACT_DEAD_ZONE, 0, "%-18s< %d%% >", "Stick dead zone", stick_dead_zone);
+        }
+        ROW(ACT_USUAL_CONTROLS, shown, "Put these back to usual");
+        break;
+    }
+    case PAGE_CAMERA:
+        ROW(ACT_FREE_CAMERA, 0, "%-17s%-5s%s", "Free camera", free_camera ? "ON" : "off", "(right stick turns)");
+        if (!game_focus)
+            ROW(ACT_CAMERA_STYLE, 0, "%-17s%s", "Camera style", camera_circles ? "circles the middle of the view" : "turns on the spot");
+        ROW(ACT_STICK_FOLLOWS, 0, "%-17s%s", "Stick", stick_follows_camera ? "follows the free camera" : "as the game expects");
+        ROW(ACT_LOOK, 0, "Reset camera");
         break;
     case PAGE_STATES:
         ROW(ACT_SLOT, 0, "%-26s< %d >  %s", "Slot", state_slot, state_exists(state_slot) ? "in use" : "empty");
@@ -2761,7 +2680,8 @@ static void menu_go(int page) {
     if (menu_page == PAGE_MAIN)
         main_row = menu_row; /* to come back to the same place */
     menu_page = page;
-    menu_row = page == PAGE_MAIN ? main_row : 0;
+    menu_row = page == PAGE_MAIN ? main_row : page == PAGE_GAMEPAD || page == PAGE_KEYBOARD ? 1 : 0; /* (1: past the group's name) */
+    menu_column = page == PAGE_GAMEPAD ? DEVICE_PAD : DEVICE_KEY;
     waiting_for_press = 0;
 }
 
@@ -2787,10 +2707,10 @@ static void menu_act(int action, int number, int direction, int selected) {
     case ACT_BIND: if (selected) waiting_for_press = 1; return; /* the next press is the answer */
     case ACT_USUAL_CONTROLS: if (!selected) return; usual_controls(number); break;
     case ACT_DEFAULTS: if (!selected) return; restore_defaults(); break;
-    case ACT_SCOPE: /* (which file later changes go to; nothing about the game changes) */
-        changes_for_all = !changes_for_all;
-        write_global_settings();
-        return;
+    case ACT_DEAD_ZONE:
+        stick_dead_zone += direction * 2;
+        stick_dead_zone = stick_dead_zone < 0 ? 0 : stick_dead_zone > 60 ? 60 : stick_dead_zone;
+        break;
     case ACT_USE_GLOBAL: { /* drop what this game does differently */
         if (!selected)
             return;
@@ -2886,7 +2806,9 @@ static void menu_act(int action, int number, int direction, int selected) {
 }
 
 static void draw_overlay(void) {
-    int size = text_size(), line = 18 * size, letter = 8 * size;
+    /* (size: how many window dots to one dot of the font; line and letter: the room one of each takes) */
+    float size = text_size();
+    int line = (int)(18 * size), letter = (int)(8 * size);
     if (stats_shown && stats.line_count) {
         draw_box(4 * size, 4 * size, 49 * letter, stats.line_count * line + 6 * size, 150);
         for (int i = 0; i < stats.line_count; i++)
@@ -2910,7 +2832,8 @@ static void draw_overlay(void) {
         return;
     static Row rows[MAX_ROWS];
     int row_count = menu_rows(menu_page, rows);
-    int table = menu_page == PAGE_CONTROLS || menu_page == PAGE_SHORTCUTS;
+    int table = menu_page == PAGE_GAMEPAD || menu_page == PAGE_KEYBOARD;
+    int shown = menu_page == PAGE_GAMEPAD ? 1 << DEVICE_PAD : 1 << DEVICE_KEY | 1 << DEVICE_MOUSE; /* cells of a table */
     /* A page too long for the window shows a part of itself, moved along so
      * that the chosen row is always in view. */
     int visible = window_h / line - 5;
@@ -2922,18 +2845,18 @@ static void draw_overlay(void) {
     int box_w = (table ? MENU_WIDTH_WITH_CELLS : MENU_WIDTH) * letter, box_h = (visible + 4) * line;
     int x = (window_w - box_w) / 2, y = (window_h - box_h) / 2, text_x = x + 3 * letter;
     draw_box(x, y, box_w, box_h, 235);
-    /* The pages of settings say whose settings a change will be. */
+    /* The pages of settings say whose settings these are: the settings for
+     * all games are made in the game list. */
     char title[64];
-    int settings_page = menu_page == PAGE_GRAPHICS || menu_page == PAGE_SOUND || menu_page == PAGE_CONTROLS ||
-                        menu_page == PAGE_SHORTCUTS || menu_page == PAGE_SYSTEM;
-    snprintf(title, sizeof title, "%s%s", page_titles[menu_page],
-             !settings_page ? "" : changes_for_all ? "  (for all games)" : "  (for this game)");
+    int settings_page = menu_page == PAGE_GRAPHICS || menu_page == PAGE_SOUND || table || menu_page == PAGE_SYSTEM;
+    snprintf(title, sizeof title, "%s%s", page_titles[menu_page], settings_page ? "  (this game)" : "");
     draw_text(x + letter, y + 6 * size, title, 255, 255, 255);
-    if (table) { /* headings for the three cells */
-        const char *pad_heading = pad_is_playstation() ? "PlayStation" : gamepad ? "Controller" : "(no gamepad)";
-        draw_text(text_x + cell_column[DEVICE_KEY] * letter, y + 6 * size, "Keyboard", 150, 150, 150);
-        draw_text(text_x + cell_column[DEVICE_MOUSE] * letter, y + 6 * size, "Mouse", 150, 150, 150);
-        draw_text(text_x + cell_column[DEVICE_PAD] * letter, y + 6 * size, pad_heading, 150, 150, 150);
+    if (table) { /* on the gamepad page, the gamepad's own name (the other page names its columns lower down) */
+        const char *pad_name = gamepad ? SDL_GameControllerName(gamepad) : NULL;
+        char heading[CELL_WIDTH * 2];
+        snprintf(heading, sizeof heading, "%s", pad_name ? pad_name : "(no gamepad)");
+        if (shown & 1 << DEVICE_PAD)
+            draw_text(x + box_w - ((int)strlen(heading) + 1) * letter, y + 6 * size, heading, 150, 150, 150);
     }
     glb_overlay_bar(x + letter, y + line + 2 * size, box_w - 2 * letter, size, 255, 255, 255, 60); /* a rule under the title */
     for (int i = 0; i < visible; i++) {
@@ -2942,14 +2865,23 @@ static void draw_overlay(void) {
         int bright = selected ? 255 : 200;
         if (selected && !row->has_cells) /* a soft bar behind the chosen row */
             glb_overlay_bar(x + letter / 2, row_y - size, box_w - letter, line, 255, 255, 255, 30);
+        if (row->heading) { /* the name of a group of rows */
+            draw_text(x + letter, row_y, row->text, 120, 170, 255);
+            if (table && (shown & 1 << DEVICE_KEY)) { /* ...with the names of the columns beside it */
+                draw_text(text_x + cell_column(shown, DEVICE_KEY) * letter, row_y, "Keyboard", 150, 150, 150);
+                draw_text(text_x + cell_column(shown, DEVICE_MOUSE) * letter, row_y, "Mouse", 150, 150, 150);
+            }
+            continue;
+        }
         draw_text(x + letter, row_y, selected ? ">" : " ", 255, 220, 60);
         draw_text(text_x, row_y, row->text, bright, selected && !row->has_cells ? 220 : bright,
                   selected && !row->has_cells ? 60 : bright);
-        for (int device = 0; row->has_cells && device < DEVICE_COUNT; device++) {
-            int chosen = selected && device == menu_column, cell_x = text_x + cell_column[device] * letter;
-            int next_x = device + 1 < DEVICE_COUNT ? text_x + cell_column[device + 1] * letter : x + box_w - letter / 2;
+        for (int device = 0; device < DEVICE_COUNT; device++) {
+            if (!(row->has_cells & 1 << device))
+                continue;
+            int chosen = selected && device == menu_column, cell_x = text_x + cell_column(row->has_cells, device) * letter;
             if (chosen) /* ...or behind the chosen cell */
-                glb_overlay_bar(cell_x - letter / 2, row_y - size, next_x - cell_x, line, 255, 255, 255, 45);
+                glb_overlay_bar(cell_x - letter / 2, row_y - size, CELL_WIDTH * letter, line, 255, 255, 255, 45);
             int dim = !strcmp(row->cells[device], "-");
             draw_text(cell_x, row_y, row->cells[device], chosen ? 255 : dim ? 110 : 200, chosen ? 220 : dim ? 110 : 200,
                       chosen ? 60 : dim ? 110 : 200);
@@ -3017,13 +2949,18 @@ static void overlay_key(SDL_Scancode key) {
             menu_open = 1, menu_page = PAGE_MAIN, menu_row = main_row = 0;
     } else if (!menu_open)
         return;
-    else if (key == SDL_SCANCODE_UP)
-        menu_row = (menu_row + row_count - 1) % row_count;
-    else if (key == SDL_SCANCODE_DOWN)
-        menu_row = (menu_row + 1) % row_count;
-    else if ((key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT) && rows[menu_row].has_cells) {
-        menu_column += key == SDL_SCANCODE_LEFT ? -1 : 1; /* in the table, Left and Right move between cells */
-        menu_column = menu_column < 0 ? 0 : menu_column >= DEVICE_COUNT ? DEVICE_COUNT - 1 : menu_column;
+    else if (key == SDL_SCANCODE_UP || key == SDL_SCANCODE_DOWN) {
+        int step = key == SDL_SCANCODE_UP ? row_count - 1 : 1;
+        do /* (group names are passed over) */
+            menu_row = (menu_row + step) % row_count;
+        while (rows[menu_row].heading);
+    } else if ((key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT) && rows[menu_row].has_cells) {
+        /* in a table, Left and Right move between the cells that are shown */
+        int step = key == SDL_SCANCODE_LEFT ? -1 : 1, to = menu_column + step;
+        while (to >= 0 && to < DEVICE_COUNT && !(rows[menu_row].has_cells & 1 << to))
+            to += step;
+        if (to >= 0 && to < DEVICE_COUNT)
+            menu_column = to;
     } else if (key == SDL_SCANCODE_LEFT || key == SDL_SCANCODE_RIGHT)
         menu_act(rows[menu_row].action, rows[menu_row].number, key == SDL_SCANCODE_LEFT ? -1 : 1, 0);
     else if (key == SDL_SCANCODE_RETURN || key == SDL_SCANCODE_KP_ENTER)
@@ -3400,6 +3337,7 @@ static void apply_setting(const char *line, const char *text, int *scale, float 
 #ifdef USE_SDL
     else if (!strcmp(line, "fullscreen")) fullscreen = value != 0;
     else if (!strcmp(line, "free camera")) free_camera = value != 0;
+    else if (!strcmp(line, "stick dead zone")) stick_dead_zone = value < 0 ? 0 : value > 60 ? 60 : value;
     else if (!strcmp(line, "dpad moves stick")) dpad_moves_stick = value != 0;
     else {
         /* "key A = J", "pad A = a", "mouse Look (hold) = Right" */
@@ -3429,10 +3367,7 @@ static void load_settings(int *scale, float *aspect) {
 #endif
     global_setting_count = settings_read(global_settings_path(), global_settings, &marked);
     for (int i = 0; i < global_setting_count; i++) {
-        if (!strcmp(global_settings[i].key, "menu changes are for all games")) {
-            changes_for_all = atoi(global_settings[i].value) != 0;
-            global_settings[i--] = global_settings[--global_setting_count]; /* (not a setting of the game) */
-        } else if (!setting_is_own(global_settings[i].key))
+        if (!setting_is_own(global_settings[i].key))
             apply_setting(global_settings[i].key, global_settings[i].value, scale, aspect);
     }
     own_count = settings_read(settings_path, own, &marked);
@@ -3570,7 +3505,7 @@ static void present_frame(void) {
         if (getenv("MENU_DO")) { /* for testing: MENU_DO="100:wide,160:scope,220:volume-" does those at those frames */
             static const struct { const char *name; int action, direction, selected; } known[] = {
                 {"wide", ACT_WIDE, 1, 0}, {"smooth", ACT_SMOOTH, 1, 0}, {"volume-", ACT_VOLUME, -1, 0},
-                {"scope", ACT_SCOPE, 1, 0}, {"useglobal", ACT_USE_GLOBAL, 0, 1}, {"makeglobal", ACT_MAKE_GLOBAL, 0, 1},
+                {"deadzone", ACT_DEAD_ZONE, 1, 0}, {"useglobal", ACT_USE_GLOBAL, 0, 1}, {"makeglobal", ACT_MAKE_GLOBAL, 0, 1},
                 {"usual", ACT_DEFAULTS, 0, 1},
             };
             for (const char *p = getenv("MENU_DO"); p && *p; p = strchr(p, ',') ? strchr(p, ',') + 1 : NULL)
