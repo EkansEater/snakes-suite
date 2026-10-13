@@ -81,13 +81,19 @@ def button_script(code: str) -> tuple[str, bool]:
 def listen(path: str, rate: int) -> dict:
     """Measure a recording of the run's sound. Needs numpy; without it, says nothing.
 
-    Three things can be told without ears:
+    Four things can be told without ears:
       quiet    the part of the recording with no sound at all
       clipped  the part pinned at the loudest possible value (distortion)
       noise    how much the sound resembles hiss rather than notes, from 0
                (pure tones) to 1 (pure hiss). Music and speech have a few
                strong pitches; a sound list carried out wrongly gives
                energy smeared over every pitch.
+      ripple   whether one sample in every eight stands apart from the
+               rest: how many times bigger the jumps to and from it are.
+               The console works on sound eight samples at a time, so a
+               sum gone wrong in one of the eight places gives a harsh,
+               robotic buzz over sound that is otherwise right. Real sound
+               has no reason to favour any place: about 1.
     """
     try:
         import numpy as np
@@ -96,9 +102,15 @@ def listen(path: str, rate: int) -> dict:
             samples = np.frombuffer(recording.readframes(recording.getnframes()), dtype="<i2").astype(np.float64)
     except (ImportError, OSError, EOFError, wave.Error):
         return {}
-    left = samples[::2]  # one of the two channels is enough
+    left = samples[::2]  # one of the two channels is enough (but not for ripple: it can be in either)
     if len(left) < 4096:
-        return {"seconds": 0, "quiet": 1.0, "clipped": 0.0, "noise": 0.0}
+        return {"seconds": 0, "quiet": 1.0, "clipped": 0.0, "noise": 0.0, "ripple": 1.0}
+    ripple = 1.0
+    for channel in (left, samples[1::2]):
+        jumps = np.abs(np.diff(channel))
+        by_place = jumps[: len(jumps) // 8 * 8].reshape(-1, 8).mean(axis=0)
+        if np.median(by_place) > 1:
+            ripple = max(ripple, float(by_place.max() / np.median(by_place)))
     flatness = []
     for start in range(0, len(left) - 2048, 2048):
         piece = left[start : start + 2048]
@@ -113,6 +125,7 @@ def listen(path: str, rate: int) -> dict:
         "quiet": round(float((np.abs(left) < 8).mean()), 3),
         "clipped": round(float((np.abs(left) >= 32700).mean()), 4),
         "noise": round(float(np.median(flatness)), 3) if flatness else 0.0,
+        "ripple": round(ripple, 2),
     }
 
 
@@ -217,6 +230,8 @@ def judge(result: dict, session: diagnose.Session, findings: list) -> None:
             faults.append("recording is silent")
         elif heard["noise"] > 0.3:
             faults.append(f"recording is mostly noise ({heard['noise']:.2f})")
+        if heard.get("ripple", 1) > 2:
+            faults.append(f"buzz: one sample in every eight stands out ({heard['ripple']:.0f} times the rest)")
         if heard["clipped"] > 0.005:
             faults.append(f"distorted: {heard['clipped']:.1%} at full loudness")
     result["sound"] = "; ".join(faults) or "ok"

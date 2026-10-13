@@ -1,7 +1,7 @@
 {
  "N2PE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "N2PE",
   "file": "Rampage 2 - Universal Tour (U) [!].zip",
   "findings": [],
@@ -36,7 +36,7 @@
  },
  "N32E": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "N32E",
   "file": "Army Men - Sarge's Heroes 2 (U) [!].zip",
   "findings": [],
@@ -71,7 +71,7 @@
  },
  "NACE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NACE",
   "file": "Army Men - Air Combat (U) [!].zip",
   "findings": [
@@ -110,7 +110,7 @@
  },
  "NAME": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NAME",
   "file": "Army Men - Sarge's Heroes (U) [!].zip",
   "findings": [],
@@ -145,15 +145,15 @@
  },
  "NCTE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NCTE",
   "file": "Chameleon Twist (U) [!].zip",
   "findings": [],
   "frames": 3600,
   "heard": {
-   "clipped": 0.0005,
-   "noise": 0.036,
-   "quiet": 0.172,
+   "clipped": 0.0,
+   "noise": 0.001,
+   "quiet": 0.173,
    "seconds": 59.3
   },
   "pace": 30,
@@ -180,7 +180,7 @@
  },
  "NCUE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NCUE",
   "file": "Cruis'n USA (U) (V1.2) [!].zip",
   "findings": [
@@ -217,11 +217,11 @@
  },
  "NDNE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NDNE",
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 11 of 18 seconds (worst 76%)"
+   "It ran slowly: under 90% speed for 38 of 42 seconds (worst 28%)"
   ],
   "frames": 3600,
   "heard": {
@@ -254,7 +254,7 @@
  },
  "NDYE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NDYE",
   "file": "Diddy Kong Racing (U) (M2) (V1.1) [!].zip",
   "findings": [
@@ -263,8 +263,8 @@
   ],
   "frames": 3600,
   "heard": {
-   "clipped": 0.0001,
-   "noise": 0.085,
+   "clipped": 0.0,
+   "noise": 0.005,
    "quiet": 0.153,
    "seconds": 59.9
   },
@@ -292,10 +292,12 @@
  },
  "NDZE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NDZE",
   "file": "Duke Nukem - ZER0 H0UR (U) [!].zip",
-  "findings": [],
+  "findings": [
+   "It ran slowly: under 90% speed for 25 of 36 seconds (worst 47%)"
+  ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -327,7 +329,7 @@
  },
  "NEPE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NEPE",
   "file": "Star Wars Episode I - Racer (U) [!].zip",
   "findings": [
@@ -365,15 +367,15 @@
  },
  "NETE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NETE",
   "file": "Quest 64 (U) [!].zip",
   "findings": [],
   "frames": 3600,
   "heard": {
-   "clipped": 0.0007,
-   "noise": 0.025,
-   "quiet": 0.246,
+   "clipped": 0.0,
+   "noise": 0.0,
+   "quiet": 0.247,
    "seconds": 59.5
   },
   "pace": 30,
@@ -400,12 +402,12 @@
  },
  "NFBE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NFBE",
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 36%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 13%)"
   ],
   "frames": 3600,
   "heard": {
@@ -438,12 +440,13 @@
  },
  "NFWE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NFWE",
   "file": "F-1 World Grand Prix (U) [!].zip",
   "findings": [
    "5656 drawing commands were skipped because we do not handle them",
-   "The game sends 19621 samples of sound a second but asked to play 22050"
+   "The game sends 19621 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 17 of 23 seconds (worst 20%)"
   ],
   "frames": 3600,
   "heard": {
@@ -476,7 +479,7 @@
  },
  "NFXE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NFXE",
   "file": "Star Fox 64 (U) (V1.1) [!].zip",
   "findings": [],
@@ -511,7 +514,7 @@
  },
  "NJFE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NJFE",
   "file": "Jet Force Gemini (U) [!].zip",
   "findings": [
@@ -550,7 +553,7 @@
  },
  "NKTE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NKTE",
   "file": "mk64.us.z64",
   "findings": [],
@@ -585,7 +588,7 @@
  },
  "NMFE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NMFE",
   "file": "Mario Golf (U) [!].zip",
   "findings": [
@@ -624,11 +627,11 @@
  },
  "NN6E": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NN6E",
   "file": "Dr. Mario 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 20%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 9%)"
   ],
   "frames": 3600,
   "heard": {
@@ -661,7 +664,7 @@
  },
  "NO7E": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NO7E",
   "file": "007 - The World is Not Enough (U) [!].zip",
   "findings": [
@@ -699,7 +702,7 @@
  },
  "NP3E": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NP3E",
   "file": "Pokemon Stadium 2 (U) [!].zip",
   "findings": [
@@ -729,7 +732,7 @@
  },
  "NPFE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NPFE",
   "file": "Pokemon Snap (U) [!].zip",
   "findings": [
@@ -767,14 +770,14 @@
  },
  "NPNE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NPNE",
   "file": "Pokemon Puzzle League (U) [!].zip",
   "findings": [
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
    "The game's sound program made 17143 samples a second but 20812 reached the sound chip",
    "The game sends 20812 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 9 of 10 seconds (worst 21%)"
+   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 12%)"
   ],
   "frames": 3600,
   "heard": {
@@ -807,13 +810,13 @@
  },
  "NPOE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NPOE",
   "file": "Pokemon Stadium (U) (V1.1) [!].zip",
   "findings": [
    "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
    "102 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 26%)"
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 23%)"
   ],
   "frames": 3600,
   "heard": {
@@ -846,7 +849,7 @@
  },
  "NREE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NREE",
   "file": "Resident Evil 2 (U) (V1.1) [!].zip",
   "findings": [
@@ -886,10 +889,12 @@
  },
  "NROE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
-  "findings": [],
+  "findings": [
+   "It ran slowly: under 90% speed for 25 of 34 seconds (worst 45%)"
+  ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -921,11 +926,12 @@
  },
  "NRPE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NRPE",
   "file": "Rampage - World Tour (U) [!].zip",
   "findings": [
-   "The game sends 18792 samples of sound a second but asked to play 32000"
+   "The game sends 18792 samples of sound a second but asked to play 32000",
+   "It ran slowly: under 90% speed for 21 of 28 seconds (worst 60%)"
   ],
   "frames": 3600,
   "heard": {
@@ -958,7 +964,7 @@
  },
  "NSME": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NSME",
   "file": "sm64.us.z64",
   "findings": [],
@@ -993,12 +999,12 @@
  },
  "NSZE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NSZE",
   "file": "NFL Blitz - Special Edition (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 35%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 14%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1031,12 +1037,12 @@
  },
  "NW3E": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NW3E",
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
    "47290 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 42 of 42 seconds (worst 19%)"
+   "It ran slowly: under 90% speed for 42 of 44 seconds (worst 16%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1069,13 +1075,13 @@
  },
  "NWNE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NWNE",
   "file": "WCW vs. nWo - World Tour (U) (V1.1) [!].zip",
   "findings": [
    "16004 drawing commands were skipped because we do not handle them",
    "The game sends 21182 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 24%)"
+   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 18%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1108,7 +1114,7 @@
  },
  "NWRE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NWRE",
   "file": "wr64.us.z64",
   "findings": [],
@@ -1143,7 +1149,7 @@
  },
  "NXOE": {
   "asked": 3600,
-  "checked": "2026-10-11",
+  "checked": "2026-10-13",
   "code": "NXOE",
   "file": "Cruis'n Exotica (U) [!].zip",
   "findings": [

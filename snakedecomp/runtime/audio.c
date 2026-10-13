@@ -194,9 +194,14 @@ static void envelope_mix(int flags, uint32_t memory_address) {
         dry_gain = state.dry_gain, wet_gain = state.wet_gain;
         for (int c = 0; c < 2; c++) {
             target[c] = state.target[c], rate[c] = state.rate[c];
-            int32_t step = state.volume[c] * (rate[c] - 0x10000) / 8;
+            /* (In 64 bits: a note that is to jump straight to its volume
+             * is given the largest rate there is, and in 32 bits this sum
+             * overflowed. The eighth volume came out as the most negative
+             * number and stayed there, so every eighth sample of the note
+             * was a loud click: a harsh buzz over the music.) */
+            int64_t step = (int64_t)state.volume[c] * (rate[c] - 0x10000) / 8;
             for (int i = 0; i < 8; i++)
-                volumes[c][i] = clamp32((int64_t)state.volume[c] * 65536 + (int64_t)step * (i + 1));
+                volumes[c][i] = clamp32((int64_t)state.volume[c] * 65536 + step * (i + 1));
         }
     } else {
         for (int c = 0; c < 2; c++) {

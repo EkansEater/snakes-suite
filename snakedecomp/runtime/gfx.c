@@ -915,6 +915,8 @@ static void turn_odd_rows(Loaded *loaded, uint32_t row) {
     }
 }
 
+enum { NO_DEPTH, TRIANGLE_DEPTH, RECTANGLE_DEPTH }; /* what capture_state is told about depth */
+
 static void capture_state(DrawState *d, int tile_index, int allow_depth) {
     memset(d, 0, sizeof *d); /* so that two identical states compare equal byte for byte */
     const Tile *tile = &rdp.tiles[tile_index];
@@ -966,6 +968,11 @@ static void capture_state(DrawState *d, int tile_index, int allow_depth) {
     /* "Texture edge" mode: the texture's alpha cuts holes in the shape. */
     d->cutout = (rdp.other_mode_l & 0x1000) != 0;
     int z = allow_depth && (rsp.geometry_mode & G_ZBUFFER);
+    /* A rectangle has no corners with a depth of their own, and the
+     * setting above is for triangles. It takes part in depth only when the
+     * game gives it one depth for the whole of it (see to_screen). */
+    if (allow_depth == RECTANGLE_DEPTH)
+        z = (rdp.other_mode_l & 4) != 0;
     d->depth_test = z && (rdp.other_mode_l & 0x10);
     d->depth_write = z && (rdp.other_mode_l & 0x20);
     d->decal = ((rdp.other_mode_l >> 10) & 3) == 3; /* drawn flat on another surface */
@@ -1394,7 +1401,10 @@ static void draw_rectangle(const Shape *shape, Pixel *p, int strip_top, int stri
                     color_buffer[index] = 0xFF000000u | (uint32_t)texel[0] << 16 | (uint32_t)texel[1] << 8 | (uint32_t)texel[2];
                 break;
             }
-            default: shade_pixel(d, index, 0, p, u, v, 0);
+            default:
+                if (d->depth_test && shape->depth >= depth_buffer[index])
+                    break; /* hidden behind something already drawn */
+                shade_pixel(d, index, shape->depth, p, u, v, 0);
             }
         }
     }
@@ -1606,7 +1616,7 @@ static void triangle(uint32_t a, uint32_t b, uint32_t c) {
     }
     for (int i = 1; i + 1 < count; i++) {
         Shape *shape = new_shape(TRIANGLE);
-        capture_state(&shape->state, rsp.texture_tile, 1);
+        capture_state(&shape->state, rsp.texture_tile, TRIANGLE_DEPTH);
         if (rsp.clip_ratio == 1 && rsp.viewport_scale[0] * 2 / hires_x < SCREEN_W - 2) {
             /* A view smaller than the screen that nothing may leave: keep
              * this shape inside it. (A full-screen view is left alone, so
@@ -1682,8 +1692,9 @@ static void command_fill_rectangle(uint32_t w0, uint32_t w1) {
                 rdp.env[0], rdp.env[1], rdp.env[2], rdp.env[3], rdp.other_mode_h, rdp.other_mode_l);
     /* The game "draws" into its depth buffer to reset it each frame. */
     Shape *shape = new_shape(rdp.color_image == rdp.depth_image ? DEPTH_CLEAR : fill ? FILL : COMBINED_RECTANGLE);
-    capture_state(&shape->state, 0, 0);
+    capture_state(&shape->state, 0, NO_DEPTH);
     shape->state.use_texture = 0, shape->state.use_fog = 0;
+    shape->depth = 0;
     shape->x0 = wide_x(left), shape->y0 = unit_y(top);
     shape->x1 = wide_x(right), shape->y1 = unit_y(bottom);
     int c[4];
@@ -1700,7 +1711,13 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
         return;
     gfx_rectangle_count++;
     Shape *shape = new_shape(copy ? COPY_RECTANGLE : TEXTURE_RECTANGLE);
-    capture_state(&shape->state, (int)((w1 >> 24) & 7), 0);
+    /* Duke Nukem 64 draws the things lying about its levels (ammunition,
+     * health) as rectangles, each with one depth the game works out, and
+     * relies on walls nearer than that hiding them. We used to draw every
+     * rectangle over everything, so they showed through walls. (Copy mode
+     * knows nothing of depth.) */
+    capture_state(&shape->state, (int)((w1 >> 24) & 7), copy ? NO_DEPTH : RECTANGLE_DEPTH);
+    shape->depth = rdp.prim_depth;
     if (find_loaded(shape->state.tile.tmem) == NULL) {
         if (getenv("SHOW_RECTANGLES")) /* for testing */
             fprintf(stderr, "rect x %d..%d y %d..%d left out: nothing loaded at %d in texture memory\n", left / 4, right / 4,

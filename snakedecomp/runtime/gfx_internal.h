@@ -55,6 +55,7 @@ typedef struct {
     int x0, y0, x1, y1;       /* rectangles, in output pixels */
     uint32_t color;           /* FILL */
     float left, top, s, t, ds, dt; /* textured rectangles */
+    float depth;              /* rectangles that are hidden by nearer things: see command_texture_rectangle */
     int flip;
 } Shape;
 

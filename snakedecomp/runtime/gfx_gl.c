@@ -400,7 +400,7 @@ static void draw(const Shape *shapes, int count, int width, int height, int scal
                 float px = (float)xs[corners[k][0]], py = (float)ys[corners[k][1]];
                 float across = px / (float)scale - s->left, down = py / (float)scale - s->top;
                 float u = s->s + (s->flip ? down : across) * s->ds, v = s->t + (s->flip ? across : down) * s->dt;
-                push_vertex(px / (float)width * 2 - 1, 1 - py / (float)height * 2, 0, 1, color,
+                push_vertex(px / (float)width * 2 - 1, 1 - py / (float)height * 2, s->depth * 2 - 1, 1, color,
                             (u - (float)d->tile.uls / 4) / (float)texture_w,
                             (v - (float)d->tile.ult / 4) / (float)texture_h, 0);
             }

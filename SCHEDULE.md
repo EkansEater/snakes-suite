@@ -92,6 +92,11 @@ below). Cause A turned out to be three different things, none of them
 | Shade on rectangles | Flat pictures were mixed with full white light where the console uses none | Duke Nukem 64 (white menus, HUD and weapon) |
 | Light colours | A light's colour set by a single number was ignored | F-1 World Grand Prix (race washed red). Also changes Duke Nukem: Zero Hour, which lights every object this way: it is darker now. To be confirmed by eye |
 
+| Fixed 2026-10-13 | What it was | Games it cured |
+|---|---|---|
+| Volume jump | A note told to jump straight to its volume is given the largest glide speed there is, and our sum overflowed: one sample in every eight was a loud click, a robotic buzz over everything | Chameleon Twist, Duke Nukem 64 (the check now listens for this in every game; no other has it) |
+| Depth of rectangles | A flat rectangle can be given a depth and be hidden by nearer things; we drew every rectangle on top | Duke Nukem 64 (pickups showed through walls) |
+
 Still to do in batch 2: Rampage World Tour and WCW Nitro (180 pictures a
 second) and Resident Evil 2 (120) are still too fast, so they have a fourth
 cause; Quest 64's pink text boxes; WCW Nitro's skipped drawing commands.

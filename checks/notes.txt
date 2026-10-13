@@ -35,3 +35,5 @@ NDZ played bad 2026-10-12 Smooth motion on: glitches in the cutscenes and a few 
 NDZ played good 2026-10-12 Opening cutscenes and the first level look perfect with smooth motion and widescreen on
 NCT played good 2026-10-12 A level played at the right speed with sound; fine apart from some HUD glitches, not yet pinned down (the hearts and crown count slide in and out by the game's own doing)
 NCT played bad 2026-10-12 Plays at the right speed with sound. With smooth motion on, the hearts and crown count flickered and jittered; fixed since, not yet played again
+NCT played bad 2026-10-13 Looks better. Sound was harsh and robotic (a buzz over the music); fixed since, not yet played again
+NDN played bad 2026-10-13 Looks better: right speed, menus, HUD and weapon. Sound was harsh and robotic, and pickups showed through walls; both fixed since, not yet played again
