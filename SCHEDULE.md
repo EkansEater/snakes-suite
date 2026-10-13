@@ -102,7 +102,17 @@ below). Cause A turned out to be three different things, none of them
 Still to do in batch 2: WCW Nitro at 120 pictures a second (on the console
 the time drawing took held it back; whether the game itself is too fast at
 120 needs playing to tell) and its skipped drawing commands; Quest 64's
-pink text boxes. Rampage: World Tour is played and good. Resident Evil 2 (120)
+pink text boxes.
+
+Rampage: World Tour plays right, but its title screens are silent and
+should have sound (found by play-testing, 2026-10-13). What is known: the
+game does play notes there, about one every half second for five seconds,
+but asks for them at a volume of 120 where its sound effects in play ask
+for 2,000 to 8,700, and then stops. It is the same whenever the buttons are
+pressed, so it is not a matter of timing at start-up, and the library's own
+start-up (OS_INIT, VI_INIT) makes no difference. Not yet known: why the
+game asks for so little. `SHOW_VOLUMES=1` prints the volume each note is
+told to reach. Resident Evil 2 (120)
 is batch 5. Chameleon Twist and Duke Nukem 64 are played and good.
 
 **Found by play-testing, for their own batches:**

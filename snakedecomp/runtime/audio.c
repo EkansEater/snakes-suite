@@ -452,6 +452,8 @@ void audio_run(uint32_t commands, uint32_t size, uint32_t chip_data, uint32_t ch
             } else if (flags & FLAG_VOLUME) {
                 state.volume[channel] = value;
             } else {
+                if (getenv("SHOW_VOLUMES")) /* for testing: the volume each note is told to reach, and how fast */
+                    fprintf(stderr, "volume list %ld: target %d rate %08X\n", list_number, value, (uint32_t)w1);
                 state.target[channel] = value;
                 state.rate[channel] = (int32_t)((uint32_t)(uint16_t)high << 16 | (uint16_t)low);
             }

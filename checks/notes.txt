@@ -41,3 +41,4 @@ NCT played good 2026-10-13 Plays at the right speed, looks better, and the sound
 NDN played bad 2026-10-13 Sound good. Pickups no longer show through walls as before, but some still leaked at the edge of a wall; their depth was a little too near, fixed since, not yet played again
 NDN played good 2026-10-13 Playable: right speed, sound good, and pickups no longer show through walls or leak at wall edges
 NRP played good 2026-10-13 Working: right speed and sound, no issues seen
+NRP played bad 2026-10-13 Plays right with sound, but the intro scene is silent and should have sound
