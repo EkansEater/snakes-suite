@@ -121,6 +121,6 @@ is batch 5. Chameleon Twist and Duke Nukem 64 are played and good.
 |---|---|---|
 | Army Men: Sarge's Heroes | 3 | Reaches the main menu, then stops: bad memory access; another time, a read past the end of the ROM |
 | Army Men: Sarge's Heroes 2 | 3 | Stops at the Controller Pak question: calls an address that is not code |
-| F-1 World Grand Prix | 4 | Sound choppy: it makes 7% too little, and a large part of its code is interpreted rather than translated, which is slow |
+| F-1 World Grand Prix | 4 | Sound choppy: it makes 7% too little, and a large part of its code is interpreted rather than translated, which is slow. Played 2026-10-13 with smooth motion on: the car's wheels were squashed or out of place in every in-between picture (fixed the same day: see-through only where the game asks for mixing, big turns not blended, lone matrices paired by their place in the list). Still open: pale see-through boxes around distant buildings |
 | Cruis'n Exotica | 4 | Gets into a race with garbage textures, then stops itself (break) |
 | Cruis'n USA | 7 | One picture (the copyright screen), then nothing |

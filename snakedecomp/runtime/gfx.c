@@ -522,6 +522,14 @@ static int invert(float out[4][4], float m[4][4]) {
 /* projection: for the camera's lens rather than for placing things.
  * load: replace the current matrix rather than combine with it.
  * push: keep a copy of the current one first, to come back to. */
+/* How much room a shape takes up after this matrix, compared with before
+ * (its determinant, leaving out the part that moves things). Negative for
+ * a matrix that turns shapes inside out. */
+static float size_of(float m[4][4]) {
+    return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+           m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+}
+
 static void command_matrix(int projection, int load, int push, uint32_t w1) {
     float m[4][4], exact[4][4];
     load_matrix(segmented(w1), m);
@@ -597,6 +605,22 @@ static void command_matrix(int projection, int load, int push, uint32_t w1) {
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 4; j++)
                     m[i][j] = best[i][j] + (m[i][j] - best[i][j]) * blend;
+            /* Blending number by number is only right for a small turn.
+             * Halfway between two positions of something that has turned a
+             * long way, it gives a shape squashed flat: F-1 World Grand
+             * Prix's wheels turn about 107 degrees a frame at speed, and
+             * every in-between picture drew them as thin slivers. A matrix
+             * that squashes shows it in its "size" (how much room a shape
+             * takes up after it), so where blending has lost a good part of
+             * that, the turn is too big to blend: keep this frame's turn
+             * and blend only where the thing is. */
+            if (!projection) {
+                float size_before = size_of(best), size_now = size_of(exact), size_blended = size_of(m);
+                if (size_before * size_now > 0 && fabsf(size_blended) < 0.8f * fminf(fabsf(size_before), fabsf(size_now)))
+                    for (int i = 0; i < 3; i++)
+                        for (int j = 0; j < 3; j++)
+                            m[i][j] = exact[i][j];
+            }
         }
     }
     matrix_index++;
@@ -696,7 +720,14 @@ static void command_vertices(uint32_t w0, uint32_t w1) {
      * piece of wall coming into view was then paired with some other piece
      * nearby and drawn stretched halfway to it, across doorways.) */
     int decal = ((rdp.other_mode_l >> 10) & 3) == 3;
-    int see_through = (rdp.other_mode_l & (CYCLE_TYPE == CYCLE_2 ? 0x10000 : 0x40000)) == 0;
+    /* (And only where the game asks outright for mixing, "force blend":
+     * without that a shape is solid whatever those settings say. F-1 World
+     * Grand Prix's cars read as see-through by the settings alone, and
+     * their wheels, which turn about 107 degrees a frame at speed, were
+     * drawn corner by corner halfway between two positions that far
+     * apart: thin slivers in every in-between picture.) */
+    int see_through = (rdp.other_mode_l & (CYCLE_TYPE == CYCLE_2 ? 0x10000 : 0x40000)) == 0 &&
+                      (rdp.other_mode_l & 0x4000) != 0;
     float to_world[4][4], world_to_screen[4][4];
     /* Most games put the camera into the position matrix, so removing it
      * gives the world. A few (Wave Race 64) put it into the lens instead:
@@ -2222,6 +2253,15 @@ static void run_list(uint32_t address) {
  * Games that keep each matrix at the same place in memory from frame to
  * frame are left alone as well: there the place says which is which (see
  * command_matrix). */
+/* How unlikely it is that this frame's matrix "now" is last frame's matrix
+ * "before": how far apart they are, and a great deal if they are not even
+ * of the same kind. */
+static float pair_cost(int now, int before) {
+    float (*a)[4] = current_matrices[now], (*b)[4] = previous_matrices[before];
+    float distance = fabsf(a[3][0] - b[3][0]) + fabsf(a[3][1] - b[3][1]) + fabsf(a[3][2] - b[3][2]);
+    return (distance < 300 ? distance : 300) + (current_kinds[now] != previous_kinds[before] ? 1000 : 0);
+}
+
 static void pair_figures(void) {
     static int starts[2][MAX_MATRICES], lengths[2][MAX_MATRICES], used[MAX_MATRICES];
     int counts[2] = {0, 0}, total[2] = {previous_matrix_count, matrix_index}, same_place = 0;
@@ -2265,6 +2305,58 @@ static void pair_figures(void) {
             used[best] = 1;
         for (int k = 0; k < length; k++)
             paired_with[start + k] = best >= 0 ? starts[0][best] + k : PAIR_NONE;
+    }
+    /* What is left are matrices that stand alone, one to a thing. Looks
+     * deceive here too: of two wheels on one car, each turning a long way
+     * every frame, the one that happens to be turned most like this wheel
+     * was last frame is often the other wheel, and in F-1 World Grand
+     * Prix every in-between picture drew the wheels partway toward each
+     * other. But where a frame's list of matrices runs the same as the
+     * last one's, of the same kinds in the same order, the game has walked
+     * the same scene the same way, and each matrix's counterpart is simply
+     * the one in the same place in the list.
+     *
+     * Something coming into view or leaving it adds or removes a few
+     * matrices at one point in the list. Before that point counterparts
+     * are in the same place; after it they are that many places along.
+     * The point is found by trying each one and keeping the one that
+     * leaves everything nearest to where it was.
+     *
+     * (Unless the one in the same place is much further off than something
+     * else nearby in the list: a game that sorts what it draws by distance
+     * changes the order without changing the list's shape.) */
+    static float cost_before[MAX_MATRICES + 1], cost_after[MAX_MATRICES + 1];
+    int added = matrix_index - previous_matrix_count; /* (negative: removed) */
+    if (added > 16 || added < -16)
+        return;
+    cost_before[0] = 0; /* cost_before[k]: the first k, each against the one in the same place */
+    for (int i = 0; i < matrix_index; i++)
+        cost_before[i + 1] = cost_before[i] + (i < previous_matrix_count ? pair_cost(i, i) : 1000);
+    cost_after[matrix_index] = 0; /* cost_after[k]: from k on, each against the one "added" places back */
+    for (int i = matrix_index - 1; i >= 0; i--)
+        cost_after[i] = cost_after[i + 1] + (i - added >= 0 && i - added < previous_matrix_count ? pair_cost(i, i - added) : 1000);
+    int point = 0, skipped = added > 0 ? added : 0; /* the new matrices themselves have no counterpart */
+    for (int k = 0; k + skipped <= matrix_index; k++)
+        if (cost_before[k] + cost_after[k + skipped] < cost_before[point] + cost_after[point + skipped])
+            point = k;
+    for (int i = 0; i < matrix_index; i++) {
+        int same_place = i < point ? i : i >= point + skipped ? i - added : -1;
+        if (paired_with[i] != PAIR_BY_LOOKS || same_place < 0 || same_place >= previous_matrix_count ||
+            current_kinds[i] != previous_kinds[same_place])
+            continue;
+        float here = 0, nearest = 1e30f;
+        for (int j = same_place - 8; j <= same_place + 8; j++) {
+            if (j < 0 || j >= previous_matrix_count)
+                continue;
+            float (*a)[4] = current_matrices[i], (*b)[4] = previous_matrices[j];
+            float distance = fabsf(a[3][0] - b[3][0]) + fabsf(a[3][1] - b[3][1]) + fabsf(a[3][2] - b[3][2]);
+            if (j == same_place)
+                here = distance;
+            else if (distance < nearest)
+                nearest = distance;
+        }
+        if (here <= nearest + 8)
+            paired_with[i] = same_place;
     }
 }
 

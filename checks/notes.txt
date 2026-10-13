@@ -42,3 +42,4 @@ NDN played bad 2026-10-13 Sound good. Pickups no longer show through walls as be
 NDN played good 2026-10-13 Playable: right speed, sound good, and pickups no longer show through walls or leak at wall edges
 NRP played good 2026-10-13 Working: right speed and sound, no issues seen
 NRP played bad 2026-10-13 Plays right with sound, but the intro scene is silent and should have sound
+NFW played bad 2026-10-13 With smooth motion on, the car and its wheels glitched while driving (fixed since, not yet played again). Distant buildings have pale see-through boxes around them, driving or not

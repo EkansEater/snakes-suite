@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-13 16:18. 7 Ready, 13 In Progress, 2 Untested, 10 Broken.
+Last written 2026-10-13 17:03. 7 Ready, 13 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -36,7 +36,7 @@ decompilation project's list of function names is in `symbols/`.
 | Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Reaches the main menu, then crashes before play (bad memory access; a second try read past the end of the ROM). Visual glitches on the way | 2026-10-13 |
 | Army Men: Sarge's Heroes 2 | In Progress | ok | **stuck: the last 10 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game | 2026-10-13 |
 | Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  | bad, 2026-10-11: Shows only the copyright screen, then nothing; had to be closed by hand | 2026-10-13 |
-| F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 21154 a second, wants 22050 (-5%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-13 |
+| F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 21154 a second, wants 22050 (-5%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-13: With smooth motion on, the car and its wheels glitched while driving (fixed since, not yet played again). Distant buildings have pale see-through boxes around them, driving or not | 2026-10-13 |
 | Jet Force Gemini | In Progress | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-13 |
 | Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-13 |
 | Pokemon Stadium | In Progress | ok | **The screen went blank at 0:14 (frame 840) and stayed blank until the run ended** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Corrupt textures (seen in an earlier survey) |  | 2026-10-13 |

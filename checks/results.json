@@ -226,7 +226,7 @@
   "code": "NDNE",
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 10 of 19 seconds (worst 66%)"
+   "It ran slowly: under 90% speed for 34 of 41 seconds (worst 56%)"
   ],
   "frames": 3600,
   "heard": {
@@ -454,7 +454,8 @@
   "file": "F-1 World Grand Prix (U) [!].zip",
   "findings": [
    "5656 drawing commands were skipped because we do not handle them",
-   "The game sends 21154 samples of sound a second but asked to play 22050"
+   "The game sends 21154 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 5 of 12 seconds (worst 11%)"
   ],
   "frames": 3600,
   "heard": {
@@ -794,7 +795,7 @@
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
    "The game's sound program made 17316 samples a second but 21022 reached the sound chip",
    "The game sends 21022 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 12%)"
+   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 11%)"
   ],
   "frames": 3600,
   "heard": {
@@ -913,7 +914,7 @@
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 9 of 20 seconds (worst 51%)"
+   "It ran slowly: under 90% speed for 33 of 35 seconds (worst 43%)"
   ],
   "frames": 3600,
   "heard": {
@@ -987,7 +988,7 @@
   "code": "NSME",
   "file": "sm64.us.z64",
   "findings": [
-   "It ran slowly: under 90% speed for 6 of 20 seconds (worst 76%)"
+   "It ran slowly: under 90% speed for 10 of 21 seconds (worst 81%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1065,7 +1066,7 @@
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
    "60662 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 36 of 38 seconds (worst 32%)"
+   "It ran slowly: under 90% speed for 36 of 38 seconds (worst 25%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1104,7 +1105,7 @@
   "file": "WCW vs. nWo - World Tour (U) (V1.1) [!].zip",
   "findings": [
    "16004 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 22%)"
+   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 21%)"
   ],
   "frames": 3600,
   "heard": {
