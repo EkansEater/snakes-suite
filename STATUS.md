@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-13 13:55. 6 Ready, 14 In Progress, 2 Untested, 10 Broken.
+Last written 2026-10-13 14:05. 6 Ready, 14 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -36,16 +36,16 @@ decompilation project's list of function names is in `symbols/`.
 | Army Men: Sarge's Heroes 2 | In Progress | ok | **stuck: the last 10 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game | 2026-10-13 |
 | Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  | bad, 2026-10-11: Shows only the copyright screen, then nothing; had to be closed by hand | 2026-10-13 |
 | Duke Nukem 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | bad, 2026-10-13: Looks better: right speed, menus, HUD and weapon. Sound was harsh and robotic, and pickups showed through walls; both fixed since, not yet played again | 2026-10-13 |
-| F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 19621 a second, wants 22050 (-12%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-13 |
+| F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 19615 a second, wants 22050 (-12%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-13 |
 | Jet Force Gemini | In Progress | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-13 |
 | Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-13 |
 | Pokemon Stadium | In Progress | ok | **The screen went blank at 0:14 (frame 840) and stayed blank until the run ended** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Corrupt textures (seen in an earlier survey) |  | 2026-10-13 |
 | Quest 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: Pink boxes behind text (seen in an earlier survey) |  | 2026-10-13 |
-| Rampage: World Tour | In Progress | ok | ok | **sends 18792 a second, wants 32000 (-42%)** | 180 **too fast** |  |  |  |  | 2026-10-13 |
+| Rampage: World Tour | In Progress | ok | ok | **sends 18734 a second, wants 32000 (-42%)** | 60 |  |  |  |  | 2026-10-13 |
 | Resident Evil 2 | In Progress | ok | **The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.0** | **its sound lists produce nothing; sends 11468 a second, wants 22050 (-48%); recording is silent** | 120 **too fast** |  |  | bad, 2026-10-10: Only ever shows "No Controller" |  | 2026-10-13 |
 | Road Rash 64 | In Progress | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-13 |
-| WCW Nitro | In Progress | ok | **47290 drawing commands were skipped because we do not handle them** | ok | 180 **too fast** |  |  |  |  | 2026-10-13 |
-| WCW vs. nWo: World Tour | In Progress | ok | **16004 drawing commands were skipped because we do not handle them** | **sends 21182 a second, wants 22050 (-4%)** | 30 |  |  |  |  | 2026-10-13 |
+| WCW Nitro | In Progress | ok | **60662 drawing commands were skipped because we do not handle them** | ok | 120 **too fast** |  |  |  |  | 2026-10-13 |
+| WCW vs. nWo: World Tour | In Progress | ok | **16004 drawing commands were skipped because we do not handle them** | ok | 30 |  |  |  |  | 2026-10-13 |
 | Dr. Mario 64 | Untested | ok | ok | ok | 60 |  |  |  |  | 2026-10-13 |
 | Rampage 2: Universal Tour | Untested | ok | ok | ok | 60 |  |  |  |  | 2026-10-13 |
 | 007: The World Is Not Enough | Broken | **stops at 0:47: bad memory access at 0x00000000** | ok | **its sound lists produce nothing; sends 11487 a second, wants 22050 (-48%); recording is silent** | 30 |  |  |  |  | 2026-10-13 |

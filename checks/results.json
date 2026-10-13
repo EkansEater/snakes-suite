@@ -10,6 +10,7 @@
    "clipped": 0.0,
    "noise": 0.004,
    "quiet": 0.355,
+   "ripple": 1.01,
    "seconds": 59.4
   },
   "pace": 60,
@@ -45,6 +46,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 58.9
   },
   "pace": 60,
@@ -84,6 +86,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 27.7
   },
   "pace": 40,
@@ -119,6 +122,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 59.1
   },
   "pace": 60,
@@ -154,6 +158,7 @@
    "clipped": 0.0,
    "noise": 0.001,
    "quiet": 0.173,
+   "ripple": 1.04,
    "seconds": 59.3
   },
   "pace": 30,
@@ -191,6 +196,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 59.2
   },
   "pace": 0,
@@ -221,13 +227,14 @@
   "code": "NDNE",
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 38 of 42 seconds (worst 28%)"
+   "It ran slowly: under 90% speed for 16 of 25 seconds (worst 64%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0009,
    "noise": 0.001,
    "quiet": 0.619,
+   "ripple": 1.01,
    "seconds": 59.3
   },
   "pace": 30,
@@ -266,6 +273,7 @@
    "clipped": 0.0,
    "noise": 0.005,
    "quiet": 0.153,
+   "ripple": 1.01,
    "seconds": 59.9
   },
   "pace": 5,
@@ -295,14 +303,13 @@
   "checked": "2026-10-13",
   "code": "NDZE",
   "file": "Duke Nukem - ZER0 H0UR (U) [!].zip",
-  "findings": [
-   "It ran slowly: under 90% speed for 25 of 36 seconds (worst 47%)"
-  ],
+  "findings": [],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.004,
    "quiet": 0.273,
+   "ripple": 1.01,
    "seconds": 59.9
   },
   "pace": 30,
@@ -341,6 +348,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 0.6
   },
   "pace": 1,
@@ -374,8 +382,9 @@
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
-   "noise": 0.0,
-   "quiet": 0.247,
+   "noise": 0.001,
+   "quiet": 0.279,
+   "ripple": 1.04,
    "seconds": 59.5
   },
   "pace": 30,
@@ -384,10 +393,10 @@
   "runs": "ok",
   "script": false,
   "seen": {
-   "different": 12,
-   "lit": 13,
+   "different": 11,
+   "lit": 12,
    "same at end": 1,
-   "shots": 13
+   "shots": 12
   },
   "sheet": "build/check/Quest 64 (U) [!]/sheet.png",
   "sound": "ok",
@@ -407,13 +416,14 @@
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 13%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 16%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 60.0
   },
   "pace": 30,
@@ -445,14 +455,14 @@
   "file": "F-1 World Grand Prix (U) [!].zip",
   "findings": [
    "5656 drawing commands were skipped because we do not handle them",
-   "The game sends 19621 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 17 of 23 seconds (worst 20%)"
+   "The game sends 19615 samples of sound a second but asked to play 22050"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.001,
    "quiet": 0.168,
+   "ripple": 1.01,
    "seconds": 53.4
   },
   "pace": 30,
@@ -467,11 +477,11 @@
    "shots": 12
   },
   "sheet": "build/check/F-1 World Grand Prix (U) [!]/sheet.png",
-  "sound": "sends 19621 a second, wants 22050 (-12%)",
+  "sound": "sends 19615 a second, wants 22050 (-12%)",
   "sound numbers": {
-   "made": 19645,
+   "made": 19639,
    "refused": 0,
-   "sent": 19621,
+   "sent": 19615,
    "unknown": 0,
    "wants": 22050
   },
@@ -488,6 +498,7 @@
    "clipped": 0.0,
    "noise": 0.004,
    "quiet": 0.162,
+   "ripple": 1.01,
    "seconds": 60.0
   },
   "pace": 30,
@@ -527,6 +538,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 59.4
   },
   "pace": 30,
@@ -562,6 +574,7 @@
    "clipped": 0.0,
    "noise": 0.006,
    "quiet": 0.118,
+   "ripple": 1.02,
    "seconds": 59.8
   },
   "pace": 30,
@@ -601,6 +614,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 30.2
   },
   "pace": 30,
@@ -631,13 +645,14 @@
   "code": "NN6E",
   "file": "Dr. Mario 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 9%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 11%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.003,
    "quiet": 0.098,
+   "ripple": 1.01,
    "seconds": 59.8
   },
   "pace": 60,
@@ -676,6 +691,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 24.7
   },
   "pace": 30,
@@ -713,6 +729,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 59.5
   },
   "pace": 0,
@@ -744,6 +761,7 @@
    "clipped": 0.0,
    "noise": 0.013,
    "quiet": 0.907,
+   "ripple": 1.03,
    "seconds": 60.0
   },
   "pace": 60,
@@ -777,13 +795,14 @@
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
    "The game's sound program made 17143 samples a second but 20812 reached the sound chip",
    "The game sends 20812 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 12%)"
+   "It ran slowly: under 90% speed for 10 of 11 seconds (worst 12%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.042,
    "quiet": 0.787,
+   "ripple": 1.01,
    "seconds": 56.6
   },
   "pace": 47,
@@ -816,13 +835,14 @@
   "findings": [
    "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
    "102 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 23%)"
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 17%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 59.9
   },
   "pace": 30,
@@ -863,6 +883,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 31.2
   },
   "pace": 120,
@@ -893,13 +914,14 @@
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 25 of 34 seconds (worst 45%)"
+   "It ran slowly: under 90% speed for 12 of 27 seconds (worst 47%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 59.9
   },
   "pace": 60,
@@ -930,18 +952,18 @@
   "code": "NRPE",
   "file": "Rampage - World Tour (U) [!].zip",
   "findings": [
-   "The game sends 18792 samples of sound a second but asked to play 32000",
-   "It ran slowly: under 90% speed for 21 of 28 seconds (worst 60%)"
+   "The game sends 18734 samples of sound a second but asked to play 32000"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.002,
-   "quiet": 0.129,
-   "seconds": 35.2
+   "quiet": 0.122,
+   "ripple": 1.0,
+   "seconds": 35.1
   },
-  "pace": 180,
-  "pace verdict": "too fast",
+  "pace": 60,
+  "pace verdict": "ok",
   "picture": "ok",
   "runs": "ok",
   "script": false,
@@ -952,11 +974,11 @@
    "shots": 13
   },
   "sheet": "build/check/Rampage - World Tour (U) [!]/sheet.png",
-  "sound": "sends 18792 a second, wants 32000 (-42%)",
+  "sound": "sends 18734 a second, wants 32000 (-42%)",
   "sound numbers": {
-   "made": 18798,
+   "made": 18740,
    "refused": 0,
-   "sent": 18792,
+   "sent": 18734,
    "unknown": 0,
    "wants": 32000
   },
@@ -973,6 +995,7 @@
    "clipped": 0.0,
    "noise": 0.002,
    "quiet": 0.147,
+   "ripple": 1.0,
    "seconds": 59.6
   },
   "pace": 30,
@@ -1004,13 +1027,14 @@
   "file": "NFL Blitz - Special Edition (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 14%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 15%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 60.0
   },
   "pace": 30,
@@ -1041,24 +1065,25 @@
   "code": "NW3E",
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
-   "47290 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 42 of 44 seconds (worst 16%)"
+   "60662 drawing commands were skipped because we do not handle them",
+   "It ran slowly: under 90% speed for 35 of 38 seconds (worst 27%)"
   ],
   "frames": 3600,
   "heard": {
-   "clipped": 0.0,
-   "noise": 0.006,
-   "quiet": 0.432,
+   "clipped": 0.0001,
+   "noise": 0.005,
+   "quiet": 0.427,
+   "ripple": 1.01,
    "seconds": 59.4
   },
-  "pace": 180,
+  "pace": 120,
   "pace verdict": "too fast",
-  "picture": "47290 drawing commands were skipped because we do not handle them",
+  "picture": "60662 drawing commands were skipped because we do not handle them",
   "runs": "ok",
   "script": false,
   "seen": {
-   "different": 10,
-   "lit": 9,
+   "different": 8,
+   "lit": 7,
    "same at end": 1,
    "shots": 13
   },
@@ -1080,15 +1105,15 @@
   "file": "WCW vs. nWo - World Tour (U) (V1.1) [!].zip",
   "findings": [
    "16004 drawing commands were skipped because we do not handle them",
-   "The game sends 21182 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 18%)"
+   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 21%)"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.004,
-   "quiet": 0.8,
-   "seconds": 57.6
+   "quiet": 0.805,
+   "ripple": 1.05,
+   "seconds": 60.0
   },
   "pace": 30,
   "pace verdict": "ok",
@@ -1102,11 +1127,11 @@
    "shots": 12
   },
   "sheet": "build/check/WCW vs. nWo - World Tour (U) (V1.1) [!]/sheet.png",
-  "sound": "sends 21182 a second, wants 22050 (-4%)",
+  "sound": "ok",
   "sound numbers": {
-   "made": 21182,
+   "made": 22040,
    "refused": 0,
-   "sent": 21182,
+   "sent": 22040,
    "unknown": 0,
    "wants": 22050
   },
@@ -1123,6 +1148,7 @@
    "clipped": 0.0,
    "noise": 0.014,
    "quiet": 0.088,
+   "ripple": 1.0,
    "seconds": 59.9
   },
   "pace": 20,
@@ -1162,6 +1188,7 @@
    "clipped": 0.0,
    "noise": 0.0,
    "quiet": 1.0,
+   "ripple": 1.0,
    "seconds": 39.1
   },
   "pace": 30,

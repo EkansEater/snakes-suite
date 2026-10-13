@@ -422,6 +422,12 @@ void hle_osInitialize(Context *ctx) {
  * and tick the "screen refreshed" event 60 times a (virtual) second. */
 
 static uint32_t vi_queue, vi_message, framebuffer;
+/* The picture that was on screen at the last refresh. A picture the game
+ * hands over is not shown at once: it waits for the next refresh, and
+ * until then the old one is still "the current picture". (0: not yet
+ * known, as after loading a saved state; then it is the newest.) */
+static uint32_t framebuffer_shown;
+static void note_next_picture(uint32_t address); /* further down */
 static int vi_every = 1, vi_since; /* the game is told of every Nth refresh; refreshes since it last was */
 static long frames;
 static long max_frames = -1; /* stop after this many (--frames), for testing */
@@ -479,19 +485,47 @@ void hle_osViSwapBuffer(Context *ctx) {
     framebuffer = ARG0;
     if (video_records)
         RUN_ORIGINAL(osViSwapBuffer);
+    else
+        note_next_picture(ARG0);
 }
 /* What the console does to the two records at each refresh, as far as it
  * matters: the picture that was "next" (at +4) is now the one showing. */
-static void swap_video_records(void) {
+/* Where the library keeps its two records, if this game's copy of it was
+ * found and the pointers in it make sense. */
+static int video_record_addresses(uint32_t *showing, uint32_t *next) {
 #if defined(ADDR___osViCurr) && defined(ADDR___osViNext)
-    if (video_records) {
-        uint32_t showing = g32(ADDR___osViCurr), next = g32(ADDR___osViNext);
-        if (showing >= 0x80000000u && showing < 0x80800000u - 8 && next >= 0x80000000u && next < 0x80800000u - 8)
-            w32(showing + 4, g32(next + 4));
-    }
+    *showing = g32(ADDR___osViCurr), *next = g32(ADDR___osViNext);
+    return *showing >= 0x80000000u && *showing < 0x80800000u - 8 && *next >= 0x80000000u && *next < 0x80800000u - 8;
+#else
+    (void)showing, (void)next;
+    return 0;
 #endif
 }
-void hle_osViGetCurrentFramebuffer(Context *ctx) { RETURN(framebuffer); }
+
+/* The game has handed over a picture to show from the next refresh on.
+ * Write it into the library's "next" record ourselves: the library's own
+ * "which picture is on screen?" and "which is next?" functions read these
+ * records, and where we did not recognise those functions the game's own
+ * copies run.
+ *
+ * Rampage: World Tour and WCW Nitro never wait for the refresh. They draw
+ * into whichever of their three pictures is neither on screen nor next,
+ * and wait only when there is none. The records never changed, so there
+ * always was one, and they drew three pictures every refresh. */
+static void note_next_picture(uint32_t address) {
+    uint32_t showing, next;
+    if (video_record_addresses(&showing, &next))
+        w32(next + 4, address);
+}
+
+/* At each refresh the picture that was "next" becomes the one on screen. */
+static void swap_video_records(void) {
+    uint32_t showing, next;
+    if (video_record_addresses(&showing, &next))
+        w32(showing + 4, g32(next + 4));
+    framebuffer_shown = framebuffer;
+}
+void hle_osViGetCurrentFramebuffer(Context *ctx) { RETURN(framebuffer_shown ? framebuffer_shown : framebuffer); }
 void hle_osViGetNextFramebuffer(Context *ctx) { RETURN(framebuffer); }
 
 /* One screen refresh: 1/60 of a second of console time passes. */

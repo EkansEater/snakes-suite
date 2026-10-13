@@ -96,11 +96,14 @@ below). Cause A turned out to be three different things, none of them
 |---|---|---|
 | Volume jump | A note told to jump straight to its volume is given the largest glide speed there is, and our sum overflowed: one sample in every eight was a loud click, a robotic buzz over everything | Chameleon Twist, Duke Nukem 64 (the check now listens for this in every game; no other has it) |
 | Depth of rectangles | A flat rectangle can be given a depth and be hidden by nearer things; we drew every rectangle on top | Duke Nukem 64 (pickups showed through walls) |
+| Picture records | Some games never wait for the refresh: they draw into whichever of their pictures is neither on screen nor next, and wait only when none is free. The library's records of "on screen" and "next" never changed, so one always was | Rampage: World Tour (180 to 60 pictures a second), WCW Nitro (180 to 120), WCW vs. nWo (sound was 4% short, now in balance) |
 
-Still to do in batch 2: Rampage World Tour and WCW Nitro (180 pictures a
-second) and Resident Evil 2 (120) are still too fast, so they have a fourth
-cause; Quest 64's pink text boxes; WCW Nitro's skipped drawing commands.
-Chameleon Twist and Duke Nukem 64 need playing again.
+Still to do in batch 2: WCW Nitro at 120 pictures a second (on the console
+the time drawing took held it back; whether the game itself is too fast at
+120 needs playing to tell) and its skipped drawing commands; Rampage: World
+Tour's sound (42% short); Quest 64's pink text boxes. Resident Evil 2 (120)
+is batch 5. Chameleon Twist is played and good; Duke Nukem 64's sound is
+good, and its pickups fix needs a look.
 
 **Found by play-testing, for their own batches:**
 
