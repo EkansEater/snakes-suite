@@ -27,9 +27,9 @@
   "sheet": "build/check/Rampage 2 - Universal Tour (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 21830,
+   "made": 22051,
    "refused": 0,
-   "sent": 21830,
+   "sent": 22051,
    "unknown": 0,
    "wants": 22050
   },
@@ -65,7 +65,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 21659,
+   "sent": 22058,
    "unknown": 0,
    "wants": 22050
   },
@@ -78,8 +78,7 @@
   "file": "Army Men - Air Combat (U) [!].zip",
   "findings": [
    "The game stopped by itself: bad memory access at 0x0000000C",
-   "The screen went blank at 0:08 (frame 480) for 10 seconds",
-   "The game sends 21347 samples of sound a second but asked to play 22050"
+   "The screen went blank at 0:08 (frame 480) for 10 seconds"
   ],
   "frames": 1718,
   "heard": {
@@ -101,11 +100,11 @@
    "shots": 6
   },
   "sheet": "build/check/Army Men - Air Combat (U) [!]/sheet.png",
-  "sound": "its sound lists produce nothing; sends 21347 a second, wants 22050 (-4%); recording is silent",
+  "sound": "its sound lists produce nothing; recording is silent",
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 21347,
+   "sent": 22066,
    "unknown": 0,
    "wants": 22050
   },
@@ -141,7 +140,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 21733,
+   "sent": 22058,
    "unknown": 0,
    "wants": 22050
   },
@@ -175,9 +174,9 @@
   "sheet": "build/check/Chameleon Twist (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 43661,
+   "made": 44115,
    "refused": 0,
-   "sent": 43637,
+   "sent": 44090,
    "unknown": 0,
    "wants": 44100
   },
@@ -213,9 +212,9 @@
   "sheet": "build/check/Cruis'n USA (U) (V1.2) [!]/sheet.png",
   "sound": "recording is silent",
   "sound numbers": {
-   "made": 21757,
+   "made": 22058,
    "refused": 0,
-   "sent": 21757,
+   "sent": 22058,
    "unknown": 0,
    "wants": 22050
   },
@@ -227,7 +226,7 @@
   "code": "NDNE",
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 15 of 24 seconds (worst 68%)"
+   "It ran slowly: under 90% speed for 10 of 19 seconds (worst 66%)"
   ],
   "frames": 3600,
   "heard": {
@@ -251,9 +250,9 @@
   "sheet": "build/check/Duke Nukem 64 (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 21794,
+   "made": 22051,
    "refused": 0,
-   "sent": 21794,
+   "sent": 22051,
    "unknown": 0,
    "wants": 22050
   },
@@ -290,9 +289,9 @@
   "sheet": "build/check/Diddy Kong Racing (U) (M2) (V1.1) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 22026,
+   "made": 22051,
    "refused": 0,
-   "sent": 22026,
+   "sent": 22051,
    "unknown": 0,
    "wants": 22050
   },
@@ -326,9 +325,9 @@
   "sheet": "build/check/Duke Nukem - ZER0 H0UR (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 22037,
+   "made": 22055,
    "refused": 0,
-   "sent": 22037,
+   "sent": 22055,
    "unknown": 0,
    "wants": 22050
   },
@@ -341,7 +340,7 @@
   "file": "Star Wars Episode I - Racer (U) [!].zip",
   "findings": [
    "The screen never showed anything (blank and stayed blank until the run ended)",
-   "The game sends 223 samples of sound a second but asked to play 22050"
+   "The game sends 225 samples of sound a second but asked to play 22050"
   ],
   "frames": 3600,
   "heard": {
@@ -363,11 +362,11 @@
    "shots": 1
   },
   "sheet": "build/check/Star Wars Episode I - Racer (U) [!]/sheet.png",
-  "sound": "sends 223 a second, wants 22050 (-99%); recording is silent",
+  "sound": "sends 225 a second, wants 22050 (-99%); recording is silent",
   "sound numbers": {
-   "made": 223,
+   "made": 225,
    "refused": 0,
-   "sent": 223,
+   "sent": 225,
    "unknown": 0,
    "wants": 22050
   },
@@ -401,9 +400,9 @@
   "sheet": "build/check/Quest 64 (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 21861,
+   "made": 22051,
    "refused": 0,
-   "sent": 21861,
+   "sent": 22051,
    "unknown": 0,
    "wants": 22050
   },
@@ -416,7 +415,7 @@
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 18%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 16%)"
   ],
   "frames": 3600,
   "heard": {
@@ -442,7 +441,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 22043,
+   "sent": 22061,
    "unknown": 0,
    "wants": 22050
   },
@@ -455,7 +454,7 @@
   "file": "F-1 World Grand Prix (U) [!].zip",
   "findings": [
    "5656 drawing commands were skipped because we do not handle them",
-   "The game sends 19615 samples of sound a second but asked to play 22050"
+   "The game sends 21154 samples of sound a second but asked to play 22050"
   ],
   "frames": 3600,
   "heard": {
@@ -477,11 +476,11 @@
    "shots": 12
   },
   "sheet": "build/check/F-1 World Grand Prix (U) [!]/sheet.png",
-  "sound": "sends 19615 a second, wants 22050 (-12%)",
+  "sound": "sends 21154 a second, wants 22050 (-5%)",
   "sound numbers": {
-   "made": 19639,
+   "made": 21180,
    "refused": 0,
-   "sent": 19615,
+   "sent": 21154,
    "unknown": 0,
    "wants": 22050
   },
@@ -515,9 +514,9 @@
   "sheet": "build/check/Star Fox 64 (U) (V1.1) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 31705,
+   "made": 31714,
    "refused": 1,
-   "sent": 31993,
+   "sent": 32002,
    "unknown": 0,
    "wants": 32000
   },
@@ -557,7 +556,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 21828,
+   "sent": 22018,
    "unknown": 0,
    "wants": 22020
   },
@@ -591,9 +590,9 @@
   "sheet": "build/check/mk64.us/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 26581,
+   "made": 26618,
    "refused": 0,
-   "sent": 26737,
+   "sent": 26775,
    "unknown": 0,
    "wants": 26800
   },
@@ -607,7 +606,7 @@
   "findings": [
    "The game froze at 0:26 (frame 1560): no new picture for five seconds",
    "105 drawing commands were skipped because we do not handle them",
-   "The game sends 16136 samples of sound a second but asked to play 32000"
+   "The game sends 16286 samples of sound a second but asked to play 32000"
   ],
   "frames": 3600,
   "heard": {
@@ -629,11 +628,11 @@
    "shots": 6
   },
   "sheet": "build/check/Mario Golf (U) [!]/sheet.png",
-  "sound": "its sound lists produce nothing; sends 16136 a second, wants 32000 (-50%); recording is silent",
+  "sound": "its sound lists produce nothing; sends 16286 a second, wants 32000 (-50%); recording is silent",
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 16136,
+   "sent": 16286,
    "unknown": 0,
    "wants": 32000
   },
@@ -645,7 +644,7 @@
   "code": "NN6E",
   "file": "Dr. Mario 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 11%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 10%)"
   ],
   "frames": 3600,
   "heard": {
@@ -669,9 +668,9 @@
   "sheet": "build/check/Dr. Mario 64 (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 31914,
+   "made": 32011,
    "refused": 0,
-   "sent": 31905,
+   "sent": 32003,
    "unknown": 0,
    "wants": 32000
   },
@@ -684,7 +683,7 @@
   "file": "007 - The World is Not Enough (U) [!].zip",
   "findings": [
    "The game stopped by itself: bad memory access at 0x00000000",
-   "The game sends 11487 samples of sound a second but asked to play 22050"
+   "The game sends 11524 samples of sound a second but asked to play 22050"
   ],
   "frames": 2846,
   "heard": {
@@ -706,11 +705,11 @@
    "shots": 10
   },
   "sheet": "build/check/007 - The World is Not Enough (U) [!]/sheet.png",
-  "sound": "its sound lists produce nothing; sends 11487 a second, wants 22050 (-48%); recording is silent",
+  "sound": "its sound lists produce nothing; sends 11524 a second, wants 22050 (-48%); recording is silent",
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 11487,
+   "sent": 11524,
    "unknown": 0,
    "wants": 22050
   },
@@ -778,9 +777,9 @@
   "sheet": "build/check/Pokemon Snap (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 31992,
+   "made": 32001,
    "refused": 0,
-   "sent": 31983,
+   "sent": 31992,
    "unknown": 0,
    "wants": 32000
   },
@@ -793,9 +792,9 @@
   "file": "Pokemon Puzzle League (U) [!].zip",
   "findings": [
    "The game froze at 0:00 (frame 0): no new picture for five seconds",
-   "The game's sound program made 17143 samples a second but 20812 reached the sound chip",
-   "The game sends 20812 samples of sound a second but asked to play 22050",
-   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 13%)"
+   "The game's sound program made 17316 samples a second but 21022 reached the sound chip",
+   "The game sends 21022 samples of sound a second but asked to play 22050",
+   "It ran slowly: under 90% speed for 10 of 10 seconds (worst 12%)"
   ],
   "frames": 3600,
   "heard": {
@@ -817,11 +816,11 @@
    "shots": 2
   },
   "sheet": "build/check/Pokemon Puzzle League (U) [!]/sheet.png",
-  "sound": "sends 20812 a second, wants 22050 (-6%)",
+  "sound": "sends 21022 a second, wants 22050 (-5%)",
   "sound numbers": {
-   "made": 17143,
+   "made": 17316,
    "refused": 0,
-   "sent": 20812,
+   "sent": 21022,
    "unknown": 0,
    "wants": 22050
   },
@@ -835,7 +834,7 @@
   "findings": [
    "The screen went blank at 0:14 (frame 840) and stayed blank until the run ended",
    "102 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 17%)"
+   "It ran slowly: under 90% speed for 47 of 47 seconds (worst 18%)"
   ],
   "frames": 3600,
   "heard": {
@@ -861,7 +860,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 31979,
+   "sent": 32005,
    "unknown": 0,
    "wants": 32000
   },
@@ -876,7 +875,7 @@
    "The screen never showed anything (blank and stayed blank until the run ended)",
    "The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.06  Yoshitaka Yasumot",
    "1786 drawing commands were skipped because we do not handle them",
-   "The game sends 11468 samples of sound a second but asked to play 22050"
+   "The game sends 11520 samples of sound a second but asked to play 22050"
   ],
   "frames": 3600,
   "heard": {
@@ -898,11 +897,11 @@
    "shots": 13
   },
   "sheet": "build/check/Resident Evil 2 (U) (V1.1) [!]/sheet.png",
-  "sound": "its sound lists produce nothing; sends 11468 a second, wants 22050 (-48%); recording is silent",
+  "sound": "its sound lists produce nothing; sends 11520 a second, wants 22050 (-48%); recording is silent",
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 11468,
+   "sent": 11520,
    "unknown": 0,
    "wants": 22050
   },
@@ -914,7 +913,7 @@
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 11 of 25 seconds (worst 52%)"
+   "It ran slowly: under 90% speed for 9 of 20 seconds (worst 51%)"
   ],
   "frames": 3600,
   "heard": {
@@ -940,7 +939,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 44068,
+   "sent": 44104,
    "unknown": 0,
    "wants": 44100
   },
@@ -951,9 +950,7 @@
   "checked": "2026-10-13",
   "code": "NRPE",
   "file": "Rampage - World Tour (U) [!].zip",
-  "findings": [
-   "The game sends 19556 samples of sound a second but asked to play 22047"
-  ],
+  "findings": [],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -974,11 +971,11 @@
    "shots": 13
   },
   "sheet": "build/check/Rampage - World Tour (U) [!]/sheet.png",
-  "sound": "sends 19556 a second, wants 22047 (-12%)",
+  "sound": "ok",
   "sound numbers": {
-   "made": 19562,
+   "made": 22055,
    "refused": 0,
-   "sent": 19556,
+   "sent": 22049,
    "unknown": 0,
    "wants": 22047
   },
@@ -989,7 +986,9 @@
   "checked": "2026-10-13",
   "code": "NSME",
   "file": "sm64.us.z64",
-  "findings": [],
+  "findings": [
+   "It ran slowly: under 90% speed for 6 of 20 seconds (worst 76%)"
+  ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
@@ -1012,9 +1011,9 @@
   "sheet": "build/check/sm64.us/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 31794,
+   "made": 31821,
    "refused": 0,
-   "sent": 31791,
+   "sent": 31817,
    "unknown": 0,
    "wants": 32000
   },
@@ -1053,7 +1052,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 22043,
+   "sent": 22061,
    "unknown": 0,
    "wants": 22050
   },
@@ -1066,7 +1065,7 @@
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
    "60662 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 35 of 38 seconds (worst 29%)"
+   "It ran slowly: under 90% speed for 36 of 38 seconds (worst 32%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1090,9 +1089,9 @@
   "sheet": "build/check/WCW Nitro (U) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 21855,
+   "made": 22057,
    "refused": 0,
-   "sent": 21849,
+   "sent": 22051,
    "unknown": 0,
    "wants": 22050
   },
@@ -1129,9 +1128,9 @@
   "sheet": "build/check/WCW vs. nWo - World Tour (U) (V1.1) [!]/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 22040,
+   "made": 22052,
    "refused": 0,
-   "sent": 22040,
+   "sent": 22052,
    "unknown": 0,
    "wants": 22050
   },
@@ -1165,9 +1164,9 @@
   "sheet": "build/check/wr64.us/sheet.png",
   "sound": "ok",
   "sound numbers": {
-   "made": 28424,
+   "made": 28447,
    "refused": 0,
-   "sent": 28597,
+   "sent": 28620,
    "unknown": 0,
    "wants": 28652
   },
@@ -1207,7 +1206,7 @@
   "sound numbers": {
    "made": 0,
    "refused": 0,
-   "sent": 22051,
+   "sent": 22070,
    "unknown": 0,
    "wants": 22050
   },

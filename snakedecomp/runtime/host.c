@@ -1106,6 +1106,11 @@ static long sound_taken, sound_refused; /* samples the chip was given; blocks it
  * does the game want" has no one answer; but a game keeping up always
  * gives the chip one second of sound for each second it runs. */
 static uint64_t sound_taken_ticks;
+/* The frame the first block of sound was handed over at (-1: none yet).
+ * "Samples a second" is counted from there: a game that starts with some
+ * seconds of nothing at all (Rampage: World Tour, seven) is not making too
+ * little sound. */
+static long sound_first_frame = -1;
 
 /* How many bytes of the block now playing are still to be played. */
 static uint32_t sound_chip_left(void) {
@@ -1143,6 +1148,8 @@ static int sound_chip_take(uint32_t address, uint32_t size) {
         sound_refused++;
         return 0;
     }
+    if (sound_first_frame < 0)
+        sound_first_frame = frames;
     sound_taken += size / 4;
     sound_taken_ticks += (uint64_t)(size / 4) * TICKS_PER_SECOND / (uint64_t)sound_chip.frequency;
     /* This block starts when the one before it ends (or now, if the chip
@@ -3672,11 +3679,12 @@ static void print_summary(void) {
     /* These three should agree: what the game asked for, what its sound
      * program made, and what reached the chip. Where they do not, sound is
      * being lost or invented, and it will crackle. */
+    long sound_frames = sound_first_frame >= 0 && frames > sound_first_frame ? frames - sound_first_frame : frames;
     if (frames > 0)
         /* ("wants" is the rate the game asked for, averaged over the sound it sent if it changed rate) */
         printf("  sound rate:        wants %d a second; made %ld, sent to the chip %ld; %ld blocks refused (chip full), %ld commands not known\n",
                sound_taken_ticks ? (int)((uint64_t)sound_taken * TICKS_PER_SECOND / sound_taken_ticks) : sound_chip.frequency,
-               audio_samples_made * 60 / frames, sound_taken * 60 / frames, sound_refused,
+               audio_samples_made * 60 / sound_frames, sound_taken * 60 / sound_frames, sound_refused,
                audio_commands_unknown);
     if (audio_lists_silent)
         printf("  SILENT:            %ld sound lists were not carried out (this sound program is not understood)\n", audio_lists_silent);
