@@ -218,7 +218,7 @@ static struct {
 
 static struct {
     uint32_t other_mode_h, other_mode_l;
-    float prim_depth; /* one depth for a whole shape, 0 (nearest) to 1, for when the game asks for that */
+    int prim_depth; /* one depth for a whole shape, for when the game asks for that: as the game gives it (see one_depth) */
     int cc[2][4], ac[2][4]; /* colour and alpha combiner settings, two cycles */
     int prim[4], env[4], fog[4], blend[4];
     int prim_lod_fraction; /* a number sent along with the prim colour: how far to fade between two textures (0..255) */
@@ -1505,6 +1505,22 @@ static void draw_all_shapes(void) {
 
 /* ---- Recording shapes ---------------------------------------------------------- */
 
+/* The one depth a game gives a whole shape, on our scale of 0 (nearest) to
+ * 1. The game gives it on the console's scale, where a triangle's depths
+ * run over the range the view was set up with (usually 0 to 1022, in steps
+ * of a 32nd), so it has to be put on ours the same way a triangle's are or
+ * the two do not compare truly. We used to take the console's largest
+ * number as 1, which put these shapes a five-hundredth nearer than they
+ * are: far off, where depths lie close together, that was enough for Duke
+ * Nukem 64's pickups to show through the far end of a wall. */
+static float one_depth(void) {
+    float half_range = rsp.viewport_scale[2] * 4, middle = rsp.viewport_translate[2] * 4;
+    if (half_range <= 0)
+        return (float)rdp.prim_depth / 32767.0f; /* (no range set: the old way) */
+    float z = (((float)rdp.prim_depth / 32 - middle) / half_range) * 0.5f + 0.5f;
+    return z < 0 ? 0 : z > 1 ? 1 : z;
+}
+
 static void to_screen(const Vertex *v, ScreenVertex *s) {
     float q = 1.0f / v->w;
     float x = (rsp.viewport_translate[0] + v->x * q * rsp.viewport_scale[0]) / hires_x;
@@ -1518,7 +1534,7 @@ static void to_screen(const Vertex *v, ScreenVertex *s) {
      * choosing instead of each corner's own: that is how parts of a HUD are
      * kept in front of the scene. */
     if (rdp.other_mode_l & 4)
-        s->z = rdp.prim_depth;
+        s->z = one_depth();
     if (no_near && s->z < 0)
         s->z = 0; /* nearer than the near plane: as near as can be */
     s->q = q;
@@ -1717,7 +1733,7 @@ static void command_texture_rectangle(uint32_t w0, uint32_t w1, uint32_t st, uin
      * rectangle over everything, so they showed through walls. (Copy mode
      * knows nothing of depth.) */
     capture_state(&shape->state, (int)((w1 >> 24) & 7), copy ? NO_DEPTH : RECTANGLE_DEPTH);
-    shape->depth = rdp.prim_depth;
+    shape->depth = one_depth();
     if (find_loaded(shape->state.tile.tmem) == NULL) {
         if (getenv("SHOW_RECTANGLES")) /* for testing */
             fprintf(stderr, "rect x %d..%d y %d..%d left out: nothing loaded at %d in texture memory\n", left / 4, right / 4,
@@ -2170,7 +2186,7 @@ static void run_list(uint32_t address) {
          * the speed to draw it anyway, and what is off the screen is cut
          * away later all the same. */
         case 0xBE: break;
-        case 0xEE: rdp.prim_depth = (float)((w1 >> 16) & 0x7FFF) / 32767.0f; break;
+        case 0xEE: rdp.prim_depth = (int)((w1 >> 16) & 0x7FFF); break;
         default:
             gfx_unhandled_count++;
             if (gfx_report_unhandled || getenv("SHOW_GRAPHICS")) { /* for testing: commands we do nothing with */

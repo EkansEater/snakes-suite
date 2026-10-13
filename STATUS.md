@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-13 14:05. 6 Ready, 14 In Progress, 2 Untested, 10 Broken.
+Last written 2026-10-13 15:14. 6 Ready, 14 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -35,7 +35,7 @@ decompilation project's list of function names is in `symbols/`.
 | Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Reaches the main menu, then crashes before play (bad memory access; a second try read past the end of the ROM). Visual glitches on the way | 2026-10-13 |
 | Army Men: Sarge's Heroes 2 | In Progress | ok | **stuck: the last 10 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game | 2026-10-13 |
 | Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  | bad, 2026-10-11: Shows only the copyright screen, then nothing; had to be closed by hand | 2026-10-13 |
-| Duke Nukem 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | bad, 2026-10-13: Looks better: right speed, menus, HUD and weapon. Sound was harsh and robotic, and pickups showed through walls; both fixed since, not yet played again | 2026-10-13 |
+| Duke Nukem 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | bad, 2026-10-13: Sound good. Pickups no longer show through walls as before, but some still leaked at the edge of a wall; their depth was a little too near, fixed since, not yet played again | 2026-10-13 |
 | F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 19615 a second, wants 22050 (-12%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-13 |
 | Jet Force Gemini | In Progress | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-13 |
 | Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-13 |
