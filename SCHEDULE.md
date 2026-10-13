@@ -101,8 +101,8 @@ below). Cause A turned out to be three different things, none of them
 
 Still to do in batch 2: WCW Nitro at 120 pictures a second (on the console
 the time drawing took held it back; whether the game itself is too fast at
-120 needs playing to tell) and its skipped drawing commands; Rampage: World
-Tour needs playing; Quest 64's pink text boxes. Resident Evil 2 (120)
+120 needs playing to tell) and its skipped drawing commands; Quest 64's
+pink text boxes. Rampage: World Tour is played and good. Resident Evil 2 (120)
 is batch 5. Chameleon Twist and Duke Nukem 64 are played and good.
 
 **Found by play-testing, for their own batches:**
