@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-13 15:21. 7 Ready, 13 In Progress, 2 Untested, 10 Broken.
+Last written 2026-10-13 15:28. 7 Ready, 13 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -41,7 +41,7 @@ decompilation project's list of function names is in `symbols/`.
 | Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-13 |
 | Pokemon Stadium | In Progress | ok | **The screen went blank at 0:14 (frame 840) and stayed blank until the run ended** | **its sound lists produce nothing; recording is silent** | 30 |  |  | bad, 2026-10-10: Corrupt textures (seen in an earlier survey) |  | 2026-10-13 |
 | Quest 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: Pink boxes behind text (seen in an earlier survey) |  | 2026-10-13 |
-| Rampage: World Tour | In Progress | ok | ok | **sends 18734 a second, wants 32000 (-42%)** | 60 |  |  |  |  | 2026-10-13 |
+| Rampage: World Tour | In Progress | ok | ok | **sends 19556 a second, wants 22047 (-12%)** | 60 |  |  |  |  | 2026-10-13 |
 | Resident Evil 2 | In Progress | ok | **The game draws with a chip program this tool has no drawing code for: S2DEX       fifo 2.0** | **its sound lists produce nothing; sends 11468 a second, wants 22050 (-48%); recording is silent** | 120 **too fast** |  |  | bad, 2026-10-10: Only ever shows "No Controller" |  | 2026-10-13 |
 | Road Rash 64 | In Progress | ok | ok | **its sound lists produce nothing; recording is silent** | 60 |  |  |  |  | 2026-10-13 |
 | WCW Nitro | In Progress | ok | **60662 drawing commands were skipped because we do not handle them** | ok | 120 **too fast** |  |  |  |  | 2026-10-13 |

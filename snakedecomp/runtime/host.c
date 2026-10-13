@@ -1258,7 +1258,11 @@ static void play_sound(uint32_t address, uint32_t size) {
     }
 #endif
 }
-void hle_osAiSetNextBuffer(Context *ctx) { RETURN(sound_chip_take(ARG0, ARG1) ? 0 : -1); }
+static void sound_rate_from_chip(void); /* further down */
+void hle_osAiSetNextBuffer(Context *ctx) {
+    sound_rate_from_chip();
+    RETURN(sound_chip_take(ARG0, ARG1) ? 0 : -1);
+}
 void hle_osAiGetLength(Context *ctx) {
     sound_chip_update();
     RETURN(sound_chip_left());
@@ -1563,16 +1567,31 @@ static int hardware_poll(void) {
      * number there that we did not write is the game's.) */
     length = get_register(5, 0x04);
     if (length != sound_length_shown) {
-        uint32_t rate = get_register(5, 0x10);
-        int frequency = rate ? (int)(48681812 / (rate + 1)) : 32000;
-        open_sound(frequency);
-        if (frequency >= 4000 && frequency <= 96000)
-            sound_chip.frequency = frequency;
+        if (!get_register(5, 0x10))
+            set_register(5, 0x10, 48681812 / 32000 - 1); /* (no rate given: 32,000 a second) */
+        sound_rate_from_chip();
         sound_chip_take(as_cpu_address(get_register(5, 0x00) & 0xFFFFFF), length & 0x3FFF8);
         sound_chip_update(); /* (puts the register back to "how much is left") */
         did = 1;
     }
     return did;
+}
+
+/* The rate sound plays at is set by writing a number to the sound chip.
+ * Where we recognised the library function that does it, we are told the
+ * rate directly (hle_osAiSetFrequency) and nothing is written. Where we
+ * did not, the game's own copy of the function writes the number, and it
+ * has to be read from here: Rampage: World Tour asked for 22,050 samples a
+ * second this way while we went on playing its sound at 32,000, too fast
+ * and too high, and always running out. */
+static void sound_rate_from_chip(void) {
+    uint32_t rate = get_register(5, 0x10);
+    if (!rate)
+        return;
+    int frequency = (int)(48681812 / (rate + 1));
+    open_sound(frequency);
+    if (frequency >= 4000 && frequency <= 96000)
+        sound_chip.frequency = frequency;
 }
 
 static uint8_t *hardware_at(uint32_t address, uint32_t size) {

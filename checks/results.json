@@ -227,7 +227,7 @@
   "code": "NDNE",
   "file": "Duke Nukem 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 20 of 27 seconds (worst 60%)"
+   "It ran slowly: under 90% speed for 15 of 24 seconds (worst 68%)"
   ],
   "frames": 3600,
   "heard": {
@@ -416,7 +416,7 @@
   "file": "NFL Blitz 2001 (U) [!].zip",
   "findings": [
    "The game froze at 0:09 (frame 540): no new picture for five seconds",
-   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 16%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 18%)"
   ],
   "frames": 3600,
   "heard": {
@@ -645,7 +645,7 @@
   "code": "NN6E",
   "file": "Dr. Mario 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 57 of 58 seconds (worst 11%)"
+   "It ran slowly: under 90% speed for 58 of 58 seconds (worst 11%)"
   ],
   "frames": 3600,
   "heard": {
@@ -914,7 +914,7 @@
   "code": "NROE",
   "file": "Road Rash 64 (U) [!].zip",
   "findings": [
-   "It ran slowly: under 90% speed for 18 of 33 seconds (worst 75%)"
+   "It ran slowly: under 90% speed for 11 of 25 seconds (worst 52%)"
   ],
   "frames": 3600,
   "heard": {
@@ -952,15 +952,15 @@
   "code": "NRPE",
   "file": "Rampage - World Tour (U) [!].zip",
   "findings": [
-   "The game sends 18734 samples of sound a second but asked to play 32000"
+   "The game sends 19556 samples of sound a second but asked to play 22047"
   ],
   "frames": 3600,
   "heard": {
    "clipped": 0.0,
    "noise": 0.002,
-   "quiet": 0.122,
+   "quiet": 0.123,
    "ripple": 1.0,
-   "seconds": 35.1
+   "seconds": 53.2
   },
   "pace": 60,
   "pace verdict": "ok",
@@ -974,13 +974,13 @@
    "shots": 13
   },
   "sheet": "build/check/Rampage - World Tour (U) [!]/sheet.png",
-  "sound": "sends 18734 a second, wants 32000 (-42%)",
+  "sound": "sends 19556 a second, wants 22047 (-12%)",
   "sound numbers": {
-   "made": 18740,
+   "made": 19562,
    "refused": 0,
-   "sent": 18734,
+   "sent": 19556,
    "unknown": 0,
-   "wants": 32000
+   "wants": 22047
   },
   "title": "Rampage: World Tour"
  },
@@ -1066,7 +1066,7 @@
   "file": "WCW Nitro (U) [!].zip",
   "findings": [
    "60662 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 36 of 37 seconds (worst 32%)"
+   "It ran slowly: under 90% speed for 35 of 38 seconds (worst 29%)"
   ],
   "frames": 3600,
   "heard": {
@@ -1105,7 +1105,7 @@
   "file": "WCW vs. nWo - World Tour (U) (V1.1) [!].zip",
   "findings": [
    "16004 drawing commands were skipped because we do not handle them",
-   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 21%)"
+   "It ran slowly: under 90% speed for 57 of 57 seconds (worst 22%)"
   ],
   "frames": 3600,
   "heard": {
