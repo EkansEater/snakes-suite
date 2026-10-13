@@ -39,3 +39,4 @@ NCT played bad 2026-10-13 Looks better. Sound was harsh and robotic (a buzz over
 NDN played bad 2026-10-13 Looks better: right speed, menus, HUD and weapon. Sound was harsh and robotic, and pickups showed through walls; both fixed since, not yet played again
 NCT played good 2026-10-13 Plays at the right speed, looks better, and the sound is in good shape after the buzz fix
 NDN played bad 2026-10-13 Sound good. Pickups no longer show through walls as before, but some still leaked at the edge of a wall; their depth was a little too near, fixed since, not yet played again
+NDN played good 2026-10-13 Playable: right speed, sound good, and pickups no longer show through walls or leak at wall edges

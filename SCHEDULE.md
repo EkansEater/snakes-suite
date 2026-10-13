@@ -102,8 +102,7 @@ Still to do in batch 2: WCW Nitro at 120 pictures a second (on the console
 the time drawing took held it back; whether the game itself is too fast at
 120 needs playing to tell) and its skipped drawing commands; Rampage: World
 Tour's sound (42% short); Quest 64's pink text boxes. Resident Evil 2 (120)
-is batch 5. Chameleon Twist is played and good; Duke Nukem 64's sound is
-good, and its pickups fix needs a look.
+is batch 5. Chameleon Twist and Duke Nukem 64 are played and good.
 
 **Found by play-testing, for their own batches:**
 

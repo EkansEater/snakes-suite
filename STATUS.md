@@ -7,7 +7,7 @@ What people find by playing or looking goes in `checks/notes.txt`, or:
 python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
 ```
 
-Last written 2026-10-13 15:14. 6 Ready, 14 In Progress, 2 Untested, 10 Broken.
+Last written 2026-10-13 15:21. 7 Ready, 13 In Progress, 2 Untested, 10 Broken.
 
 | State | Meaning |
 |---|---|
@@ -27,6 +27,7 @@ decompilation project's list of function names is in `symbols/`.
 | Game | State | Runs | Picture | Sound | Pace | Script | Names | Looked at | Played | Checked |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Chameleon Twist | Ready | ok | ok | ok | 30 |  |  |  | good, 2026-10-13: Plays at the right speed, looks better, and the sound is in good shape after the buzz fix | 2026-10-13 |
+| Duke Nukem 64 | Ready | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | good, 2026-10-13: Playable: right speed, sound good, and pickups no longer show through walls or leak at wall edges | 2026-10-13 |
 | Duke Nukem: Zero Hour | Ready | ok | ok | ok | 30 |  | yes | good, 2026-10-10: Menus, the opening scene and the briefing screen look right | good, 2026-10-12: Opening cutscenes and the first level look perfect with smooth motion and widescreen on | 2026-10-13 |
 | Mario Kart 64 | Ready | ok | ok | ok | 30 | own |  | good, 2026-10-10: Scripted run: menus and a Luigi Raceway race look right | good, 2026-10-11: Mushroom Cup: a full Luigi Raceway race and the start of Moo Moo Farm play right. Very few visual glitches. Fixed since: in widescreen a strip of old picture stayed down the right of the results screen | 2026-10-13 |
 | Star Fox 64 | Ready | ok | ok | ok | 30 |  |  | good, 2026-10-10: Map, briefing and the flight into Corneria look right | good, 2026-10-11: All of Corneria to the boss and the map play right. Very few visual glitches. Added since: a volume-boost sound command the game uses from Corneria on; not yet listened to | 2026-10-13 |
@@ -35,7 +36,6 @@ decompilation project's list of function names is in `symbols/`.
 | Army Men: Sarge's Heroes | In Progress | ok | **stuck: the last 11 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Reaches the main menu, then crashes before play (bad memory access; a second try read past the end of the ROM). Visual glitches on the way | 2026-10-13 |
 | Army Men: Sarge's Heroes 2 | In Progress | ok | **stuck: the last 10 of 13 pictures taken are identical** | **its sound lists produce nothing; recording is silent** | 60 |  |  |  | bad, 2026-10-11: Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game | 2026-10-13 |
 | Cruis'n USA | In Progress | ok | ok | **recording is silent** | 0 |  |  |  | bad, 2026-10-11: Shows only the copyright screen, then nothing; had to be closed by hand | 2026-10-13 |
-| Duke Nukem 64 | In Progress | ok | ok | ok | 30 |  |  | bad, 2026-10-10: White patches in the level (seen in an earlier survey) | bad, 2026-10-13: Sound good. Pickups no longer show through walls as before, but some still leaked at the edge of a wall; their depth was a little too near, fixed since, not yet played again | 2026-10-13 |
 | F-1 World Grand Prix | In Progress | ok | **5656 drawing commands were skipped because we do not handle them** | **sends 19615 a second, wants 22050 (-12%)** | 30 |  |  | bad, 2026-10-10: Some wrong colours (seen in an earlier survey) | bad, 2026-10-11: Race was washed red (fixed since, not yet played again). Sound is still choppy | 2026-10-13 |
 | Jet Force Gemini | In Progress | ok | **The screen went blank at 0:14 (frame 840) for 5 seconds** | **its sound lists produce nothing; recording is silent** | 30 |  |  |  |  | 2026-10-13 |
 | Pokemon Snap | In Progress | ok | **The screen went blank at 0:08 (frame 480) and stayed blank until the run ended** | ok | 60 |  |  |  |  | 2026-10-13 |
