@@ -6,6 +6,10 @@
     python packaging/build.py hub                the one-file Snake's Suite app
     python packaging/build.py index release/     index.json for the hub, from every package in a folder
 
+With --reuse, a tool (or the hub) whose version is the same as in the latest
+release is downloaded from that release instead of built again, so a release
+only builds what changed.
+
 Packages are ready to run: nobody needs Python, Rust or Node.js to use them.
 Python tools are frozen with PyInstaller, so run this with a Python that has
 PyInstaller and the tool's own requirements (`pip install pyinstaller ./tools/...`;
@@ -29,6 +33,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -286,6 +291,69 @@ def build_tool(tool: dict, install: bool) -> Path | None:
     return BUILDERS[tool["kind"]](tool, install)
 
 
+# --------------------------------------------------------------------------- reuse
+_last_index: dict | None = None
+
+
+def last_index() -> dict:
+    """index.json of the latest release ({} if there is none or it cannot be read)."""
+    global _last_index
+    if _last_index is None:
+        data, _ = catalogue()
+        try:
+            with urllib.request.urlopen(data["release"]["index_url"], timeout=60) as r:
+                _last_index = json.load(r)
+        except (OSError, ValueError, KeyError) as e:
+            say(f"(no earlier release to reuse: {e})")
+            _last_index = {}
+    return _last_index
+
+
+def fetch(old: dict, pkg: dict, out: Path) -> bool:
+    """Download one file of the latest release into release/ and check it."""
+    data, _ = catalogue()
+    url = f"https://github.com/{data['release']['repo']}/releases/download/v{old['version']}/{pkg['file']}"
+    RELEASE.mkdir(exist_ok=True)
+    try:
+        with urllib.request.urlopen(url, timeout=600) as r, open(out, "wb") as fh:
+            shutil.copyfileobj(r, fh)
+    except OSError as e:
+        say(f"(could not download {pkg['file']}: {e})")
+        out.unlink(missing_ok=True)
+        return False
+    if sha256(out) != pkg["sha256"]:
+        say(f"({pkg['file']} does not match its checksum)")
+        out.unlink()
+        return False
+    return True
+
+
+def reuse(tool: dict) -> bool:
+    """Take this system's package of an unchanged tool or hub from the latest release. False: build it."""
+    old = last_index()
+    if not old:
+        return False
+    if tool["id"] == "suite":
+        pkg = old.get("hub", {}).get(PLATFORM)
+        if not pkg or old.get("hub_version") != tool["version"]:
+            return False
+        ok = fetch(old, pkg, RELEASE / pkg["file"])
+    else:
+        entry = old.get("tools", {}).get(tool["id"], {})
+        pkg = entry.get("packages", {}).get(PLATFORM)
+        if not pkg or entry.get("version") != tool["version"]:
+            return False
+        out = RELEASE / pkg["file"]
+        ok = fetch(old, pkg, out)
+        if ok:  # the side file that make_index() reads
+            meta = {"id": tool["id"], "name": tool["name"], "version": tool["version"], "platform": PLATFORM,
+                    **{k: pkg[k] for k in ("launch", "cli", "cwd", "app_bundle") if k in pkg}}
+            Path(str(out) + ".json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    if ok:
+        say(f"{tool['name']} {tool['version']}: unchanged, reused from v{old['version']}")
+    return ok
+
+
 # --------------------------------------------------------------------------- index
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -326,18 +394,22 @@ def main() -> int:
     parser.add_argument("what", choices=["tool", "tools", "hub", "index"])
     parser.add_argument("names", nargs="*", help="tool ids, or the folder for index")
     parser.add_argument("--install", action="store_true", help="pip install PyInstaller and each Python tool first")
+    parser.add_argument("--reuse", action="store_true", help="download what has not changed from the latest release")
     args = parser.parse_args()
     _, tools = catalogue()
     if args.what == "index":
         make_index(Path(args.names[0]) if args.names else RELEASE)
         return 0
     if args.what == "hub":
-        build_tool(tools["suite"], args.install)
+        if not (args.reuse and reuse(tools["suite"])):
+            build_tool(tools["suite"], args.install)
         return 0
     wanted = args.names if args.what == "tool" else [t for t in tools if t != "suite"]
     failed = []
     for tool_id in wanted:
         try:
+            if args.reuse and OS in tools[tool_id].get("platforms", []) and reuse(tools[tool_id]):
+                continue
             build_tool(tools[tool_id], args.install)
         except (subprocess.CalledProcessError, OSError, StopIteration) as e:
             say(f"!! {tools[tool_id]['name']} failed: {e}")

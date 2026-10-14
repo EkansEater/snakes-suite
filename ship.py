@@ -177,7 +177,7 @@ def update_github(data: dict, changes: list[dict], ask: bool) -> bool:
         say("\n!! Stopped: the git command above failed. Nothing more was done.")
         return False
     repo = data.get("release", {}).get("repo", "")
-    say(f"\nPublished {tag}. GitHub is building it now (about 15–30 minutes):")
+    say(f"\nPublished {tag}. GitHub is building what changed now (a few minutes for one tool, up to 30 for everything):")
     say(f"  https://github.com/{repo}/actions")
     say("When it finishes, installed copies of Snake's Suite update themselves.")
     if ask and subprocess.run(["which", "gh"], capture_output=True).returncode == 0 \

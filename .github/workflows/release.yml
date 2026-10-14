@@ -1,13 +1,21 @@
-# Builds every tool and the one-file Snake's Suite app on Linux, Windows and macOS,
+# Builds the tools and the one-file Snake's Suite app on Linux, Windows and macOS,
 # then publishes them as a GitHub release. The app downloads tools from the latest release.
+# Only what changed is built: a tool (or the app) whose version is the same as in the
+# latest release is copied from that release instead.
 #
-#   Run it: push a tag like v1.0.1, or start it by hand from the Actions tab.
+#   Run it: push a tag like v1.0.1, or start it by hand from the Actions tab
+#   (tick "Build everything" after changing packaging/ or this file).
 name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Build everything, even tools that did not change"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -55,12 +63,12 @@ jobs:
 
       - name: Build the tools
         shell: bash
-        run: python packaging/build.py tools
+        run: python packaging/build.py tools ${{ inputs.full && ' ' || '--reuse' }}
 
       - name: Build Snake's Suite (one file)
         if: always()
         shell: bash
-        run: python packaging/build.py hub
+        run: python packaging/build.py hub ${{ inputs.full && ' ' || '--reuse' }}
 
       - uses: actions/upload-artifact@v4
         if: always()

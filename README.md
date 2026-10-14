@@ -47,9 +47,12 @@ and install the changed tools on this computer), **update GitHub** (commit,
 push and publish the release), or both. `--dry-run` only shows the plan.
 
 By hand: push a tag (`git tag v1.0.1 && git push --tags`) or run the **Release** workflow
-from the Actions tab. GitHub builds every tool and the one-file app on Linux,
+from the Actions tab. GitHub builds the tools and the one-file app on Linux,
 Windows and macOS (`packaging/build.py`) and publishes them with `index.json`,
-which the app reads to know what it can download. Raise the changed tool's
+which the app reads to know what it can download. Only what changed is built:
+a tool or app whose version matches the latest release is copied from it
+(after changing `packaging/` or the workflow, run it by hand with **Build
+everything** ticked). Raise the changed tool's
 `version` in `suite.json` so installed copies update themselves; when the app
 itself changed, raise the hub's `version` and `__version__` in
 `hub/snakes_suite/__init__.py` together.
