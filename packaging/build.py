@@ -5,6 +5,7 @@
     python packaging/build.py tools              every tool this system supports
     python packaging/build.py hub                the one-file Snake's Suite app
     python packaging/build.py index release/     index.json for the hub, from every package in a folder
+    python packaging/build.py android release/   the latest release's Android APKs, to publish again
 
 With --reuse, a tool (or the hub) whose version is the same as in the latest
 release is downloaded from that release instead of built again, so a release
@@ -354,6 +355,28 @@ def reuse(tool: dict) -> bool:
     return ok
 
 
+def carry_android(folder: Path) -> None:
+    """Bring the Android APKs of the latest release into `folder`, for the next release to keep.
+
+    They are signed on the developer's computer (Snake's Suite APK, tools/release.py --publish),
+    not built here. An APK already in `folder` is left as it is.
+    """
+    old = last_index()
+    wanted = [(tool_id, entry, key, pkg)
+              for tool_id, entry in old.get("tools", {}).items()
+              for key, pkg in entry.get("packages", {}).items() if key.startswith("android")]
+    wanted += [("suite", {"version": pkg.get("version", old.get("hub_version", "0"))}, key, pkg)
+               for key, pkg in old.get("hub", {}).items() if key.startswith("android")]
+    folder.mkdir(parents=True, exist_ok=True)
+    for tool_id, entry, key, pkg in wanted:
+        out = folder / pkg["file"]
+        if not out.exists() and not fetch(old, pkg, out):
+            continue
+        meta = {"id": tool_id, "name": tool_id, "version": pkg.get("version", entry["version"]), "platform": key}
+        Path(str(out) + ".json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        say(f"{pkg['file']}: carried over from v{old['version']}")
+
+
 # --------------------------------------------------------------------------- index
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -375,11 +398,21 @@ def make_index(folder: Path) -> Path:
         pkg = Path(str(side)[: -len(".json")])
         if not pkg.exists():
             continue
-        entry = index["tools"].setdefault(meta["id"], {"version": meta["version"], "packages": {}})
-        entry["packages"][meta["platform"]] = {
+        package = {
             "file": pkg.name, "size": pkg.stat().st_size, "sha256": sha256(pkg),
             **{k: meta[k] for k in ("launch", "cli", "cwd", "app_bundle") if k in meta},
         }
+        if meta["platform"].startswith("android"):
+            # Android APKs are built and signed elsewhere (Snake's Suite APK) and can lag the
+            # desktop build of the same tool, so each one says its own version.
+            package["version"] = meta["version"]
+            if meta["id"] == "suite":
+                index["hub"][meta["platform"]] = package
+                continue
+        entry = index["tools"].setdefault(meta["id"], {"version": meta["version"], "packages": {}})
+        if not meta["platform"].startswith("android"):
+            entry["version"] = meta["version"]  # the tool's version is its desktop build's
+        entry["packages"][meta["platform"]] = package
     for hub in sorted(folder.glob("Snakes-Suite-*")):
         plat = hub.stem.replace("Snakes-Suite-", "") if hub.suffix in (".exe", ".dmg") else hub.name.replace("Snakes-Suite-", "")
         index["hub"][plat] = {"file": hub.name, "size": hub.stat().st_size, "sha256": sha256(hub)}
@@ -391,12 +424,15 @@ def make_index(folder: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("what", choices=["tool", "tools", "hub", "index"])
+    parser.add_argument("what", choices=["tool", "tools", "hub", "index", "android"])
     parser.add_argument("names", nargs="*", help="tool ids, or the folder for index")
     parser.add_argument("--install", action="store_true", help="pip install PyInstaller and each Python tool first")
     parser.add_argument("--reuse", action="store_true", help="download what has not changed from the latest release")
     args = parser.parse_args()
     _, tools = catalogue()
+    if args.what == "android":
+        carry_android(Path(args.names[0]) if args.names else RELEASE)
+        return 0
     if args.what == "index":
         make_index(Path(args.names[0]) if args.names else RELEASE)
         return 0

@@ -89,6 +89,8 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Android apps from the last release
+        run: python packaging/build.py android dist
       - name: Index for the app
         run: python packaging/build.py index dist
       - name: Publish the release
@@ -107,4 +109,4 @@ jobs:
           shopt -s nullglob  # publish what was built, even if one system had a problem
           gh release delete "$tag" --yes --cleanup-tag=false 2>/dev/null || true
           gh release create "$tag" --title "Snake's Suite ${tag#v}" --notes "$notes" --latest \
-            dist/index.json dist/Snakes-Suite-* dist/snakes-*.tar.gz dist/snakes-*.zip
+            dist/index.json dist/Snakes-Suite-* dist/snakes-*.tar.gz dist/snakes-*.zip dist/snakes-*.apk
