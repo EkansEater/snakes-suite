@@ -465,9 +465,9 @@ def write_status(results: dict) -> None:
         return "ok" if text == "ok" else f"**{text}**".replace("|", "/")
 
     out = ["# Where each game stands", "",
-           "Written by `python3 -m snakedecomp check`; do not edit by hand (it is written afresh each time).",
+           "Written by `python3 -m snakerecomp check`; do not edit by hand (it is written afresh each time).",
            "What people find by playing or looking goes in `checks/notes.txt`, or:", "",
-           "```bash", 'python3 -m snakedecomp note NSM played good "Played to the first star, all fine"', "```", "",
+           "```bash", 'python3 -m snakerecomp note NSM played good "Played to the first star, all fine"', "```", "",
            f"Last written {time.strftime('%Y-%m-%d %H:%M')}. " + ", ".join(f"{counts[name]} {name}" for name in order if counts[name]) + ".", "",
            "| State | Meaning |", "|---|---|"]  # fmt: skip
     out += [f"| {name} | {meaning} |" for name, meaning in STATES if counts[name]]

@@ -1,4 +1,4 @@
-"""Command-line entry point: python -m snakedecomp <command> <rom>"""
+"""Command-line entry point: python -m snakerecomp <command> <rom>"""
 
 import argparse
 import os
@@ -246,7 +246,7 @@ def cmd_run(rom: Rom, args: argparse.Namespace, extra: list[str]) -> None:
         # has chosen a resolution, start it at a lower one.
         options += ["--scale", "2"]
     # The game keeps a log of the run (see diagnose.py), and when it ends we
-    # say what the log shows. "python3 -m snakedecomp diagnose" says more.
+    # say what the log shows. "python3 -m snakerecomp diagnose" says more.
     log = diagnose.start_log(rom_name, save, settings)
     facts = {"game": rom_name, "code": rom.header.game_code, "rom": args.rom}
     diagnose.run_logged([game, plain_rom, *options, *extra, "--log"], log, facts)
@@ -254,7 +254,7 @@ def cmd_run(rom: Rom, args: argparse.Namespace, extra: list[str]) -> None:
     problems = [f for f in diagnose.find_problems(session) if f.serious]
     for problem in problems:
         print(f"log: {problem.what}")
-    print(f"The log of this run is {log}" + ("; for the full story: python3 -m snakedecomp diagnose" if problems else ""))
+    print(f"The log of this run is {log}" + ("; for the full story: python3 -m snakerecomp diagnose" if problems else ""))
     diagnose.report()  # keep logs/report.txt up to date
 
 
@@ -329,7 +329,7 @@ def parse_int(text: str) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="snakedecomp")
+    parser = argparse.ArgumentParser(prog="snakerecomp")
     commands = parser.add_subparsers(dest="command", required=True)
 
     info = commands.add_parser("info", help="show the ROM header")

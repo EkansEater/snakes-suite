@@ -3,7 +3,7 @@
 Nearly everything a game needs we detect: its library version from
 fingerprints, its graphics dialect from the chip program it loads, its
 cheats from the ROM's checksums. This file holds the little that is left,
-by the game's code from the ROM header (python3 -m snakedecomp info shows
+by the game's code from the ROM header (python3 -m snakerecomp info shows
 it; the last letter is the region and is left off here).
 """
 

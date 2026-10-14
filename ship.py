@@ -83,9 +83,9 @@ def catalogue_at(tag: str | None) -> dict:
         return {"version": "0", "tools": [], "hub": {}}
 
 
-def version_of(data: dict, tool_id: str) -> str:
+def version_of(data: dict, tool_id: str, formerly: list[str] = ()) -> str:
     for entry in [*data.get("tools", []), data.get("hub") or {}]:
-        if entry.get("id") == tool_id:
+        if entry.get("id") == tool_id or entry.get("id") in formerly:  # (or the id it had before a rename)
             return entry.get("version", data.get("version", "1.0.0"))
     return "0"
 
@@ -105,7 +105,7 @@ def plan(tag: str | None) -> tuple[dict, list[dict], list[str]]:
         claimed.update(mine)
         if not mine:
             continue
-        before, now = version_of(old, entry["id"]), entry.get("version", data["version"])
+        before, now = version_of(old, entry["id"], entry.get("formerly", [])), entry.get("version", data["version"])
         if now == before:  # not raised by hand: raise it
             entry["version"] = bump(now)
         changes.append({"id": entry["id"], "name": entry["name"], "from": before, "to": entry["version"],

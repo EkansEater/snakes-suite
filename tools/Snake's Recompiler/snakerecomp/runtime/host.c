@@ -2235,9 +2235,9 @@ static void open_window(void) {
      * it: on KDE with Wayland that is how the window's place on the screen
      * is remembered, by a window rule (see "Where the windows open" in
      * README.md), since there a program cannot place its own window. */
-    setenv("SDL_VIDEO_WAYLAND_WMCLASS", "snakes-n64-decompiler", 0);
-    setenv("SDL_VIDEO_X11_WMCLASS", "snakes-n64-decompiler", 0);
-    SDL_SetHint("SDL_APP_ID", "snakes-n64-decompiler");
+    setenv("SDL_VIDEO_WAYLAND_WMCLASS", "snakes-n64-recompiler", 0);
+    setenv("SDL_VIDEO_X11_WMCLASS", "snakes-n64-recompiler", 0);
+    SDL_SetHint("SDL_APP_ID", "snakes-n64-recompiler");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
         fatal(SDL_GetError(), 0);
     int w, h;
@@ -2254,7 +2254,7 @@ static void open_window(void) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    window = SDL_CreateWindow("Snake's N64 decompiler", place ? m->x : SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow("Snake's N64 recompiler", place ? m->x : SDL_WINDOWPOS_CENTERED,
                               place ? m->y : SDL_WINDOWPOS_CENTERED, start_w, start_h,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | (m->maximised ? SDL_WINDOW_MAXIMIZED : 0));
     if (!window || !SDL_GL_CreateContext(window))

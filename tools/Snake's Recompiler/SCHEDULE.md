@@ -39,7 +39,7 @@ How each fix goes (changed 2026-10-10, so that the work does not wait on
 play-testing):
 
 1. Fix one issue.
-2. `python3 -m snakedecomp check` on all 32 games. It says what got better
+2. `python3 -m snakerecomp check` on all 32 games. It says what got better
    and what got worse; nothing may get worse.
 3. Claude looks at the picture sheets of the games the fix touched.
 4. Commit. [STATUS.md](STATUS.md) is updated by the check and goes in the

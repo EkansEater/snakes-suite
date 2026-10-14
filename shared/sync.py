@@ -7,7 +7,7 @@ folder it gets its own copy of:
 
   * the Qt theme (shared/qt/snake_theme.py) or the egui theme (shared/egui/snake_theme.rs),
   * its icon as icon.svg / icon.png / icon.ico (and a raw 64 px RGBA for egui and SDL),
-  * for the Decompiler's SDL launcher, the palette as a C header.
+  * for the Recompiler's SDL launcher, the palette as a C header.
 
 Run it after changing anything under shared/. Tools whose folder is missing are skipped.
 """

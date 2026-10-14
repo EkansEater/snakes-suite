@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "tools": [
     {
       "id": "code",
@@ -119,11 +119,14 @@
       "version": "1.0.0"
     },
     {
-      "id": "decompiler",
-      "name": "Snake's Decompiler",
+      "id": "recompiler",
+      "formerly": [
+        "decompiler"
+      ],
+      "name": "Snake's Recompiler",
       "tagline": "N64 recompiler",
       "description": "Turns your own N64 ROMs into programs that run natively.",
-      "folder": "tools/Snake's Decompiler",
+      "folder": "tools/Snake's Recompiler",
       "kind": "script",
       "launch": {
         "linux": [
@@ -138,12 +141,12 @@
         "gcc",
         "SDL2 and OpenGL development files"
       ],
-      "c_palette": "snakedecomp/launcher/snake_palette.h",
+      "c_palette": "snakerecomp/launcher/snake_palette.h",
       "assets": {
         "dir": "assets",
-        "c_icon": "snakedecomp/launcher/snake_icon.h"
+        "c_icon": "snakerecomp/launcher/snake_icon.h"
       },
-      "wm_class": "snakes-n64-decompiler-list",
+      "wm_class": "snakes-n64-recompiler-list",
       "command": "",
       "categories": "Game;Emulator;",
       "accepts_files": false,
@@ -152,7 +155,10 @@
         "source": true
       },
       "user_data": {
-        "folder": "snakes-decompiler",
+        "folder": "snakes-recompiler",
+        "formerly": [
+          "snakes-decompiler"
+        ],
         "move": [
           "roms",
           "saves",
@@ -165,7 +171,7 @@
           "dist"
         ]
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "soundpad",
@@ -434,7 +440,7 @@
         "PySide6.Qt3DCore"
       ]
     },
-    "version": "1.1.0"
+    "version": "1.1.1"
   },
   "release": {
     "repo": "EkansEater/snakes-suite",

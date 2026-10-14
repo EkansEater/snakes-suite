@@ -64,8 +64,8 @@ GLYPHS = {
   <path d="M40 92 L58 86 L64 104" {S}/>
   <path d="M198 92 A 82 82 0 0 1 198 176" {S}/>
   <path d="M216 170 L198 176 L192 158" {S}/>""",
-    # Decompiler: the pins of a chip (or a cartridge edge).
-    "decompiler": "\n".join(
+    # Recompiler: the pins of a chip (or a cartridge edge).
+    "recompiler": "\n".join(
         f'  <path d="M{x1} {y} L{x2} {y}" {S}/>'
         for (x1, x2) in ((30, 62), (194, 226)) for y in (96, 128, 160)
     ),

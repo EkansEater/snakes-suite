@@ -12,7 +12,7 @@ dist/
 build/
 release/
 
-# Never commit game ROMs (the Decompiler's own .gitignore says the same)
+# Never commit game ROMs (the Recompiler's own .gitignore says the same)
 *.z64
 *.n64
 *.v64

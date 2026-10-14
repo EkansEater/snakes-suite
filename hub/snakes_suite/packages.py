@@ -167,19 +167,40 @@ def _merge(src: Path, dst: Path) -> None:
 
 def keep_user_files(keep: dict | None, dest: Path) -> None:
     """Before an update replaces a tool's folder, move out the files of yours that older
-    versions kept inside it ("user_data": the folder they go to and the names to move)."""
+    versions kept inside it ("user_data": the folder they go to and the names to move),
+    and those in the folder it used before it was renamed ("formerly")."""
     keep = keep or {}
-    if not (keep.get("folder") and dest.is_dir()):
+    if not keep.get("folder"):
         return
     target = user_data_dir(keep["folder"])
+    for name in keep.get("formerly", []):
+        if user_data_dir(name).is_dir():
+            _merge(user_data_dir(name), target)
+    if not dest.is_dir():
+        return
     for name in keep.get("move", []):
         if (dest / name).exists():
             _merge(dest / name, target / name)
 
 
+def former_id(tool: dict) -> str | None:
+    """The id a tool is installed under from before it was renamed ("formerly"), if it is."""
+    return next((old for old in tool.get("formerly", []) if ig.read_manifest(old)), None)
+
+
+def retire_former(tool: dict) -> None:
+    """Remove a copy installed under a tool's old id (its menu entries and program), keeping your files."""
+    for old in tool.get("formerly", []):
+        manifest = ig.read_manifest(old)
+        if manifest:
+            ig.remove_integration(manifest)
+            keep_user_files(tool.get("user_data"), ig.APPS / old)
+            ig.forget(old)
+
+
 def tool_in_use(tool_id: str, manifest: dict | None) -> bool:
     """Is the installed program running? An update must not replace it under its feet."""
-    roots = [ig.APPS / tool_id]
+    roots = [ig.APPS / (manifest or {}).get("id", tool_id)]  # (a renamed tool: where its old id put it)
     launch = (manifest or {}).get("launch") or []
     if launch[:1] == ["open"] and len(launch) > 1:
         roots.append(Path(launch[1]))
@@ -347,6 +368,7 @@ def install_package(tool: dict, pkg: dict, archive: Path, *, desktop: bool) -> l
         "desktop_shortcut": desktop,
         "installed": datetime.datetime.now().isoformat(timespec="seconds"),
     })
+    retire_former(tool)
     return notes
 
 
@@ -394,6 +416,10 @@ def self_install(*, desktop: bool) -> list[str]:
 def uninstall(tool_id: str) -> list[str]:
     """Remove an installed tool (its program, menu entries and shortcuts, never the user's files)."""
     manifest = ig.read_manifest(tool_id)
+    if not manifest:  # perhaps installed under the name it had before it was renamed
+        tool = next((t for t in catalogue().get("tools", []) if t["id"] == tool_id), {})
+        tool_id = former_id(tool) or tool_id
+        manifest = ig.read_manifest(tool_id)
     if not manifest:
         return []
     problems = ig.remove_integration(manifest)

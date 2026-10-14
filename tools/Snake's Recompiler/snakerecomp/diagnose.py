@@ -210,7 +210,7 @@ def find_problems(session: Session) -> list:
     findings = []
     health, rom = session.health, session.facts.get("rom", "<rom>")
     ended = int(session.facts.get("ended", "0") or 0)
-    disasm = f'python3 -m snakedecomp disasm "{rom}" -f -a '
+    disasm = f'python3 -m snakerecomp disasm "{rom}" -f -a '
 
     # It stopped by itself.
     stops = [s for s in session.stopped if s.startswith(("game stopped", "host:"))]

@@ -14,11 +14,11 @@
  * button (remembered in settings/launcher.txt), or else roms/.
  *
  * It knows nothing about ROMs itself. It asks the Python tools for the list
- * ("python3 -m snakedecomp list <folder>", one line per game), and to start
+ * ("python3 -m snakerecomp list <folder>", one line per game), and to start
  * a game it runs the same commands you could type:
  *
- *   python3 -m snakedecomp build <rom>     translate and compile, if needed
- *   python3 -m snakedecomp run <rom>       play
+ *   python3 -m snakerecomp build <rom>     translate and compile, if needed
+ *   python3 -m snakerecomp run <rom>       play
  *
  * While the first is working we show a "getting ready" screen; while the
  * second is running our window is hidden, and it comes back when the game
@@ -152,7 +152,7 @@ static void read_list(void) {
     if (chosen < game_count)
         strcpy(was, games[chosen].path); /* stay on the same game afterwards */
     shell_quote(name, sizeof name, folder);
-    snprintf(command, sizeof command, "python3 -m snakedecomp list %s", name);
+    snprintf(command, sizeof command, "python3 -m snakerecomp list %s", name);
     FILE *list = popen(command, "r");
     game_count = 0;
     while (list && game_count < MAX_GAMES && fgets(line, sizeof line, list)) {
@@ -589,7 +589,7 @@ static void draw(const char *banner, const char *banner_detail) {
     SDL_RenderClear(renderer);
     char line[200];
 
-    text(margin, U(5), "SNAKE'S DECOMPILER", WHITE);
+    text(margin, U(5), "SNAKE'S RECOMPILER", WHITE);
     snprintf(line, sizeof line, "%d games, %s", game_count, order_words[order]);
     text(window_w - margin - (int)strlen(line) * letter, U(5), line, GREY);
     /* The tabs: the one we are on has a bar under its name. */
@@ -650,7 +650,7 @@ static void draw(const char *banner, const char *banner_detail) {
 static pid_t start(const char *what, const char *rom) {
     pid_t child = fork();
     if (child == 0) {
-        execlp("python3", "python3", "-m", "snakedecomp", what, rom, (char *)NULL);
+        execlp("python3", "python3", "-m", "snakerecomp", what, rom, (char *)NULL);
         _exit(127);
     }
     return child;
@@ -883,9 +883,9 @@ int main(int argc, char **argv) {
      * it: on KDE with Wayland that is how the window's place on the screen
      * is remembered, by a window rule (see "Where the windows open" in
      * README.md), since there a program cannot place its own window. */
-    setenv("SDL_VIDEO_WAYLAND_WMCLASS", "snakes-n64-decompiler-list", 0);
-    setenv("SDL_VIDEO_X11_WMCLASS", "snakes-n64-decompiler-list", 0);
-    SDL_SetHint("SDL_APP_ID", "snakes-n64-decompiler-list");
+    setenv("SDL_VIDEO_WAYLAND_WMCLASS", "snakes-n64-recompiler-list", 0);
+    setenv("SDL_VIDEO_X11_WMCLASS", "snakes-n64-recompiler-list", 0);
+    SDL_SetHint("SDL_APP_ID", "snakes-n64-recompiler-list");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         fprintf(stderr, "launcher: %s\n", SDL_GetError());
         return 1;
@@ -895,7 +895,7 @@ int main(int argc, char **argv) {
      * is still there, else roms/. */
     folder = argc > 1 ? argv[1] : chosen_folder[0] && access(chosen_folder, R_OK) == 0 ? chosen_folder : "roms";
     int place = window_placed && positions_work() && on_a_screen(window_x0, window_y0);
-    window = SDL_CreateWindow("Snake's Decompiler", place ? window_x0 : SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow("Snake's Recompiler", place ? window_x0 : SDL_WINDOWPOS_CENTERED,
                               place ? window_y0 : SDL_WINDOWPOS_CENTERED, window_w0, window_h0,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (window_maximised ? SDL_WINDOW_MAXIMIZED : 0) |
                                   (fullscreen && !getenv("LAUNCHER_SHOT") ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));

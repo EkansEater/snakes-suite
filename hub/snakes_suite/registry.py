@@ -147,11 +147,15 @@ def load_tools(index: dict | None = None) -> list[Tool]:
     tools: list[Tool] = []
     for entry in data.get("tools", []):
         icon = ASSETS / f"{entry.get('icon', entry['id'])}.svg"
+        # A tool installed under the name it had before it was renamed counts as an older version of it.
+        mine = manifests.pop(entry["id"], None)
+        for old in entry.get("formerly", []):
+            mine = mine or manifests.pop(old, None)
         tools.append(Tool(
             id=entry["id"], name=entry["name"], tagline=entry.get("tagline", ""),
             description=entry.get("description", ""), platforms=entry.get("platforms", []),
             needs=entry.get("needs", []), icon=icon if icon.exists() else None, entry=entry,
-            manifest=manifests.pop(entry["id"], None), package=packages.package_for(index, entry["id"]),
+            manifest=mine, package=packages.package_for(index, entry["id"]),
             source=(kit / entry["folder"]).resolve() if kit else None,
             legacy=legacy_entries(entry),
         ))

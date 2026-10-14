@@ -1,10 +1,10 @@
 # Where each game stands
 
-Written by `python3 -m snakedecomp check`; do not edit by hand (it is written afresh each time).
+Written by `python3 -m snakerecomp check`; do not edit by hand (it is written afresh each time).
 What people find by playing or looking goes in `checks/notes.txt`, or:
 
 ```bash
-python3 -m snakedecomp note NSM played good "Played to the first star, all fine"
+python3 -m snakerecomp note NSM played good "Played to the first star, all fine"
 ```
 
 Last written 2026-10-13 17:03. 7 Ready, 13 In Progress, 2 Untested, 10 Broken.

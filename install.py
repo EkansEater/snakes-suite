@@ -217,6 +217,10 @@ def install(tool: dict, desktop: bool) -> bool:
         "desktop_shortcut": desktop,
         "installed": datetime.datetime.now().isoformat(timespec="seconds"),
     })
+    for former in tool.get("formerly", []):  # the copy installed under the name it had before it was renamed
+        if manifest := ig.read_manifest(former):
+            ig.remove_integration(manifest)
+            ig.forget(former)
     # Lets the hub find this kit (for installing from source) when it runs from elsewhere.
     (ig.DATA / "kit.json").write_text(json.dumps({"suite_root": str(SUITE), "python": sys.executable}, indent=2),
                                       encoding="utf-8")
@@ -237,6 +241,10 @@ def pip_name(tool: dict) -> str | None:
 def uninstall(tool_id: str, tools: dict) -> None:
     manifest = ig.read_manifest(tool_id)
     tool = tools.get(tool_id)
+    if not manifest and tool:  # perhaps installed under the name it had before it was renamed
+        former = next((old for old in tool.get("formerly", []) if ig.read_manifest(old)), None)
+        if former:
+            tool_id, manifest = former, ig.read_manifest(former)
     name = tool["name"] if tool else tool_id
     if not manifest:
         say(f"{name} is not installed.")

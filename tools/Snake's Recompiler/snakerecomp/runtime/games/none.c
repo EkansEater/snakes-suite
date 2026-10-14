@@ -3,7 +3,7 @@
  * list of mods, so the F1 menu shows only the settings page.
  *
  * To start on a new game, copy NSME.c to a file named after the game's
- * four-letter code (python3 -m snakedecomp info game.z64 shows it).
+ * four-letter code (python3 -m snakerecomp info game.z64 shows it).
  */
 #include "mods.h"
 

@@ -8,13 +8,13 @@ that puts each one on your computer as a normal app, alone or as a whole kit.
 | Snake's Code | Code editor (Electron, Monaco) | ✓ | ✓ | ✓ |
 | Snake's Compressor | Lossless `.snake` archiver | ✓ | ✓ | ✓ |
 | Snake's Converter | Audio, video, image, document converter | ✓ | ✓ | ✓ |
-| Snake's Decompiler | N64 recompiler | ✓ | – | – |
+| Snake's Recompiler | N64 recompiler | ✓ | – | – |
 | Snake's SoundPad | Soundboard through a virtual mic | ✓ | – | – |
 | Snake's MP3 Converter | Video links to tagged MP3s (was Snake's Sounds) | ✓ | ✓ | ✓ |
 | Snake's DAW | Amp, effects, looper, recording | ✓ | ✓ | ✓ |
 | Snake's Screen Recorder | Screen to MP4 / GIF, audio to MP3 | ✓ | ✓ | ✓ |
 
-SoundPad depends on PipeWire and the Decompiler's launcher on Unix process
+SoundPad depends on PipeWire and the Recompiler's launcher on Unix process
 handling, so both are Linux only for now. The hub shows them as "Linux only"
 elsewhere.
 
@@ -88,8 +88,13 @@ then wait for the tile's Update button (and the status bar's, for the app).
 
 A tool that used to keep your files inside its own folder can list them as
 `user_data` in `suite.json` (the folder they go to, and the names to move), and
-an update moves them out before replacing the program. The Decompiler does
-this: saves, states, settings and ROMs go to `~/.local/share/snakes-decompiler/`.
+an update moves them out before replacing the program. The Recompiler does
+this: saves, states, settings and ROMs go to `~/.local/share/snakes-recompiler/`.
+
+A tool that is renamed lists its old id as `formerly` (and an old data folder
+as `user_data.formerly`). The app then treats a copy installed under the old
+id as an older version of the renamed tool: updating it removes the old menu
+entries and program, and moves the old data folder to the new one.
 
 ## The look
 

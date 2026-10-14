@@ -1,4 +1,4 @@
-# Snake's Decompiler
+# Snake's Recompiler
 
 An N64 recompiler, part of Snake's Suite.
 
@@ -13,8 +13,9 @@ commands it uses, where its code is, and which ready-made cheats exist for
 it. Each game gets its own menu with its own cheats, and every game gets a
 free camera.
 
-One point of wording: this tool *recompiles* rather than *decompiles*. It
-produces C that runs, not readable source like a hand-made decompilation.
+It *recompiles* rather than *decompiles*: it produces C that runs, not
+readable source like a hand-made decompilation. (It was called Snake's
+Decompiler until version 1.2.)
 
 This is a learning project. It is not finished and it does not run every game.
 
@@ -71,7 +72,7 @@ A game that stops prints a line beginning `game stopped:` saying where.
 To see how far every ROM in a folder gets, without opening a window:
 
 ```bash
-python3 -m snakedecomp survey path/to/folder
+python3 -m snakerecomp survey path/to/folder
 ```
 
 It builds each game, runs it by itself for a while pressing Start now and
@@ -85,7 +86,7 @@ written afresh by this command, which is also how a change to the tool is
 tested without anyone having to play 32 games:
 
 ```bash
-python3 -m snakedecomp check
+python3 -m snakerecomp check
 ```
 
 It builds every game in `roms/`, runs each by itself for a minute with no
@@ -109,8 +110,8 @@ game its own presses, to take it into real play; `check.py` describes it.
 What you find by playing goes in the same list:
 
 ```bash
-python3 -m snakedecomp note NKT played good "Two Grand Prix cups, all fine"
-python3 -m snakedecomp note NMF played bad "Text on the scorecard is garbled"
+python3 -m snakerecomp note NKT played good "Two Grand Prix cups, all fine"
+python3 -m snakerecomp note NMF played bad "Text on the scorecard is garbled"
 ```
 
 The three letters are the game's code, shown by `info`.
@@ -123,7 +124,7 @@ you quit, the terminal says in a line what the log shows. For the full
 story of the last games you played:
 
 ```bash
-python3 -m snakedecomp diagnose
+python3 -m snakerecomp diagnose
 ```
 
 For each run it says what happened (the screen went blank, the game froze,
@@ -131,7 +132,7 @@ stopped, crashed or ran slowly), shows the evidence, and points at the part
 of this tool to look at. The same text is saved as `logs/report.txt`.
 
 ```bash
-python3 -m snakedecomp diagnose --replay
+python3 -m snakerecomp diagnose --replay
 ```
 
 also plays each troubled run again by itself, with no window and the same
@@ -182,7 +183,7 @@ lists another folder just this once.
 **Where your things are kept.** Run from this source folder, everything you
 make (saves, save states, settings, built games, logs, screenshots) is kept
 in folders here, as below. A copy installed by Snake's Suite keeps them
-in `~/.local/share/snakes-decompiler/` instead, so they survive the program
+in `~/.local/share/snakes-recompiler/` instead, so they survive the program
 being updated, uninstalled or reinstalled. Your ROMs stay wherever you keep
 them.
 
@@ -213,7 +214,7 @@ not been built yet, so its first start takes a minute or two; this builds
 every game in a folder ahead of time:
 
 ```bash
-python3 -m snakedecomp build roms
+python3 -m snakerecomp build roms
 ```
 
 The list's window and the game's window each come back the size they were
@@ -225,8 +226,8 @@ afresh.
 too. On most desktops the tool does that itself. On a Wayland desktop a
 program is not allowed to know or choose where its window goes, so there the
 desktop has to do the remembering. On KDE that is a "window rule" for each of
-our two windows, which the desktop knows as `snakes-n64-decompiler` (a game)
-and `snakes-n64-decompiler-list` (the list). Put this in
+our two windows, which the desktop knows as `snakes-n64-recompiler` (a game)
+and `snakes-n64-recompiler-list` (the list). Put this in
 `~/.config/kwinrulesrc` (if the file already has rules, add the two names to
 its `rules=` line and raise `count` instead of replacing them):
 
@@ -236,18 +237,18 @@ count=2
 rules=snake-n64-game,snake-n64-list
 
 [snake-n64-game]
-Description=Snake's N64 decompiler: game window remembers its place
+Description=Snake's N64 recompiler: game window remembers its place
 position=480,166
 positionrule=4
-wmclass=snakes-n64-decompiler
+wmclass=snakes-n64-recompiler
 wmclasscomplete=false
 wmclassmatch=1
 
 [snake-n64-list]
-Description=Snake's N64 decompiler: game list remembers its place
+Description=Snake's N64 recompiler: game list remembers its place
 position=480,166
 positionrule=4
-wmclass=snakes-n64-decompiler-list
+wmclass=snakes-n64-recompiler-list
 wmclasscomplete=false
 wmclassmatch=1
 ```
@@ -429,16 +430,16 @@ cn Infinite Time
 
 `cn` starts a cheat and gives its name; each line after it is a code: where
 in the game's memory, and the value to keep writing there.
-`snakedecomp/runtime/cheats.c` explains every kind of code.
+`snakerecomp/runtime/cheats.c` explains every kind of code.
 
 **Cheats made for one game.** Super Mario 64 also has cheats written
 specially for it, which can do what codes cannot (change how a jump works,
 not just a number): infinite lives and health, no fall damage, the three
 caps, triple jumps, higher jumps, mid-air jumps, low gravity, moon jump,
 giant, tiny and fast Mario. And one fix: keep objects visible at the edges
-of a widescreen picture. They live in `snakedecomp/runtime/games/NSME.c`;
+of a widescreen picture. They live in `snakerecomp/runtime/games/NSME.c`;
 a file there named after another game's four-letter code does the same for
-that game, and `snakedecomp/runtime/mods.h` explains how.
+that game, and `snakerecomp/runtime/mods.h` explains how.
 
 ### Saved games
 
@@ -454,7 +455,7 @@ saved in different ways and the tool handles these:
 
 ## How it works
 
-The tools are in `snakedecomp/`, and are meant to be read:
+The tools are in `snakerecomp/`, and are meant to be read:
 
 | File | What it does |
 |---|---|
@@ -495,11 +496,11 @@ Three ideas carry most of the weight:
 Other commands, for looking inside a ROM:
 
 ```bash
-python3 -m snakedecomp info game.z64
-python3 -m snakedecomp functions game.z64
-python3 -m snakedecomp disasm game.z64 -n 20
-python3 -m snakedecomp recompile game.z64 --verify
-python3 -m snakedecomp run game.z64 --notes     (what could not be translated, and why)
+python3 -m snakerecomp info game.z64
+python3 -m snakerecomp functions game.z64
+python3 -m snakerecomp disasm game.z64 -n 20
+python3 -m snakerecomp recompile game.z64 --verify
+python3 -m snakerecomp run game.z64 --notes     (what could not be translated, and why)
 ```
 
 When a game misbehaves, these show what it is doing (set before `./play`):
@@ -545,13 +546,13 @@ map as `name.map`, or a list in the form the splat tool uses
 
 ## Credits
 
-- `snakedecomp/data/libultra.json` holds one-way hashes of OS library
+- `snakerecomp/data/libultra.json` holds one-way hashes of OS library
   functions, used to recognise them. It contains no code.
-- `snakedecomp/data/n64sym.sig.gz` is the signature list of the
+- `snakerecomp/data/n64sym.sig.gz` is the signature list of the
   [n64sym](https://github.com/shygoo/n64sym) project by shygoo: checksums
   of library functions from many SDK releases. MIT licence, in
-  `snakedecomp/data/n64sym-LICENSE.md`.
-- `snakedecomp/data/cheats.txt.gz` is the cheat list that comes with
+  `snakerecomp/data/n64sym-LICENSE.md`.
+- `snakerecomp/data/cheats.txt.gz` is the cheat list that comes with
   [mupen64plus](https://mupen64plus.org/), written by Gent for Project64.
   GPL version 2 or later; the notice is at the top of the file.
 - The menu font is generated from DejaVu Sans Mono Bold.

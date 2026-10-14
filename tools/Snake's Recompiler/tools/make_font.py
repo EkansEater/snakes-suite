@@ -1,4 +1,4 @@
-"""Draws the menu's font and writes it out as snakedecomp/runtime/font.h.
+"""Draws the menu's font and writes it out as snakerecomp/runtime/font.h.
 
 The game program cannot read font files, so the letters are stored inside it
 as a picture: every printable character side by side, each in a box 32 dots
@@ -31,7 +31,7 @@ for index in range(95):
     left = index * (WIDTH + GAP) + GAP // 2 + (WIDTH - font.getlength(character)) / 2
     draw.text((left, top), character, font=font, fill=255)
 
-out = os.path.join(os.path.dirname(__file__), "..", "snakedecomp", "runtime", "font.h")
+out = os.path.join(os.path.dirname(__file__), "..", "snakerecomp", "runtime", "font.h")
 with open(out, "w") as f:
     f.write("/* The menu's font: a picture of every printable character (space to ~)\n")
     f.write(" * side by side. One letter per dot, A = empty to P = solid. Generated\n")

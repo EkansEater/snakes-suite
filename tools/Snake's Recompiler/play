@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launcher for Snake's N64 decompiler: checks what is needed, then builds and
+# Launcher for Snake's N64 recompiler: checks what is needed, then builds and
 # runs a game from your own ROM.
 #
 #   ./play                      show the list of games in your ROM folder
@@ -19,7 +19,12 @@ here="$(dirname "$(readlink -f "$0")")"
 # reinstalled, but one of its own that is left alone. A copy run from its
 # source folder keeps using that folder, as it always has.
 if [ -f "$here/snake-package.json" ]; then
-    work="${XDG_DATA_HOME:-$HOME/.local/share}/snakes-decompiler"
+    work="${XDG_DATA_HOME:-$HOME/.local/share}/snakes-recompiler"
+    # (Before it was renamed this was Snake's Decompiler, and kept them here.)
+    former="${XDG_DATA_HOME:-$HOME/.local/share}/snakes-decompiler"
+    if [ ! -e "$work" ] && [ -d "$former" ]; then
+        mv "$former" "$work" || exit 1
+    fi
     mkdir -p "$work" || exit 1
     export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
     cd "$work" || exit 1
@@ -72,15 +77,15 @@ else
         folder=("$(readlink -f "$1")")
     fi
     mkdir -p roms build
-    source="$here/snakedecomp/launcher/launcher.c"
+    source="$here/snakerecomp/launcher/launcher.c"
     # (controls.h is shared with the games: the list of buttons and their names)
-    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ "$here/snakedecomp/runtime/controls.h" -nt build/launcher ] || [ "$here/snakedecomp/launcher/snake_palette.h" -nt build/launcher ]; then
+    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ "$here/snakerecomp/runtime/controls.h" -nt build/launcher ] || [ "$here/snakerecomp/launcher/snake_palette.h" -nt build/launcher ]; then
         # shellcheck disable=SC2046
-        gcc -O1 $(pkg-config --cflags sdl2) -I "$here/snakedecomp/runtime" "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
+        gcc -O1 $(pkg-config --cflags sdl2) -I "$here/snakerecomp/runtime" "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
     fi
     exec build/launcher "${folder[@]}"
 fi
 
 echo "Starting $rom (the first run builds the game, which takes a minute or two)"
 echo "Esc, F1 or Select: menu.  Tab: fast forward.  F5/F7: save/load state.  F11: full screen."
-exec python3 -m snakedecomp run "$rom" "$@"
+exec python3 -m snakerecomp run "$rom" "$@"
