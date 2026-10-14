@@ -84,6 +84,9 @@ def sync_tool(tool: dict, root: Path) -> None:
                     write(adir / f"{target}.{ext}", src.read_bytes())
         if assets.get("rgba64"):
             write(adir / "icon64.rgba", rgba64(ICONS / f"{icon}.png"))
+    if tool.get("id") == "suite":
+        # The one-file app carries the catalogue, so it knows every tool without the kit.
+        write(root / "snakes_suite" / "catalogue.json", (SUITE / "suite.json").read_bytes())
     if "c_icon" in assets:
         write(root / assets["c_icon"], icon_header(rgba64(ICONS / f"{icon}.png")))
 

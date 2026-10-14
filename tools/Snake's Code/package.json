@@ -29,6 +29,7 @@
     "globals": "^17.13.0"
   },
   "productName": "Snake's Code",
+  "desktopName": "snakes-code.desktop",
   "author": "Snake",
   "allowScripts": {
     "esbuild": true,
@@ -37,5 +38,32 @@
   },
   "bin": {
     "snakes-code": "bin/snakes-code"
+  },
+  "build": {
+    "appId": "com.snake.suite.code",
+    "productName": "Snake's Code",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "package.json",
+      "src/main/**",
+      "dist/**",
+      "assets/**"
+    ],
+    "icon": "assets/icon.png",
+    "linux": {
+      "target": "dir",
+      "executableName": "snakes-code",
+      "category": "Development"
+    },
+    "win": {
+      "target": "dir"
+    },
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.developer-tools",
+      "identity": "-"
+    }
   }
 }

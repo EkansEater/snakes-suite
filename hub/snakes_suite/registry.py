@@ -1,9 +1,9 @@
-"""What tools exist, which are installed, and how to start them.
+"""What tools exist, which are installed, and which can be downloaded.
 
-The installer (install.py at the top of the kit) writes one manifest per
-installed tool into the suite's data folder, plus kit.json saying where the kit
-is. The catalogue (suite.json in the kit) lists every tool, installed or not.
-data_dir() must agree with install.py.
+Three sources: the catalogue (suite.json, built into the app) lists every
+tool; the manifests written at install time say what is installed; the
+release index (fetched by the app) says what can be downloaded for this
+system, and so whether an update is waiting.
 """
 
 from __future__ import annotations
@@ -14,20 +14,11 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-if sys.platform.startswith("win"):
-    OS = "windows"
-elif sys.platform == "darwin":
-    OS = "macos"
-else:
-    OS = "linux"
+from . import integrate as ig
+from . import packages
 
-
-def data_dir() -> Path:
-    if OS == "windows":
-        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "SnakesSuite"
-    if OS == "macos":
-        return Path.home() / "Library" / "Application Support" / "SnakesSuite"
-    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "snakes-suite"
+OS = ig.OS
+ASSETS = Path(__file__).resolve().parent / "assets"
 
 
 @dataclass
@@ -39,8 +30,10 @@ class Tool:
     platforms: list[str] = field(default_factory=list)
     needs: list[str] = field(default_factory=list)
     icon: Path | None = None
-    manifest: dict | None = None      # set when installed
-    source: Path | None = None        # its folder in the kit, when the kit is here
+    entry: dict = field(default_factory=dict)  # its catalogue entry
+    manifest: dict | None = None               # set when installed
+    package: dict | None = None                # this system's download, when the index has one
+    source: Path | None = None                 # its folder, when running from the kit
 
     @property
     def installed(self) -> bool:
@@ -51,26 +44,42 @@ class Tool:
         return not self.platforms or OS in self.platforms
 
     @property
-    def installable(self) -> bool:
+    def downloadable(self) -> bool:
+        return self.supported and self.package is not None
+
+    @property
+    def buildable(self) -> bool:
+        """Can be installed from the kit's source with install.py (developers)."""
         return self.supported and self.source is not None and self.source.is_dir()
+
+    @property
+    def installable(self) -> bool:
+        return self.downloadable or self.buildable
+
+    @property
+    def update_available(self) -> bool:
+        if not (self.installed and self.package) or (self.manifest or {}).get("source_build"):
+            return False
+        mine = packages.version_tuple((self.manifest or {}).get("version", "0"))
+        return packages.version_tuple(self.package.get("version", "0")) > mine
 
 
 def kit_root() -> Path | None:
-    """The folder holding suite.json and install.py, if this machine has it."""
+    """The folder holding suite.json and install.py, if this app runs from it (or knows it)."""
     here = Path(__file__).resolve()
-    for parent in here.parents:  # running from the kit itself
+    for parent in here.parents:
         if (parent / "suite.json").exists() and (parent / "install.py").exists():
             return parent
     try:
-        root = Path(json.loads((data_dir() / "kit.json").read_text(encoding="utf-8"))["suite_root"])
-        return root if (root / "suite.json").exists() else None
+        root = Path(json.loads((ig.DATA / "kit.json").read_text(encoding="utf-8"))["suite_root"])
+        return root if (root / "install.py").exists() else None
     except (OSError, ValueError, KeyError):
         return None
 
 
 def installer_python() -> str:
     try:
-        py = json.loads((data_dir() / "kit.json").read_text(encoding="utf-8"))["python"]
+        py = json.loads((ig.DATA / "kit.json").read_text(encoding="utf-8"))["python"]
         if Path(py).exists():
             return py
     except (OSError, ValueError, KeyError):
@@ -78,36 +87,29 @@ def installer_python() -> str:
     return sys.executable
 
 
-def load_tools() -> list[Tool]:
-    """Every tool, in catalogue order, with its install state. The hub itself is left out."""
-    manifests = {}
-    folder = data_dir() / "installed"
-    if folder.is_dir():
-        for path in sorted(folder.glob("*.json")):
-            try:
-                manifests[path.stem] = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-
+def load_tools(index: dict | None = None) -> list[Tool]:
+    """Every tool, in catalogue order, with its install and download state. The hub itself is left out."""
+    data = packages.catalogue()
+    kit = kit_root()
+    manifests = {tool_id: ig.read_manifest(tool_id) for tool_id in ig.installed_ids()}
     tools: list[Tool] = []
-    root = kit_root()
-    icons = Path(__file__).resolve().parent / "assets"
-    if root:
-        data = json.loads((root / "suite.json").read_text(encoding="utf-8"))
-        for entry in data["tools"]:
-            icon = icons / f"{entry.get('icon', entry['id'])}.svg"
-            tools.append(Tool(
-                id=entry["id"], name=entry["name"], tagline=entry.get("tagline", ""),
-                description=entry.get("description", ""), platforms=entry.get("platforms", []),
-                needs=entry.get("needs", []), icon=icon if icon.exists() else None,
-                manifest=manifests.pop(entry["id"], None), source=(root / entry["folder"]).resolve(),
-            ))
+    for entry in data.get("tools", []):
+        icon = ASSETS / f"{entry.get('icon', entry['id'])}.svg"
+        tools.append(Tool(
+            id=entry["id"], name=entry["name"], tagline=entry.get("tagline", ""),
+            description=entry.get("description", ""), platforms=entry.get("platforms", []),
+            needs=entry.get("needs", []), icon=icon if icon.exists() else None, entry=entry,
+            manifest=manifests.pop(entry["id"], None), package=packages.package_for(index, entry["id"]),
+            source=(kit / entry["folder"]).resolve() if kit else None,
+        ))
     manifests.pop("suite", None)
-    # Installed tools the catalogue here does not know (installed from another kit).
-    for tool_id, m in manifests.items():
-        icon = m.get("icons", {}).get("svg") or m.get("icons", {}).get("png")
+    for tool_id, m in manifests.items():  # installed from a newer catalogue than this app knows
+        if not m:
+            continue
+        icon = (m.get("icons") or {}).get("svg") or (m.get("icons") or {}).get("png")
         tools.append(Tool(id=tool_id, name=m.get("name", tool_id), tagline=m.get("tagline", ""),
-                          description=m.get("description", ""), icon=Path(icon) if icon else None, manifest=m))
+                          description=m.get("description", ""), icon=Path(icon) if icon else None,
+                          entry={"id": tool_id, "name": m.get("name", tool_id)}, manifest=m))
     return tools
 
 

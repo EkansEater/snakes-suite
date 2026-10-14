@@ -281,6 +281,16 @@ def apply(app, *, icon_path=None) -> None:
     app.setStyleSheet(stylesheet())
     if icon_path:
         app.setWindowIcon(QtGui.QIcon(str(icon_path)))
+    if sys.platform.startswith("win"):
+        # Without its own id Windows files the app under python.exe and shows Python's icon
+        # on the taskbar instead of the window icon.
+        name = app.desktopFileName() or app.applicationName() or "app"
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(f"Snake.Suite.{name}")
+        except (AttributeError, OSError):
+            pass
 
 
 def repolish(widget) -> None:

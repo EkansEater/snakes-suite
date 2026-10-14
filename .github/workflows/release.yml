@@ -1,0 +1,99 @@
+# Builds every tool and the one-file Snake's Suite app on Linux, Windows and macOS,
+# then publishes them as a GitHub release. The app downloads tools from the latest release.
+#
+#   Run it: push a tag like v1.0.1, or start it by hand from the Actions tab.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04      # an older Ubuntu, so the Linux builds run on older distributions too
+          - os: windows-latest
+          - os: macos-15          # Apple silicon
+          - os: macos-15-intel    # Intel Macs
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev liblilv-dev \
+            libgirepository1.0-dev libcairo2-dev gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+            libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
+            libfuse2 rpm
+
+      - name: Python tools' requirements
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller \
+            "./tools/Snake's Converter" "./tools/Snake's MP3 Converter" "./tools/Snake's Screen Recorder" ./hub
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python -m pip install "./tools/Snake's SoundPad" "PyGObject<3.51"
+          fi
+
+      - name: Build the tools
+        shell: bash
+        run: python packaging/build.py tools
+
+      - name: Build Snake's Suite (one file)
+        shell: bash
+        run: python packaging/build.py hub
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snakes-suite-${{ matrix.os }}
+          path: |
+            release/snakes-*
+            release/Snakes-Suite-*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Index for the app
+        run: python packaging/build.py index dist
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then tag="v$(python -c 'import json;print(json.load(open("suite.json"))["version"])')"; fi
+          notes="Download **Snake's Suite** for your system below (Snakes-Suite-…), open it, and pick the tools you want.
+
+          - Windows: \`Snakes-Suite-windows-x86_64.exe\`. If SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.
+          - macOS: \`Snakes-Suite-macos-arm64.dmg\` (Apple silicon) or \`-x86_64.dmg\` (Intel). The first time, right-click the app and choose *Open*.
+          - Linux: \`Snakes-Suite-linux-x86_64\`. Make it executable (\`chmod +x\`), then run it.
+
+          The other files are the tools themselves; the app downloads them for you."
+          gh release delete "$tag" --yes --cleanup-tag=false 2>/dev/null || true
+          gh release create "$tag" --title "Snake's Suite ${tag#v}" --notes "$notes" --latest \
+            dist/index.json dist/Snakes-Suite-* dist/snakes-*.tar.gz dist/snakes-*.zip

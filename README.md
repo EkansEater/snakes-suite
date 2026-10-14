@@ -18,39 +18,52 @@ SoundPad depends on PipeWire and the Decompiler's launcher on Unix process
 handling, so both are Linux only for now. The hub shows them as "Linux only"
 elsewhere.
 
-## Install
+## Download
 
-You need Python 3.10 or newer. From this folder:
+Get **Snake's Suite** for your system from the
+[latest release](https://github.com/EkansEater/snakes-suite/releases/latest). It is one file:
+
+| System | File |
+|---|---|
+| Windows | `Snakes-Suite-windows-x86_64.exe` |
+| macOS (Apple silicon / Intel) | `Snakes-Suite-macos-arm64.dmg` / `Snakes-Suite-macos-x86_64.dmg` |
+| Linux | `Snakes-Suite-linux-x86_64` (make it executable: `chmod +x`) |
+
+Open it and it offers to install itself, with its own icon in your app list and
+on the desktop. Then pick any tool, or the whole kit: each downloads ready to
+run (no Python, Rust or Node.js needed) and installs as a normal app with its
+own snake icon, in the application menu, the Start menu or ~/Applications, and
+optionally on the desktop. Come back to Snake's Suite to update or remove tools.
+
+The apps are not signed by Microsoft or Apple, so the first time: on Windows
+choose *More info → Run anyway* if SmartScreen warns; on macOS right-click the
+app and choose *Open*.
+
+## Releasing
+
+Push a tag (`git tag v1.0.1 && git push --tags`) or run the **Release** workflow
+from the Actions tab. GitHub builds every tool and the one-file app on Linux,
+Windows and macOS (`packaging/build.py`) and publishes them with `index.json`,
+which the app reads to know what it can download. Raise `version` in
+`suite.json` so installed copies see the update.
+
+To build for this computer only: `python packaging/build.py tools`, `... hub`,
+then `... index release/`. Set `SNAKES_SUITE_INDEX` to another index URL to
+test the app against your own build.
+
+## Installing from source (for developing the tools)
+
+`install.py` builds tools from this folder instead of downloading them:
 
 ```bash
-python install.py --all             # the whole kit, plus the hub
+python install.py --all             # every tool, plus the hub
 python install.py converter daw     # just these
-python install.py                   # pick from a list
 python install.py --list            # what is installed
-python install.py --uninstall daw   # remove one (--uninstall --all removes everything)
+python install.py --uninstall daw   # remove one
 ```
 
-Add `--desktop` for desktop shortcuts. Building the Compressor and the DAW
-needs [Rust](https://rustup.rs); Snake's Code needs [Node.js](https://nodejs.org).
-If one is missing, that tool is skipped with a note and the rest still install.
-
-What "installed" means on each system:
-
-- **Linux:** an entry in the application menu with its icon, a command in
-  `~/.local/bin` (`snakes-converter`, `snakepad`, `snakescreen`, `snakedaw`, `snake`…),
-  and optionally a desktop launcher.
-- **Windows:** a Start menu folder "Snake's Suite", an entry under
-  Settings › Apps › Installed apps with an Uninstall button, and optionally a desktop shortcut.
-- **macOS:** an app bundle in `~/Applications` (with its icon, so it is in Launchpad
-  and Spotlight), and optionally an alias on the desktop.
-
-Programs and the shared Python environment live in the suite's data folder
-(`~/.local/share/snakes-suite`, `%LOCALAPPDATA%\SnakesSuite`, or
-`~/Library/Application Support/SnakesSuite`). Uninstalling removes all of that,
-but never your own files (projects, recordings, settings).
-
-Snake's Code and the Decompiler run from their source folders: Electron needs its
-`node_modules` beside it, and the Decompiler builds games next to itself.
+Building needs Python 3.10+, Rust for the Compressor and the DAW, and Node.js
+for Snake's Code.
 
 ## The hub
 
@@ -83,7 +96,7 @@ python shared/sync.py
 
 ## Adding a new tool
 
-1. Give it an entry in `suite.json`: its `id`, `name`, `tagline`, `folder`, `kind`
+1. Put it in `tools/` and give it an entry in `suite.json`: its `id`, `name`, `tagline`, `folder`, `kind`
    (`python`, `cargo`, `electron` or `script`), `platforms`, and what it needs.
    A Python tool needs a `pyproject.toml` and its `module`; a Rust tool its `binary`.
 2. Add its glyph to `GLYPHS` in `shared/icons/make_icons.py` and run it.
@@ -92,10 +105,7 @@ python shared/sync.py
 4. In the tool, use the theme: `snake_theme.apply(app)` and a `HeaderBar` for Qt,
    or `snake_theme::apply(ctx)` with `header_frame()` for egui.
 
-The installer and the hub read `suite.json`, so the new tool appears in both
-with no further changes.
-
-## Backups
-
-`backups/pre-overhaul-2026-10-14/` holds the source of every tool from before
-the suite overhaul.
+The installer, the release build and the app all read `suite.json`, so the new
+tool appears everywhere with no further changes. For a Python tool, add a
+`package` entry (its `entry` function, `exe` name and Qt binding) so it can be
+frozen; see the existing tools.

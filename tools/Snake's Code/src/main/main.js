@@ -18,6 +18,8 @@ const DIST = path.join(ROOT, 'dist');
 const isDev = process.argv.includes('--dev');
 
 app.setName("Snake's Code");
+// Windows groups taskbar buttons and picks their icon by this id.
+if (process.platform === 'win32') app.setAppUserModelId('Snake.Suite.Code');
 if (process.env.SNAKE_USER_DATA) app.setPath('userData', process.env.SNAKE_USER_DATA);
 Menu.setApplicationMenu(null);
 
