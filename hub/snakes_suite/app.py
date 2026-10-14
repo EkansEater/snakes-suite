@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from . import APP_NAME, __version__, packages, snake_theme
 from . import integrate as ig
-from .registry import OS, Tool, installer_python, kit_root, load_tools, pid_alive
+from .registry import OS, Tool, installer_python, kit_root, load_tools, pid_alive, remove_legacy
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 ICON_PATH = ASSETS / "icon.svg"
@@ -116,6 +116,8 @@ class Tile(QFrame):
             kind, text = "update", "Update available"
         elif t.installed:
             kind, text = "installed", "Installed"
+        elif t.legacy:
+            kind, text = "update", "Old version installed"
         elif not t.supported:
             kind, text = "unsupported", f"{' / '.join(OS_NAMES.get(p, p) for p in t.platforms)} only"
         elif t.downloadable:
@@ -130,7 +132,7 @@ class Tile(QFrame):
         snake_theme.repolish(self)
         snake_theme.repolish(self.pill)
         if t.icon:
-            mode = QIcon.Mode.Normal if t.installed else QIcon.Mode.Disabled  # not installed: faded
+            mode = QIcon.Mode.Normal if t.installed or t.legacy else QIcon.Mode.Disabled  # not installed: faded
             self.icon.setPixmap(QIcon(str(t.icon)).pixmap(QSize(76, 76), mode))
 
     def mouseReleaseEvent(self, e):
@@ -722,6 +724,8 @@ class Hub(QMainWindow):
     def activate(self, tool: Tool) -> None:
         if tool.installed:
             self.launch(tool)
+        elif tool.legacy:
+            self.handle_legacy(tool)
         elif tool.installable:
             self.install([tool])
         elif not tool.supported:
@@ -799,6 +803,29 @@ class Hub(QMainWindow):
             packages.uninstall(tool.id)
         self.reload()
 
+    def handle_legacy(self, tool: Tool) -> None:
+        """A tool installed by its old install script, before the suite: replace it, or remove it."""
+        box = QMessageBox(self)
+        box.setWindowTitle(tool.name)
+        if tool.icon:
+            box.setIconPixmap(QIcon(str(tool.icon)).pixmap(QSize(56, 56)))
+        box.setText(f"{tool.name} was installed by its old install script.")
+        box.setInformativeText("Snake's Suite cannot update or uninstall that copy. Replace it with the Snake's "
+                               "Suite version (which you can uninstall from here or by right-clicking it in your "
+                               "app menu), or just remove it.")
+        replace = box.addButton("Replace", QMessageBox.ButtonRole.AcceptRole) if tool.installable else None
+        if replace:
+            replace.setObjectName("primary")
+        remove = box.addButton("Remove", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        if box.clickedButton() is remove:
+            removed = remove_legacy(tool.legacy)
+            self.status.setText(f"Removed the old {tool.name} ({len(removed)} files)")
+            self.reload()
+        elif replace and box.clickedButton() is replace:
+            self.install([tool], desktop=False)  # installing removes the old menu entry
+
     def uninstall_everything(self) -> None:
         installed = [t for t in self.tools if t.installed]
         names = "\n".join(f"  • {t.name}" for t in installed)
@@ -822,6 +849,10 @@ class Hub(QMainWindow):
             if tool.installable and not (tool.manifest or {}).get("desktop_shortcut"):
                 menu.addAction("Add a desktop shortcut", lambda: self.install([tool], desktop=True))
             menu.addAction("Uninstall…", lambda: self.uninstall(tool))
+        elif tool.legacy:
+            if tool.installable:
+                menu.addAction("Replace with the Snake's Suite version", lambda: self.install([tool]))
+            menu.addAction("Remove old version", lambda: (remove_legacy(tool.legacy), self.reload()))
         elif tool.installable:
             menu.addAction("Install…", lambda: self.install([tool]))
         if tool.source and tool.source.is_dir():

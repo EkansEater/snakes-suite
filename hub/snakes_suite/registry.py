@@ -34,6 +34,7 @@ class Tool:
     manifest: dict | None = None               # set when installed
     package: dict | None = None                # this system's download, when the index has one
     source: Path | None = None                 # its folder, when running from the kit
+    legacy: list[Path] = field(default_factory=list)  # menu entries left by a tool's old install script
 
     @property
     def installed(self) -> bool:
@@ -64,6 +65,56 @@ class Tool:
         return packages.version_tuple(self.package.get("version", "0")) > mine
 
 
+def legacy_entries(entry: dict) -> list[Path]:
+    """Menu entries a tool's own install script made before Snake's Suite existed (Linux)."""
+    if OS != "linux":
+        return []
+    apps = ig.xdg_data() / "applications"
+    found = []
+    for name in entry.get("legacy_desktop", []):
+        path = apps / name
+        try:
+            if path.exists() and "X-Snakes-Suite=true" not in path.read_text(encoding="utf-8", errors="replace"):
+                found.append(path)
+        except OSError:
+            pass
+    return found
+
+
+def remove_legacy(paths: list[Path]) -> list[str]:
+    """Remove old menu entries and the ~/.local/bin commands they started. Returns what was removed."""
+    removed = []
+    bin_dir = Path.home() / ".local" / "bin"
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if line.startswith("Exec="):
+                parts = line[5:].strip().split()
+                exe = Path(parts[0].strip('"')) if parts else None
+                if exe and exe.parent == bin_dir and (exe.exists() or exe.is_symlink()):
+                    exe.unlink()
+                    removed.append(str(exe))
+                break
+        path.unlink(missing_ok=True)
+        removed.append(str(path))
+    return removed
+
+
+def _forget_trashed_apps() -> None:
+    """macOS: an app dragged to the Trash is uninstalled; drop what is left of it."""
+    if OS != "macos":
+        return
+    for tool_id in ig.installed_ids():
+        m = ig.read_manifest(tool_id) or {}
+        launch = m.get("launch") or []
+        if launch[:1] == ["open"] and len(launch) > 1 and not Path(launch[1]).exists():
+            ig.remove_integration(m)
+            ig.forget(tool_id)
+
+
 def kit_root() -> Path | None:
     """The folder holding suite.json and install.py, if this app runs from it (or knows it)."""
     here = Path(__file__).resolve()
@@ -91,6 +142,7 @@ def load_tools(index: dict | None = None) -> list[Tool]:
     """Every tool, in catalogue order, with its install and download state. The hub itself is left out."""
     data = packages.catalogue()
     kit = kit_root()
+    _forget_trashed_apps()
     manifests = {tool_id: ig.read_manifest(tool_id) for tool_id in ig.installed_ids()}
     tools: list[Tool] = []
     for entry in data.get("tools", []):
@@ -102,6 +154,8 @@ def load_tools(index: dict | None = None) -> list[Tool]:
             manifest=manifests.pop(entry["id"], None), package=packages.package_for(index, entry["id"]),
             source=(kit / entry["folder"]).resolve() if kit else None,
         ))
+        if not tools[-1].installed:
+            tools[-1].legacy = legacy_entries(entry)
     manifests.pop("suite", None)
     for tool_id, m in manifests.items():  # installed from a newer catalogue than this app knows
         if not m:

@@ -176,7 +176,7 @@ def install(tool: dict, desktop: bool) -> bool:
         say(f"  Not installed: {e}")
         return False
     icons = ig.copy_icons(tool["id"], ICON_SRC, tool["icon"])
-    uninstaller = [sys.executable, str(SUITE / "install.py"), "--uninstall", tool["id"], "--yes"]
+    uninstaller = [sys.executable, str(SUITE / "install.py"), "--uninstall", tool["id"], "--ask"]
     files, registry, notes = ig.integrate(tool, launch, icons, desktop=desktop, uninstaller=uninstaller)
     for note in notes:
         say(f"  {note}")
@@ -233,6 +233,30 @@ def uninstall(tool_id: str, tools: dict) -> None:
     say("  Removed. Your own files (projects, recordings, settings) were left alone.")
 
 
+def ask_gui(question: str) -> bool:
+    """A yes/no question in a window, for uninstalling from a menu where there is no terminal."""
+    try:
+        if OS == "windows":
+            import ctypes
+
+            return ctypes.windll.user32.MessageBoxW(None, question, "Snake's Suite", 0x24) == 6  # Yes/No, ?, IDYES
+        if OS == "macos":
+            script = f'display dialog {json.dumps(question)} buttons {{"Cancel", "Uninstall"}} default button 2'
+            return subprocess.run(["osascript", "-e", script], capture_output=True).returncode == 0
+        if shutil.which("kdialog"):
+            return subprocess.run(["kdialog", "--title", "Snake's Suite", "--yesno", question]).returncode == 0
+        if shutil.which("zenity"):
+            return subprocess.run(["zenity", "--question", "--title=Snake's Suite", f"--text={question}"]).returncode == 0
+    except OSError:
+        pass
+    return sys.stdin is not None and sys.stdin.isatty() and input(f"{question} [y/N] ").strip().lower()[:1] == "y"
+
+
+def tell_gui(text: str) -> None:
+    if OS == "linux" and shutil.which("notify-send"):
+        subprocess.run(["notify-send", "-a", "Snake's Suite", "Snake's Suite", text], capture_output=True)
+
+
 # --------------------------------------------------------------------------- command line
 def print_list(tools: dict) -> None:
     say(f"Snake's Suite on {OS}   (installs into {ig.DATA})\n")
@@ -278,6 +302,7 @@ def main() -> int:
     parser.add_argument("--uninstall", action="store_true", help="remove the named tools")
     parser.add_argument("--desktop", action="store_true", help="also add desktop shortcuts")
     parser.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    parser.add_argument("--ask", action="store_true", help="ask in a window (used by menu entries' Uninstall action)")
     args = parser.parse_args()
     tools = catalogue()
 
@@ -302,10 +327,16 @@ def main() -> int:
         return 2
 
     if args.uninstall:
-        if not args.yes and wanted and input(f"Remove {', '.join(wanted)}? [y/N] ").strip().lower()[:1] != "y":
+        names = ", ".join(tools[t]["name"] for t in wanted)
+        if args.ask:
+            if not ask_gui(f"Uninstall {names}?\n\nYour own files (projects, recordings, settings) are kept."):
+                return 0
+        elif not args.yes and wanted and input(f"Remove {names}? [y/N] ").strip().lower()[:1] != "y":
             return 0
         for tool_id in wanted:
             uninstall(tool_id, tools)
+        if args.ask:
+            tell_gui(f"{names} {'was' if len(wanted) == 1 else 'were'} uninstalled.")
         return 0
 
     wanted.sort(key=lambda t: t != "suite")  # the hub first, so it is there to open the rest

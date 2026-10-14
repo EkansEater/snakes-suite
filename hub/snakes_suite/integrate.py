@@ -148,7 +148,8 @@ def _write_command(command: str, cli: list[str], files: list) -> Path | None:
 
 
 # --------------------------------------------------------------------------- Linux
-def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files: list, notes: list) -> None:
+def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files: list, notes: list,
+                     uninstaller: list[str] | None) -> None:
     # The window's app id names the menu entry: that is how Wayland desktops find a window's icon.
     app_id = meta.get("wm_class") or f"snakes-{meta['id']}"
     icon_name = f"snakes-{meta['id']}"
@@ -178,6 +179,11 @@ def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files
     ]
     if launch.get("cwd"):
         lines.append(f"Path={launch['cwd']}")
+    if uninstaller:
+        # Menus and desktops show this when the entry is right-clicked: a home-folder app has
+        # no package manager to offer "Uninstall", so it brings its own.
+        lines += ["Actions=uninstall;", "", "[Desktop Action uninstall]", f"Name=Uninstall {meta['name']}",
+                  "Icon=edit-delete", "Exec=" + " ".join(desktop_quote(a) for a in uninstaller)]
     entry = "\n".join(lines) + "\n"
 
     apps = xdg_data() / "applications"
@@ -340,7 +346,7 @@ def integrate(meta: dict, launch: dict, icons: dict, *, desktop: bool = False,
     registry: list[str] = []
     notes: list[str] = []
     if OS == "linux":
-        _integrate_linux(meta, launch, icons, desktop, files, notes)
+        _integrate_linux(meta, launch, icons, desktop, files, notes, uninstaller)
     elif OS == "windows":
         _integrate_windows(meta, launch, icons, desktop, files, registry, uninstaller)
     else:
