@@ -504,9 +504,9 @@ class SourceInstallDialog(QDialog):
 class UninstallDialog(QDialog):
     """Everything installed, old copies included: tick what to remove."""
 
-    def __init__(self, parent, tools: list[Tool], *, old_only: bool = False):
+    def __init__(self, parent, tools: list[Tool], *, old_only: bool = False, everything: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("Uninstall Snake tools")
+        self.setWindowTitle("Uninstall all Snake tools" if everything else "Uninstall Snake tools")
         self.resize(560, 420)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 16, 18, 14)
@@ -541,7 +541,7 @@ class UninstallDialog(QDialog):
         lay.addWidget(box)
         lay.addStretch(1)
         self.replace = QCheckBox("Install the Snake's Suite version of removed old versions")
-        self.replace.setChecked(True)
+        self.replace.setChecked(not everything)
         self.replace.setVisible(any(t.legacy and t.installable and not t.installed for t in tools))
         lay.addWidget(self.replace)
         buttons = QHBoxLayout()
@@ -600,11 +600,16 @@ class Hub(QMainWindow):
         self.page_lay.addWidget(self.old_banner)
         self.page_lay.addSpacing(18)
         section = QHBoxLayout()
+        section.setSpacing(8)
         section.addWidget(QLabel("TOOLS", objectName="section"))
         section.addStretch(1)
         self.install_all_btn = QPushButton("Install the whole kit", objectName="primary")
         self.install_all_btn.clicked.connect(self.install_all)
         section.addWidget(self.install_all_btn)
+        self.uninstall_all_btn = QPushButton("Uninstall all", objectName="danger",
+                                             toolTip="Remove every installed tool (Snake's Suite itself stays)")
+        self.uninstall_all_btn.clicked.connect(self.uninstall_all)
+        section.addWidget(self.uninstall_all_btn)
         self.page_lay.addLayout(section)
         self.page_lay.addSpacing(12)
         self.grid_host = QWidget()
@@ -786,6 +791,7 @@ class Hub(QMainWindow):
         self.install_all_btn.setVisible(bool(missing))
         installed = sum(t.installed for t in self.tools)
         self.install_all_btn.setText(f"Install the whole kit ({len(missing)} more)" if installed else "Install the whole kit")
+        self.uninstall_all_btn.setVisible(any(t.installed or t.legacy for t in self.tools))
         self.banner.setVisible(packages.FROZEN and not ig.read_manifest("suite"))
         old = [t for t in self.tools if t.legacy]
         if old:
@@ -926,12 +932,15 @@ class Hub(QMainWindow):
             packages.uninstall(tool.id)
         self.reload()
 
-    def uninstall_many(self, old_only: bool = False) -> None:
+    def uninstall_all(self) -> None:
+        self.uninstall_many(everything=True)
+
+    def uninstall_many(self, old_only: bool = False, everything: bool = False) -> None:
         self.reload()  # look again: something may have changed since the window opened
         tools = [t for t in self.tools if t.installed or t.legacy]
         if old_only and not any(t.legacy for t in tools):
             return
-        dialog = UninstallDialog(self, tools, old_only=old_only)
+        dialog = UninstallDialog(self, tools, old_only=old_only, everything=everything)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         chosen = dialog.chosen()
