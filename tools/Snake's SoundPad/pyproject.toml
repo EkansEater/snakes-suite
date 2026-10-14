@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snakepad"
+version = "1.1.0"
+description = "Snake's SoundPad: play sound clips through a virtual microphone (Linux, PipeWire)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6-Essentials>=6.6"]
+
+[project.gui-scripts]
+snakepad = "snakepad.__main__:main"
+
+[tool.setuptools]
+packages = ["snakepad"]
+
+[tool.setuptools.package-data]
+snakepad = ["assets/*"]

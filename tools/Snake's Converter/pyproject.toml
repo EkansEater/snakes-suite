@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snakes-converter"
+version = "1.0.0"
+description = "Snake's Converter - convert audio, video, images, documents, spreadsheets and PDFs."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6-Essentials>=6.6",
+    "Pillow>=10.1",
+    "imageio-ffmpeg>=0.5",
+    "pypdfium2>=4.30",
+    "mammoth>=1.6",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "striprtf>=0.0.26",
+]
+
+[project.optional-dependencies]
+heic = ["pillow-heif>=0.16"]
+build = ["pyinstaller>=6.6"]
+
+[project.scripts]
+snakes-converter = "snakes_converter.__main__:main"
+
+[project.gui-scripts]
+snakes-converter-gui = "snakes_converter.__main__:gui"
+
+[tool.setuptools]
+packages = ["snakes_converter", "snakes_converter.converters", "snakes_converter.gui"]
+
+[tool.setuptools.package-data]
+snakes_converter = ["assets/*"]

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snakes-mp3"
+version = "1.1.0"
+description = "Snake's MP3 Converter: drag a video link in, get an MP3 out."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6-Essentials>=6.6",
+    "yt-dlp",
+    # ships an ffmpeg binary, used when no system ffmpeg is installed
+    "imageio-ffmpeg>=0.5",
+]
+
+[project.gui-scripts]
+snakes-mp3 = "snakes_mp3.app:main"
+
+[tool.setuptools]
+packages = ["snakes_mp3"]
+
+[tool.setuptools.package-data]
+snakes_mp3 = ["assets/*"]

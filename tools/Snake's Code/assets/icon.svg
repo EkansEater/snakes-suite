@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2b22"/>
+      <stop offset="1" stop-color="#0d1410"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7ee787"/>
+      <stop offset="1" stop-color="#2ea043"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <!-- code brackets -->
+  <path d="M70 84 L36 128 L70 172" fill="none" stroke="#3c5a45" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M186 84 L220 128 L186 172" fill="none" stroke="#3c5a45" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- snake body: an S curve -->
+  <path d="M166 70 C 120 52, 82 72, 96 104 C 108 132, 160 124, 164 156 C 168 190, 116 200, 86 184"
+        fill="none" stroke="url(#body)" stroke-width="26" stroke-linecap="round"/>
+  <!-- head -->
+  <ellipse cx="170" cy="70" rx="22" ry="17" fill="#7ee787"/>
+  <circle cx="176" cy="64" r="4.5" fill="#0d1410"/>
+  <path d="M190 74 L206 78 M206 78 L214 72 M206 78 L213 85" stroke="#ff7b72" stroke-width="4" stroke-linecap="round" fill="none"/>
+</svg>

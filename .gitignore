@@ -1,0 +1,18 @@
+# Your own copies of every tool from before the suite overhaul, and old git folders
+backups/
+
+# Build output
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+node_modules/
+target/
+dist/
+build/
+release/
+
+# Never commit game ROMs (the Decompiler's own .gitignore says the same)
+*.z64
+*.n64
+*.v64

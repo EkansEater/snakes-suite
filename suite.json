@@ -1,0 +1,282 @@
+{
+  "version": "1.0.0",
+  "tools": [
+    {
+      "id": "code",
+      "name": "Snake's Code",
+      "tagline": "Code editor",
+      "description": "A full code editor with Monaco, a terminal, git and search.",
+      "folder": "tools/Snake's Code",
+      "kind": "electron",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-code",
+      "command": "snakes-code",
+      "categories": "Development;TextEditor;IDE;",
+      "accepts_files": true,
+      "legacy_desktop": [
+        "snakes-code.desktop"
+      ]
+    },
+    {
+      "id": "compressor",
+      "name": "Snake's Compressor",
+      "tagline": "Lossless archiver",
+      "description": "Pack big files and folders into checksummed .snake archives.",
+      "folder": "tools/Snake's Compressor",
+      "kind": "cargo",
+      "binary": "snake-gui",
+      "extra_binaries": [
+        "snake"
+      ],
+      "cargo_args": [],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Rust (cargo)"
+      ],
+      "egui_theme": "src/gui/snake_theme.rs",
+      "assets": {
+        "dir": "assets",
+        "rgba64": true
+      },
+      "wm_class": "snakes-compressor",
+      "command": "snake",
+      "categories": "Utility;Archiving;Compression;",
+      "accepts_files": false,
+      "legacy_desktop": []
+    },
+    {
+      "id": "converter",
+      "name": "Snake's Converter",
+      "tagline": "File converter",
+      "description": "Audio, video, images, documents, spreadsheets and PDFs.",
+      "folder": "tools/Snake's Converter",
+      "kind": "python",
+      "module": "snakes_converter",
+      "pip": [
+        "."
+      ],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Python 3.10+"
+      ],
+      "qt_theme": "snakes_converter/gui/snake_theme.py",
+      "assets": {
+        "dir": "snakes_converter/assets"
+      },
+      "wm_class": "snakes-converter",
+      "command": "snakes-converter",
+      "categories": "Utility;",
+      "accepts_files": false,
+      "legacy_desktop": []
+    },
+    {
+      "id": "decompiler",
+      "name": "Snake's Decompiler",
+      "tagline": "N64 recompiler",
+      "description": "Turns your own N64 ROMs into programs that run natively.",
+      "folder": "tools/Snake's Decompiler",
+      "kind": "script",
+      "launch": {
+        "linux": [
+          "./play"
+        ]
+      },
+      "platforms": [
+        "linux"
+      ],
+      "needs": [
+        "Python 3.10+",
+        "gcc",
+        "SDL2 and OpenGL development files"
+      ],
+      "c_palette": "snakedecomp/launcher/snake_palette.h",
+      "assets": {
+        "dir": "assets",
+        "c_icon": "snakedecomp/launcher/snake_icon.h"
+      },
+      "wm_class": "snakes-n64-decompiler-list",
+      "command": "",
+      "categories": "Game;Emulator;",
+      "accepts_files": false,
+      "legacy_desktop": []
+    },
+    {
+      "id": "soundpad",
+      "name": "Snake's SoundPad",
+      "tagline": "Soundboard",
+      "description": "Play clips through a virtual mic into Discord and games.",
+      "folder": "tools/Snake's SoundPad",
+      "kind": "python",
+      "module": "snakepad",
+      "pip": [
+        "."
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "needs": [
+        "Python 3.10+",
+        "mpv",
+        "PipeWire (pactl)"
+      ],
+      "qt_theme": "snakepad/snake_theme.py",
+      "assets": {
+        "dir": "snakepad/assets"
+      },
+      "wm_class": "snakepad",
+      "command": "snakepad",
+      "categories": "AudioVideo;Audio;",
+      "accepts_files": false,
+      "legacy_desktop": [
+        "snakepad.desktop"
+      ]
+    },
+    {
+      "id": "mp3",
+      "name": "Snake's MP3 Converter",
+      "tagline": "Links to MP3",
+      "description": "Drop a video link from 1000+ sites, get a tagged MP3.",
+      "folder": "tools/Snake's MP3 Converter",
+      "kind": "python",
+      "module": "snakes_mp3",
+      "pip": [
+        "."
+      ],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Python 3.10+",
+        "ffmpeg (bundled if missing)",
+        "deno (for YouTube)"
+      ],
+      "qt_theme": "snakes_mp3/snake_theme.py",
+      "assets": {
+        "dir": "snakes_mp3/assets"
+      },
+      "wm_class": "snakes-mp3",
+      "command": "snakes-mp3",
+      "categories": "AudioVideo;Audio;Network;",
+      "accepts_files": false,
+      "legacy_desktop": [
+        "snakes-sounds.desktop"
+      ]
+    },
+    {
+      "id": "daw",
+      "name": "Snake's DAW",
+      "tagline": "Record and practise",
+      "description": "Amp, effects, loop station, tuner and multitrack recording.",
+      "folder": "tools/Snake's DAW",
+      "kind": "cargo",
+      "binary": "snakedaw",
+      "cargo_args": [],
+      "cargo_args_by_os": {
+        "windows": [
+          "--no-default-features"
+        ],
+        "macos": [
+          "--no-default-features"
+        ]
+      },
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Rust (cargo)",
+        "Linux: ALSA and lilv development files"
+      ],
+      "egui_theme": "src/snake_theme.rs",
+      "assets": {
+        "dir": "assets",
+        "rgba64": true
+      },
+      "wm_class": "snakedaw",
+      "command": "snakedaw",
+      "categories": "AudioVideo;Audio;Recorder;Music;",
+      "accepts_files": false,
+      "legacy_desktop": [
+        "snakedaw.desktop"
+      ]
+    },
+    {
+      "id": "screen",
+      "name": "Snake's Screen Recorder",
+      "tagline": "Screen and audio recorder",
+      "description": "Record the screen, a region or a window to MP4, GIF or MP3.",
+      "folder": "tools/Snake's Screen Recorder",
+      "kind": "python",
+      "module": "snakescreen",
+      "pip": [
+        "."
+      ],
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Python 3.10+",
+        "ffmpeg",
+        "Linux/Wayland: GStreamer PipeWire plugin"
+      ],
+      "qt_theme": "snakescreen/snake_theme.py",
+      "assets": {
+        "dir": "snakescreen/assets"
+      },
+      "wm_class": "snakescreen",
+      "command": "snakescreen",
+      "categories": "AudioVideo;Recorder;",
+      "accepts_files": false,
+      "legacy_desktop": [
+        "snakescreen.desktop"
+      ]
+    }
+  ],
+  "hub": {
+    "id": "suite",
+    "name": "Snake's Suite",
+    "tagline": "Every Snake tool in one place",
+    "folder": "hub",
+    "kind": "python",
+    "module": "snakes_suite",
+    "pip": [
+      "."
+    ],
+    "platforms": [
+      "linux",
+      "windows",
+      "macos"
+    ],
+    "qt_theme": "snakes_suite/snake_theme.py",
+    "assets": {
+      "dir": "snakes_suite/assets",
+      "all_icons": true
+    },
+    "wm_class": "snakes-suite",
+    "command": "snakes-suite",
+    "categories": "Utility;",
+    "accepts_files": false,
+    "legacy_desktop": []
+  }
+}

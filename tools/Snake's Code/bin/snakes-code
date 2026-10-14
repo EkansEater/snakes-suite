@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launch Snake's Code, optionally opening a folder or file: snakes-code [path]
+APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+[ -f "$APP_DIR/dist/app.js" ] || (cd "$APP_DIR" && node build.mjs) || exit 1
+TARGET="${1:+$(readlink -f "$1")}"
+exec "$APP_DIR/node_modules/.bin/electron" "$APP_DIR" ${TARGET:+"$TARGET"} >/dev/null 2>&1 &

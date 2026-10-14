@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' file:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src * file: data: blob:; media-src file: blob: data:; font-src 'self' file: data:; worker-src 'self' file: blob:; connect-src 'self' file: data: blob:"
+    />
+    <title>Snake's Code</title>
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div id="workbench">
+      <div id="titlebar"></div>
+      <div id="main">
+        <div id="activitybar"></div>
+        <div id="sidebar"></div>
+        <div id="sidebar-sash" class="sash vertical"></div>
+        <div id="center">
+          <div id="editor-area"></div>
+          <div id="panel-sash" class="sash horizontal"></div>
+          <div id="panel"></div>
+        </div>
+      </div>
+      <div id="statusbar"></div>
+    </div>
+    <div id="overlay-root"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

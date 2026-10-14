@@ -1,0 +1,33 @@
+[package]
+name = "snake"
+version = "0.1.0"
+edition = "2021"
+description = "Snake's Compressor - a lossless archiver for transferring big files"
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:rfd"]
+
+[[bin]]
+name = "snake"
+path = "src/main.rs"
+
+[[bin]]
+name = "snake-gui"
+path = "src/bin/snake-gui.rs"
+required-features = ["gui"]
+
+[dependencies]
+anyhow = "1"
+blake3 = "1"
+eframe = { version = "0.36", optional = true }
+rfd = { version = "0.17", optional = true }
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+zstd = { version = "0.13", features = ["zstdmt"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

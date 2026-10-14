@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Snake's SoundPad
+Comment=Play sounds through a virtual microphone
+Exec=@EXEC@
+Icon=audio-volume-high
+Categories=AudioVideo;Audio;
+Terminal=false
+StartupWMClass=snakepad

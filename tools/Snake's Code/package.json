@@ -1,0 +1,41 @@
+{
+  "name": "snakes-code",
+  "version": "1.0.0",
+  "description": "Snake's Code — a fully featured desktop code editor built on Electron + Monaco",
+  "main": "src/main/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "start": "node build.mjs && electron .",
+    "dev": "node build.mjs && electron . --dev",
+    "lint": "eslint src build.mjs",
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "postinstall": "electron-rebuild -f -w node-pty"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "marked": "^18.1.1",
+    "monaco-editor": "^0.57.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "electron": "^44.7.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0"
+  },
+  "productName": "Snake's Code",
+  "author": "Snake",
+  "allowScripts": {
+    "esbuild": true,
+    "node-pty": true,
+    "electron": true
+  },
+  "bin": {
+    "snakes-code": "bin/snakes-code"
+  }
+}

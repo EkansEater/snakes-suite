@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs Snake's MP3 Converter straight from this folder (works from anywhere).
+DIR="$(dirname "$(readlink -f "$0")")"
+PYTHONPATH="$DIR${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m snakes_mp3 "$@"
