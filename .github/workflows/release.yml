@@ -19,7 +19,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04      # an older Ubuntu, so the Linux builds run on older distributions too
-          - os: windows-latest
+          - os: windows-2022      # has the Visual Studio that node-gyp knows (Snake's Code's terminal)
           - os: macos-15          # Apple silicon
           - os: macos-15-intel    # Intel Macs
     runs-on: ${{ matrix.os }}
@@ -58,10 +58,12 @@ jobs:
         run: python packaging/build.py tools
 
       - name: Build Snake's Suite (one file)
+        if: always()
         shell: bash
         run: python packaging/build.py hub
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: snakes-suite-${{ matrix.os }}
           path: |
@@ -94,6 +96,7 @@ jobs:
           - Linux: \`Snakes-Suite-linux-x86_64\`. Make it executable (\`chmod +x\`), then run it.
 
           The other files are the tools themselves; the app downloads them for you."
+          shopt -s nullglob  # publish what was built, even if one system had a problem
           gh release delete "$tag" --yes --cleanup-tag=false 2>/dev/null || true
           gh release create "$tag" --title "Snake's Suite ${tag#v}" --notes "$notes" --latest \
             dist/index.json dist/Snakes-Suite-* dist/snakes-*.tar.gz dist/snakes-*.zip

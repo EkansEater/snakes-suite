@@ -232,7 +232,10 @@ def build_cargo(tool: dict, install: bool) -> Path:
 
 def build_electron(tool: dict, install: bool) -> Path:
     npm = shutil.which("npm") or "npm"
-    root = tool["root"]
+    # Build from a copy at a plain path: electron-builder (macOS) and node-gyp (Windows) refuse
+    # or mangle paths with an apostrophe, like "tools/Snake's Code".
+    root = Path(tempfile.mkdtemp(prefix="snake-build-code-")) / "snakes-code"
+    shutil.copytree(tool["root"], root, ignore=shutil.ignore_patterns("node_modules", "release", "dist"))
     run([npm, "ci" if (root / "package-lock.json").exists() else "install"], cwd=root)
     run([npm, "run", "build"], cwd=root)
     out_dir = root / "release"
