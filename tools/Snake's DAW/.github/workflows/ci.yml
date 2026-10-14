@@ -1,0 +1,32 @@
+# Builds and tests on every push, on all three systems, so a change that breaks
+# Windows or macOS is noticed straight away.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            flags: ""
+          - os: windows-latest
+            flags: "--no-default-features"
+          - os: macos-latest
+            flags: "--no-default-features"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev liblilv-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
+      - run: cargo build --release ${{ matrix.flags }}
+      - run: cargo test --release ${{ matrix.flags }}

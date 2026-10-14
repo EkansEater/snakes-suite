@@ -1,0 +1,75 @@
+# Pushing a tag like v0.2.0 builds downloads for Linux, Windows and macOS
+# and attaches them to a GitHub release.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    # An older Ubuntu on purpose: programs built here also run on newer distributions.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev liblilv-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
+      - run: cargo build --release
+      - name: Package
+        run: |
+          dir=SnakeDAW-${{ github.ref_name }}-linux-x86_64
+          mkdir "$dir"
+          cp target/release/snakedaw README.md packaging/linux/install.sh packaging/linux/snakedaw.desktop "$dir"/
+          cp LICENSE* "$dir"/ 2>/dev/null || true
+          tar czf "$dir.tar.gz" "$dir"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: SnakeDAW-*.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --no-default-features
+      - name: Package
+        shell: pwsh
+        run: |
+          $dir = "SnakeDAW-${{ github.ref_name }}-windows-x86_64"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item target/release/snakedaw.exe "$dir/SnakeDAW.exe"
+          Copy-Item README.md $dir
+          Copy-Item LICENSE* $dir -ErrorAction SilentlyContinue
+          Compress-Archive $dir "$dir.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: SnakeDAW-*.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: cargo build --release --no-default-features --target aarch64-apple-darwin
+      - run: cargo build --release --no-default-features --target x86_64-apple-darwin
+      - name: Package
+        run: |
+          # One app that runs on both Apple Silicon and Intel Macs.
+          app=SnakeDAW.app
+          mkdir -p "$app/Contents/MacOS"
+          lipo -create -output "$app/Contents/MacOS/snakedaw" \
+            target/aarch64-apple-darwin/release/snakedaw target/x86_64-apple-darwin/release/snakedaw
+          version="${{ github.ref_name }}"
+          sed "s/VERSION/${version#v}/" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          # Ad-hoc signature: required for the app to start at all on Apple Silicon.
+          codesign --force --deep --sign - "$app"
+          ditto -c -k --keepParent "$app" "SnakeDAW-$version-macos.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: SnakeDAW-*.zip
