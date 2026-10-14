@@ -211,9 +211,32 @@ def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files
         if missing:
             notes.append(f"Add {missing} to your PATH to use the tools' commands (like `{meta['command']}`).")
 
-    for cmd in (["update-desktop-database", str(apps)], ["gtk-update-icon-cache", "-q", "-t", str(hicolor)]):
-        if shutil.which(cmd[0]):
-            subprocess.run(cmd, capture_output=True)
+    refresh_linux_menus()
+
+
+def refresh_linux_menus() -> None:
+    """Tell the desktop that menu entries and icons changed, so it shows them without a restart."""
+    apps = xdg_data() / "applications"
+    hicolor = xdg_data() / "icons" / "hicolor"
+    if shutil.which("update-desktop-database"):
+        subprocess.run(["update-desktop-database", str(apps)], capture_output=True)
+    if hicolor.is_dir():
+        ok = shutil.which("gtk-update-icon-cache") and subprocess.run(
+            ["gtk-update-icon-cache", "-q", "-t", str(hicolor)], capture_output=True).returncode == 0
+        if not ok:
+            # An old cache that cannot be rebuilt (another app's oddly named icon is enough) hides
+            # every icon added since. With no cache, icons are simply looked up on disk.
+            (hicolor / "icon-theme.cache").unlink(missing_ok=True)
+            (hicolor / ".icon-theme.cache").unlink(missing_ok=True)
+        os.utime(hicolor)
+    # KDE Plasma keeps its own copy of the menu and remembers icons it could not find.
+    for tool in ("kbuildsycoca6", "kbuildsycoca5"):
+        if shutil.which(tool):
+            subprocess.run([tool], capture_output=True)
+            break
+    if shutil.which("dbus-send"):
+        subprocess.run(["dbus-send", "--session", "--type=signal", "/KIconLoader",
+                        "org.kde.KIconLoader.iconChanged", "int32:0"], capture_output=True)
 
 
 # --------------------------------------------------------------------------- Windows
@@ -370,8 +393,8 @@ def remove_integration(manifest: dict) -> list[str]:
                 winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
             except OSError:
                 pass
-    if OS == "linux" and shutil.which("update-desktop-database"):
-        subprocess.run(["update-desktop-database", str(xdg_data() / "applications")], capture_output=True)
+    if OS == "linux":
+        refresh_linux_menus()
     return problems
 
 

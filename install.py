@@ -98,9 +98,28 @@ def ensure_runtime() -> Path:
     return py
 
 
+def match_shiboken(py: Path) -> None:
+    """pip's PySide6 needs pip's shiboken6. With the system's packages visible (Linux), pip takes the
+    distribution's shiboken6 as good enough, and the two then fail to load together."""
+    out = subprocess.run([py, "-m", "pip", "list", "--local", "--format=json"], capture_output=True, text=True)
+    try:
+        local = {p["name"].lower().replace("_", "-"): p["version"] for p in json.loads(out.stdout)}
+    except ValueError:
+        return
+    version = local.get("pyside6-essentials") or local.get("pyside6")
+    if version and "shiboken6" not in local:
+        run([py, "-m", "pip", "install", "--quiet", "--no-deps", "--ignore-installed", f"shiboken6=={version}"])
+
+
 def build_python(tool: dict) -> dict:
     py = ensure_runtime()
     run([py, "-m", "pip", "install", "--upgrade", "--quiet", "--no-warn-script-location", tool["root"]])
+    match_shiboken(py)
+    qt = tool.get("package", {}).get("qt", "PySide6")
+    check = subprocess.run([py, "-c", f"import {qt}.QtWidgets, {tool['module']}"], capture_output=True, text=True)
+    if check.returncode != 0:
+        last = (check.stderr.strip().splitlines() or ["unknown error"])[-1]
+        raise Failed(f"{tool['name']} installed, but its Python packages do not load: {last}")
     return {"launch": [str(runtime_python(gui=True)), "-m", tool["module"]], "cwd": None,
             "cli": [str(runtime_python()), "-m", tool["module"]]}
 

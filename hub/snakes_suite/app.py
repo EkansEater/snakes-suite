@@ -19,7 +19,7 @@ from pathlib import Path
 from PySide6.QtCore import (
     QObject, QProcess, QProcessEnvironment, QSize, Qt, QThread, QTimer, QUrl, Signal,
 )
-from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
@@ -41,6 +41,21 @@ def human_size(n: int) -> str:
     return f"{n / 1e6:.0f} MB" if n >= 1e6 else f"{max(n, 1) / 1e3:.0f} KB"
 
 
+def greyed(pix: QPixmap) -> QPixmap:
+    """A faded, colourless copy of an icon: how a tool that is not installed yet looks."""
+    image = pix.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    grey = image.convertToFormat(QImage.Format.Format_Grayscale8).convertToFormat(QImage.Format.Format_ARGB32)
+    grey.setAlphaChannel(image.convertToFormat(QImage.Format.Format_Alpha8))
+    out = QPixmap(pix.size())
+    out.setDevicePixelRatio(pix.devicePixelRatio())
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setOpacity(0.45)
+    painter.drawImage(0, 0, grey)
+    painter.end()
+    return out
+
+
 T = snake_theme
 HUB_STYLE = f"""
 QFrame#titleBar {{ background: {T.TITLE}; border-bottom: 1px solid {T.BORDER}; }}
@@ -54,6 +69,7 @@ QLabel#heroTitle {{ font-size: 28pt; font-weight: 300; color: {T.FG}; }}
 QLabel#heroSub {{ font-size: 12pt; color: {T.FG2}; }}
 QLabel#section {{ color: {T.FG2}; font-size: 8.5pt; font-weight: 700; letter-spacing: 1px; }}
 QFrame#banner {{ background: #18241b; border: 1px solid #2d5a3a; border-radius: 8px; }}
+QFrame#oldBanner {{ background: #2a2414; border: 1px solid #5a4a22; border-radius: 8px; }}
 QFrame#tile {{ background: {T.SIDE}; border: 1px solid {T.BORDER}; border-radius: 10px; }}
 QFrame#tile:hover {{ background: {T.HOVER}; border-color: {T.BORDER2}; }}
 QFrame#tile[installed="false"] QLabel#tileName {{ color: {T.FG2}; }}
@@ -79,6 +95,7 @@ class Tile(QFrame):
     """One tool: its icon, name and state. Click to open; right-click for more."""
 
     activated = Signal(object)
+    install_requested = Signal(object)
     menu_requested = Signal(object, object)
 
     def __init__(self, tool: Tool):
@@ -101,19 +118,25 @@ class Tile(QFrame):
         lay.addWidget(QLabel(tool.tagline, objectName="tileTag", alignment=Qt.AlignmentFlag.AlignCenter))
         lay.addStretch(1)
         self.pill = QLabel(objectName="pill", alignment=Qt.AlignmentFlag.AlignCenter)
+        self.button = QPushButton(objectName="primary")  # Install / Update, for tools that need it
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the tile itself takes Enter
+        self.button.clicked.connect(lambda: self.install_requested.emit(self.tool))
         row = QHBoxLayout()
         row.addStretch(1)
         row.addWidget(self.pill)
+        row.addWidget(self.button)
         row.addStretch(1)
         lay.addLayout(row)
         self.set_running(False)
 
     def set_running(self, running: bool) -> None:
         t = self.tool
+        button = ""
         if running:
             kind, text = "running", "● Running"
         elif t.update_available:
-            kind, text = "update", "Update available"
+            kind, text, button = "update", "Update available", "Update"
         elif t.installed:
             kind, text = "installed", "Installed"
         elif t.legacy:
@@ -121,19 +144,23 @@ class Tile(QFrame):
         elif not t.supported:
             kind, text = "unsupported", f"{' / '.join(OS_NAMES.get(p, p) for p in t.platforms)} only"
         elif t.downloadable:
-            kind, text = "available", f"Download · {human_size(t.package.get('size', 0))}"
+            kind, text, button = "available", "", f"Install · {human_size(t.package.get('size', 0))}"
         elif t.buildable:
-            kind, text = "available", "Click to install"
+            kind, text, button = "available", "", "Install"
         else:
             kind, text = "unsupported", "Not available yet"
-        self.setProperty("installed", "true" if t.installed else "false")
+        self.setProperty("installed", "true" if t.installed or t.legacy else "false")
         self.pill.setProperty("kind", kind)
         self.pill.setText(text)
+        self.pill.setVisible(not button)
+        self.button.setText(button)
+        self.button.setVisible(bool(button))
         snake_theme.repolish(self)
         snake_theme.repolish(self.pill)
-        if t.icon:
-            mode = QIcon.Mode.Normal if t.installed or t.legacy else QIcon.Mode.Disabled  # not installed: faded
-            self.icon.setPixmap(QIcon(str(t.icon)).pixmap(QSize(76, 76), mode))
+        if t.icon and getattr(self, "_icon_state", None) != (t.installed or bool(t.legacy)):
+            self._icon_state = t.installed or bool(t.legacy)
+            pix = QIcon(str(t.icon)).pixmap(QSize(76, 76))
+            self.icon.setPixmap(pix if self._icon_state else greyed(pix))  # not installed: grey until it is
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
@@ -474,6 +501,67 @@ class SourceInstallDialog(QDialog):
             super().reject()
 
 
+class UninstallDialog(QDialog):
+    """Everything installed, old copies included: tick what to remove."""
+
+    def __init__(self, parent, tools: list[Tool], *, old_only: bool = False):
+        super().__init__(parent)
+        self.setWindowTitle("Uninstall Snake tools")
+        self.resize(560, 420)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.addWidget(QLabel("What would you like to remove?", objectName="heading"))
+        lay.addWidget(QLabel("Old versions were installed by a tool's own install script, before Snake's Suite; "
+                             "they cannot be updated. Your own files (projects, recordings, settings) are kept.",
+                             objectName="muted", wordWrap=True))
+        lay.addSpacing(6)
+        box = QFrame(objectName="card")
+        rows = QVBoxLayout(box)
+        rows.setSpacing(8)
+        self.checks: list[tuple[QCheckBox, Tool, str]] = []  # (box, tool, "old" or "current")
+        for tool in tools:
+            for what in ("old", "current"):
+                if what == "old" and not tool.legacy or what == "current" and not tool.installed:
+                    continue
+                row = QHBoxLayout()
+                if tool.icon:
+                    icon = QLabel()
+                    icon.setPixmap(QIcon(str(tool.icon)).pixmap(QSize(22, 22)))
+                    row.addWidget(icon)
+                check = QCheckBox(tool.name + ("  (old version)" if what == "old" else ""))
+                check.setChecked(what == "old" or not old_only)
+                if what == "old":
+                    check.setToolTip("\n".join(str(p) for p in tool.legacy))
+                check.toggled.connect(self._update)
+                row.addWidget(check, 1)
+                rows.addLayout(row)
+                self.checks.append((check, tool, what))
+        if not self.checks:
+            rows.addWidget(QLabel("No Snake tools are installed.", objectName="muted"))
+        lay.addWidget(box)
+        lay.addStretch(1)
+        self.replace = QCheckBox("Install the Snake's Suite version of removed old versions")
+        self.replace.setChecked(True)
+        self.replace.setVisible(any(t.legacy and t.installable and not t.installed for t in tools))
+        lay.addWidget(self.replace)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        self.go = QPushButton("Uninstall", objectName="danger")
+        self.go.clicked.connect(self.accept)
+        buttons.addWidget(self.go)
+        lay.addLayout(buttons)
+        self._update()
+
+    def _update(self):
+        self.go.setEnabled(any(check.isChecked() for check, _t, _w in self.checks))
+
+    def chosen(self) -> list[tuple[Tool, str]]:
+        return [(tool, what) for check, tool, what in self.checks if check.isChecked()]
+
+
 # =========================================================================== the window
 class Hub(QMainWindow):
     def __init__(self):
@@ -507,6 +595,9 @@ class Hub(QMainWindow):
         self.page_lay.addSpacing(22)
         self.banner = self._banner()
         self.page_lay.addWidget(self.banner)
+        self.page_lay.addSpacing(10)
+        self.old_banner = self._old_banner()
+        self.page_lay.addWidget(self.old_banner)
         self.page_lay.addSpacing(18)
         section = QHBoxLayout()
         section.addWidget(QLabel("TOOLS", objectName="section"))
@@ -565,6 +656,7 @@ class Hub(QMainWindow):
         more = QPushButton("⋯", objectName="flat", toolTip="More")
         menu = QMenu(more)
         menu.addAction("Open the suite's folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ig.DATA))))
+        menu.addAction("Uninstall tools…", self.uninstall_many)
         menu.addSeparator()
         menu.addAction("Uninstall Snake's Suite…", self.uninstall_everything)
         more.setMenu(menu)
@@ -605,6 +697,29 @@ class Hub(QMainWindow):
         go.clicked.connect(self.install_self)
         lay.addWidget(go)
         banner.setVisible(packages.FROZEN and not ig.read_manifest("suite"))
+        return banner
+
+    def _old_banner(self) -> QFrame:
+        """Shown when tools installed before Snake's Suite (by their own scripts) are still around."""
+        banner = QFrame(objectName="oldBanner")
+        lay = QHBoxLayout(banner)
+        lay.setContentsMargins(16, 12, 12, 12)
+        lay.setSpacing(12)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        self.old_title = QLabel(objectName="heading")
+        text.addWidget(self.old_title)
+        self.old_text = QLabel(objectName="muted", wordWrap=True)
+        text.addWidget(self.old_text)
+        lay.addLayout(text, 1)
+        later = QPushButton("Not now", objectName="flat")
+        later.clicked.connect(lambda: (setattr(self, "old_dismissed", True), banner.hide()))
+        lay.addWidget(later)
+        go = QPushButton("Review…", objectName="primary")
+        go.clicked.connect(lambda: self.uninstall_many(old_only=True))
+        lay.addWidget(go)
+        self.old_dismissed = False
+        banner.hide()
         return banner
 
     def _status_bar(self) -> QFrame:
@@ -664,6 +779,7 @@ class Hub(QMainWindow):
         for tool in self.tools:
             tile = Tile(tool)
             tile.activated.connect(self.activate)
+            tile.install_requested.connect(lambda t: self.install([t]))
             tile.menu_requested.connect(self.tool_menu)
             self.tiles.append(tile)
         missing = [t for t in self.tools if t.installable and not t.installed]
@@ -671,6 +787,13 @@ class Hub(QMainWindow):
         installed = sum(t.installed for t in self.tools)
         self.install_all_btn.setText(f"Install the whole kit ({len(missing)} more)" if installed else "Install the whole kit")
         self.banner.setVisible(packages.FROZEN and not ig.read_manifest("suite"))
+        old = [t for t in self.tools if t.legacy]
+        if old:
+            self.old_title.setText("Older version found" if len(old) == 1 else f"{len(old)} older versions found")
+            self.old_text.setText(", ".join(t.name for t in old) + (" was" if len(old) == 1 else " were")
+                                  + " installed before Snake's Suite and cannot be updated from here. "
+                                  "Remove them, and install the new versions if you like.")
+        self.old_banner.setVisible(bool(old) and not self.old_dismissed)
         self._layout_tiles()
         self._poll_running()
         self._update_status()
@@ -802,6 +925,35 @@ class Hub(QMainWindow):
         else:
             packages.uninstall(tool.id)
         self.reload()
+
+    def uninstall_many(self, old_only: bool = False) -> None:
+        self.reload()  # look again: something may have changed since the window opened
+        tools = [t for t in self.tools if t.installed or t.legacy]
+        if old_only and not any(t.legacy for t in tools):
+            return
+        dialog = UninstallDialog(self, tools, old_only=old_only)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        chosen = dialog.chosen()
+        removed_old = [t for t, what in chosen if what == "old"]
+        for tool in removed_old:
+            remove_legacy(tool.legacy)
+        current = [t for t, what in chosen if what == "current"]
+        built = [t.id for t in current if (t.manifest or {}).get("source_build")]
+        if built and kit_root():
+            SourceInstallDialog(self, "Removing " + ", ".join(t.name for t in current if t.id in built),
+                                ["--uninstall", *built]).exec()
+        for tool in current:
+            if tool.id not in built or not kit_root():
+                packages.uninstall(tool.id)
+        names = [t.name + (" (old version)" if what == "old" else "") for t, what in chosen]
+        self.status.setText("Removed " + ", ".join(names))
+        self.reload()
+        if not dialog.replace.isHidden() and dialog.replace.isChecked():
+            old_ids = {t.id for t in removed_old}
+            wanted = [t for t in self.tools if t.id in old_ids and t.installable and not t.installed]
+            if wanted:
+                self.install(wanted, desktop=False)
 
     def handle_legacy(self, tool: Tool) -> None:
         """A tool installed by its old install script, before the suite: replace it, or remove it."""

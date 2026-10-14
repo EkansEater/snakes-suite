@@ -38,10 +38,18 @@ FROZEN = bool(getattr(sys, "frozen", False))
 
 
 def catalogue() -> dict:
-    """suite.json: from the kit when running from source, else the copy built into the app."""
-    for path in (HERE.parent.parent / "suite.json", HERE / "catalogue.json"):
-        if path.exists():
+    """suite.json: from the kit when running from source, else the copy built into the app,
+    else the kit this app was installed from."""
+    paths = [HERE.parent.parent / "suite.json", HERE / "catalogue.json"]
+    try:
+        paths.append(Path(json.loads((ig.DATA / "kit.json").read_text(encoding="utf-8"))["suite_root"]) / "suite.json")
+    except (OSError, ValueError, KeyError):
+        pass
+    for path in paths:
+        try:
             return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
     return {"tools": [], "hub": {}}
 
 

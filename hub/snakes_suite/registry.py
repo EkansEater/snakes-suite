@@ -153,9 +153,8 @@ def load_tools(index: dict | None = None) -> list[Tool]:
             needs=entry.get("needs", []), icon=icon if icon.exists() else None, entry=entry,
             manifest=manifests.pop(entry["id"], None), package=packages.package_for(index, entry["id"]),
             source=(kit / entry["folder"]).resolve() if kit else None,
+            legacy=legacy_entries(entry),
         ))
-        if not tools[-1].installed:
-            tools[-1].legacy = legacy_entries(entry)
     manifests.pop("suite", None)
     for tool_id, m in manifests.items():  # installed from a newer catalogue than this app knows
         if not m:

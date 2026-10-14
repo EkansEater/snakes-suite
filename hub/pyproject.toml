@@ -16,4 +16,4 @@ snakes-suite = "snakes_suite.app:main"
 packages = ["snakes_suite"]
 
 [tool.setuptools.package-data]
-snakes_suite = ["assets/*"]
+snakes_suite = ["assets/*", "catalogue.json"]
