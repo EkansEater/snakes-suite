@@ -1,0 +1,21 @@
+# Names the Super Mario 64 (USA) changes in NSME.c rely on: where a few things
+# are in this exact ROM. One name and address per line.
+obj_is_in_view           0x8027D518
+gCurGraphNodeCamFrustum  0x8032DEF8
+gMarioStates             0x8033B170
+set_mario_y_vel_based_on_fspeed  0x802523C8
+set_mario_action         0x80252CF4
+squish_mario_model       0x80253588
+apply_gravity            0x8025661C
+mtxf_billboard           0x80379798
+gCheckingSurfaceCollisionsForCamera  0x80361180
+f32_find_wall_collision  0x80380DE8
+find_ceil                0x80381264
+find_floor               0x80381900
+gCamera                  0x8033CBD0
+sCurrPlayMode            0x8033B238
+initiate_warp            0x8024A700
+perform_ground_step      0x80255D88
+perform_air_step         0x80256B24
+perform_water_step       0x80270918
+create_skybox_facing_camera  0x802CFEF4

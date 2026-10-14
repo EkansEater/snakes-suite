@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Launcher for Snake's N64 decompiler: checks what is needed, then builds and
+# runs a game from your own ROM.
+#
+#   ./play                      show the list of games in the roms/ folder
+#   ./play path/to/folder       ...or in another folder
+#   ./play path/to/game.z64     play that ROM
+#   ./play game.z64 --wide --smooth    ...with options (see README.md)
+
+# A ROM path is relative to where you ran this from, so pin it down before
+# moving to the program's own folder.
+if [ -n "$1" ] && [ -f "$1" ]; then
+    set -- "$(readlink -f "$1")" "${@:2}"
+fi
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "usage: ./play [rom file] [options]"
+    echo
+    echo "With no ROM given, shows a list of the games in the roms/ folder"
+    echo "(or in a folder you name) to choose from, by keyboard, mouse or gamepad."
+    echo "Options: --wide  --smooth  --scale N  --stats   (see README.md)"
+    exit 0
+fi
+
+# ---- Is everything we need installed? ---------------------------------------
+missing=()
+command -v python3 >/dev/null || missing+=("python3")
+command -v gcc >/dev/null || missing+=("gcc (a C compiler)")
+command -v pkg-config >/dev/null || missing+=("pkg-config")
+pkg-config --exists sdl2 2>/dev/null || missing+=("SDL2 development files")
+[ -f /usr/include/GL/gl.h ] || pkg-config --exists gl 2>/dev/null || missing+=("OpenGL development files")
+if command -v python3 >/dev/null && ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+    missing+=("python 3.10 or newer (found $(python3 --version 2>&1))")
+fi
+
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "Some things this needs are not installed:"
+    printf '  - %s\n' "${missing[@]}"
+    echo
+    echo "Install them with your system's package manager, for example:"
+    echo "  Arch / CachyOS:   sudo pacman -S python gcc pkgconf sdl2-compat mesa"
+    echo "  Debian / Ubuntu:  sudo apt install python3 gcc pkg-config libsdl2-dev libgl-dev"
+    echo "  Fedora:           sudo dnf install python3 gcc pkgconf-pkg-config SDL2-devel mesa-libGL-devel"
+    exit 1
+fi
+
+# ---- Which ROM? ---------------------------------------------------------------
+if [ $# -gt 0 ] && [ -f "$1" ]; then
+    rom="$1"
+    shift
+else
+    # No ROM named: show the game list, a window that works with keyboard,
+    # mouse or gamepad. It lists the ROMs in a folder: the one given, or roms/.
+    folder="roms"
+    if [ $# -gt 0 ] && [ -d "$1" ]; then
+        folder="$1"
+    fi
+    mkdir -p roms build
+    source=snakedecomp/launcher/launcher.c
+    # (controls.h is shared with the games: the list of buttons and their names)
+    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ snakedecomp/runtime/controls.h -nt build/launcher ] || [ snakedecomp/launcher/snake_palette.h -nt build/launcher ]; then
+        # shellcheck disable=SC2046
+        gcc -O1 $(pkg-config --cflags sdl2) -I snakedecomp/runtime "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
+    fi
+    exec build/launcher "$folder"
+fi
+
+echo "Starting $rom (the first run builds the game, which takes a minute or two)"
+echo "Esc, F1 or Select: menu.  Tab: fast forward.  F5/F7: save/load state.  F11: full screen."
+exec python3 -m snakedecomp run "$rom" "$@"

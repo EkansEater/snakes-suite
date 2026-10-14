@@ -1,0 +1,45 @@
+# What people (and Claude, looking at pictures) have found that a machine cannot.
+# One line each:   game code   played|seen   good|bad   date   what was found
+#   played: someone played it.      seen: someone looked at pictures of a check.
+# The newest line of each kind for a game is what STATUS.md shows.
+NSM played good 2026-10-10 Picture, sound, controls and saving work (carried over from the README)
+NET seen bad 2026-10-10 Pink boxes behind text (seen in an earlier survey)
+NMF seen bad 2026-10-10 White ground, garbled text in the HUD, a blue box in the corner
+NPO seen bad 2026-10-10 Corrupt textures (seen in an earlier survey)
+NXO seen bad 2026-10-10 Picture is garbage (seen in an earlier survey)
+NDN seen bad 2026-10-10 White patches in the level (seen in an earlier survey)
+NFW seen bad 2026-10-10 Some wrong colours (seen in an earlier survey)
+NRE seen bad 2026-10-10 Only ever shows "No Controller"
+NKT seen good 2026-10-10 Scripted run: menus and a Luigi Raceway race look right
+NWR seen good 2026-10-10 Menus, the round screen and a Sunny Beach race look right
+NFX seen good 2026-10-10 Map, briefing and the flight into Corneria look right
+NDZ seen good 2026-10-10 Menus, the opening scene and the briefing screen look right
+NWR played bad 2026-10-11 Controls and movement great; rider, jet ski, buoys and checkpoint jitter or flash
+NWR played bad 2026-10-11 Controls and movement great. With smooth motion on, spray, buoys and rider flashed; fixed since, not yet played again
+NWR played good 2026-10-11 Intro and two Championship races (Sunny Beach, Sunset Bay) play right. Left: rank portraits 3 and 4 went black for a few seconds once; a rival marker's red ring blinks; window is made afresh on reset
+NDZ played good 2026-10-11 Opening scene, briefing and the start of the first level play right. Very few visual glitches
+NKT played good 2026-10-11 Mushroom Cup: a full Luigi Raceway race and the start of Moo Moo Farm play right. Very few visual glitches. Fixed since: in widescreen a strip of old picture stayed down the right of the results screen
+NFX played good 2026-10-11 All of Corneria to the boss and the map play right. Very few visual glitches. Added since: a volume-boost sound command the game uses from Corneria on; not yet listened to
+NAM played bad 2026-10-11 Reaches the main menu, then crashes before play (bad memory access; a second try read past the end of the ROM). Visual glitches on the way
+N32 played bad 2026-10-11 Crashes at the Controller Pak question (calls an address that is not code), so never gets in-game
+NCT played bad 2026-10-11 Gets into play but runs about twice too fast
+NXO played bad 2026-10-11 Gets into a race, but the textures there are garbage; then the game stops itself (break at 0x800205D0)
+NCU played bad 2026-10-11 Shows only the copyright screen, then nothing; had to be closed by hand
+NDN played bad 2026-10-11 Runs too fast. Menu background, HUD and weapon are plain white
+NFW played bad 2026-10-11 Menus look good and a race starts, but the whole race is tinted red, sky included, and the sound is choppy
+NCT played bad 2026-10-11 Ran twice too fast; fixed since (now 30 pictures a second, sound in balance), not yet played again
+NDN played bad 2026-10-11 Too fast and white menus, HUD and weapon; both fixed since, not yet played again
+NFW played bad 2026-10-11 Race was washed red (fixed since, not yet played again). Sound is still choppy
+NDZ played bad 2026-10-12 With smooth motion on, walls showed through doorways while moving; fixed since, not yet played again
+NDZ played bad 2026-10-12 Smooth motion on: glitches in the cutscenes and a few walls still showing through. Fixed since (figures vanishing or squashed, a flash at scene cuts); walls not seen again in a replay. Not yet played again
+NDZ played good 2026-10-12 Opening cutscenes and the first level look perfect with smooth motion and widescreen on
+NCT played good 2026-10-12 A level played at the right speed with sound; fine apart from some HUD glitches, not yet pinned down (the hearts and crown count slide in and out by the game's own doing)
+NCT played bad 2026-10-12 Plays at the right speed with sound. With smooth motion on, the hearts and crown count flickered and jittered; fixed since, not yet played again
+NCT played bad 2026-10-13 Looks better. Sound was harsh and robotic (a buzz over the music); fixed since, not yet played again
+NDN played bad 2026-10-13 Looks better: right speed, menus, HUD and weapon. Sound was harsh and robotic, and pickups showed through walls; both fixed since, not yet played again
+NCT played good 2026-10-13 Plays at the right speed, looks better, and the sound is in good shape after the buzz fix
+NDN played bad 2026-10-13 Sound good. Pickups no longer show through walls as before, but some still leaked at the edge of a wall; their depth was a little too near, fixed since, not yet played again
+NDN played good 2026-10-13 Playable: right speed, sound good, and pickups no longer show through walls or leak at wall edges
+NRP played good 2026-10-13 Working: right speed and sound, no issues seen
+NRP played bad 2026-10-13 Plays right with sound, but the intro scene is silent and should have sound
+NFW played bad 2026-10-13 With smooth motion on, the car and its wheels glitched while driving (fixed since, not yet played again). Distant buildings have pale see-through boxes around them, driving or not

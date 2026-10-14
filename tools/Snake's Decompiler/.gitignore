@@ -1,0 +1,19 @@
+# ROMs are copyrighted; never commit them.
+roms/
+# Generated output (derived from the ROM, so also not for sharing).
+build/
+# Name lists downloaded from other projects.
+symbols/
+# Your saved games.
+saves/
+# Your choices in the F1 menu.
+settings/
+# Your save states.
+states/
+# Packages made for sharing.
+dist/
+__pycache__/
+# Pictures taken with the screenshot shortcut.
+screenshots/
+# The logs of your runs (see the diagnose command).
+logs/
