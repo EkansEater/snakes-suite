@@ -31,6 +31,8 @@
 
 #include "controls.h"
 #include "font.h"
+#include "snake_icon.h"
+#include "snake_palette.h" /* the Snake's Suite colours, made by Snake's Suite/shared/sync.py */
 
 /* ---- The list ---------------------------------------------------------------- */
 
@@ -179,8 +181,9 @@ static void make_font(void) {
 }
 
 typedef struct { int r, g, b; } Colour;
-static const Colour WHITE = {255, 255, 255}, BRIGHT = {225, 225, 230}, GREY = {135, 135, 148}, DIM = {95, 95, 108},
-                    YELLOW = {255, 220, 90}, BLUE = {120, 170, 255};
+/* YELLOW is the "chosen" colour; in the Snake's Suite look that is the snake's green. */
+static const Colour WHITE = {SNAKE_FG}, BRIGHT = {SNAKE_FG}, GREY = {SNAKE_FG2}, DIM = {SNAKE_FG3},
+                    YELLOW = {SNAKE_HIGHLIGHT}, BLUE = {SNAKE_INFO};
 
 static void text(int x, int y, const char *s, Colour c) {
     SDL_SetTextureColorMod(font, (Uint8)c.r, (Uint8)c.g, (Uint8)c.b);
@@ -452,7 +455,7 @@ static void finish_press(int device, int code) {
 
 /* A word and a colour for each state (the states are in check.py). */
 static const char *const rank_words[] = {"Ready", "In Progress", "Untested", "Broken"};
-static const int rank_colours[][3] = {{110, 255, 120}, {255, 200, 90}, {150, 190, 255}, {255, 90, 90}};
+static const int rank_colours[][3] = {{SNAKE_HIGHLIGHT}, {SNAKE_WARNING}, {SNAKE_INFO}, {SNAKE_ERROR_SOFT}};
 
 static int rows_shown; /* how many rows of the list or the settings fit in the window */
 static int list_top;
@@ -488,7 +491,7 @@ static void draw_games(void) {
         const Game *g = &games[i];
         int y = list_top + (i - first_shown) * row_height, known = g->rank >= 0 && g->rank <= 3;
         if (i == chosen)
-            box(margin - letter / 2, y - U(1), window_w - 2 * margin + letter, row_height, 50, 56, 80);
+            box(margin - letter / 2, y - U(1), window_w - 2 * margin + letter, row_height, SNAKE_SELECTION);
         /* Broken games have their names greyed out. They can still be started. */
         int ready = known && g->rank <= 2;
         const int *c = known ? rank_colours[g->rank] : rank_colours[2];
@@ -531,14 +534,14 @@ static void draw_settings(void) {
             continue;
         }
         if (selected && row->kind != ROW_CONTROL) /* a bar behind the chosen row... */
-            box(margin - letter / 2, y - U(1), window_w - 2 * margin + letter, row_height, 50, 56, 80);
+            box(margin - letter / 2, y - U(1), window_w - 2 * margin + letter, row_height, SNAKE_SELECTION);
         text(margin + 2 * letter, y, row->label, selected ? YELLOW : BRIGHT);
         if (row->kind == ROW_OPTION)
             text(margin + VALUE_COLUMN * letter, y, row->value, selected ? YELLOW : BRIGHT);
         for (int column = 0; row->kind == ROW_CONTROL && column < (tab == TAB_GAMEPAD ? 1 : 2); column++) {
             int x = margin + (CELL_COLUMN + column * CELL_WIDTH) * letter, here = selected && column == cell;
             if (here) /* ...or behind the chosen cell */
-                box(x - letter / 2, y - U(1), CELL_WIDTH * letter, row_height, 50, 56, 80);
+                box(x - letter / 2, y - U(1), CELL_WIDTH * letter, row_height, SNAKE_SELECTION);
             text(x, y, row->cells[column], here ? YELLOW : !strcmp(row->cells[column], "-") ? DIM : BRIGHT);
         }
     }
@@ -557,11 +560,11 @@ static void draw_settings(void) {
 
 static void draw(const char *banner, const char *banner_detail) {
     layout();
-    SDL_SetRenderDrawColor(renderer, 14, 16, 24, 255);
+    SDL_SetRenderDrawColor(renderer, SNAKE_BG, 255);
     SDL_RenderClear(renderer);
     char line[200];
 
-    text(margin, U(5), "SNAKE'S N64 DECOMPILER", WHITE);
+    text(margin, U(5), "SNAKE'S DECOMPILER", WHITE);
     snprintf(line, sizeof line, "%d games, %s", game_count, order_words[order]);
     text(window_w - margin - (int)strlen(line) * letter, U(5), line, GREY);
     /* The tabs: the one we are on has a bar under its name. */
@@ -570,12 +573,12 @@ static void draw(const char *banner, const char *banner_detail) {
         tab_left[i] = x - letter;
         text(x, U(24), tab_names[i], i == tab ? YELLOW : GREY);
         if (i == tab)
-            box(x, U(41), (int)strlen(tab_names[i]) * letter, U(2), 255, 220, 90);
+            box(x, U(41), (int)strlen(tab_names[i]) * letter, U(2), SNAKE_ACCENT);
         x += ((int)strlen(tab_names[i]) + 3) * letter;
     }
     tab_left[TAB_COUNT] = x - letter;
-    box(margin, U(43), window_w - 2 * margin, U(1), 70, 70, 80);
-    box(margin, window_h - U(62), window_w - 2 * margin, U(1), 70, 70, 80);
+    box(margin, U(43), window_w - 2 * margin, U(1), SNAKE_BORDER2);
+    box(margin, window_h - U(62), window_w - 2 * margin, U(1), SNAKE_BORDER2);
 
     if (tab == TAB_GAMES)
         draw_games();
@@ -589,8 +592,8 @@ static void draw(const char *banner, const char *banner_detail) {
 
     if (banner) { /* a message over the top of everything: "getting ready" */
         int w = window_w * 3 / 4, h = U(70), bx = (window_w - w) / 2, top = (window_h - h) / 2;
-        box(bx - U(1), top - U(1), w + U(2), h + U(2), 120, 120, 140);
-        box(bx, top, w, h, 24, 28, 44);
+        box(bx - U(1), top - U(1), w + U(2), h + U(2), SNAKE_BORDER2);
+        box(bx, top, w, h, SNAKE_WIDGET);
         snprintf(line, sizeof line, "%.*s", w / letter - 4, banner);
         text(bx + 2 * letter, top + U(14), line, WHITE);
         snprintf(line, sizeof line, "%.*s", w / letter - 4, banner_detail);
@@ -803,10 +806,17 @@ int main(int argc, char **argv) {
     }
     load_memory();
     int place = window_placed && positions_work() && on_a_screen(window_x0, window_y0);
-    window = SDL_CreateWindow("Snake's N64 decompiler", place ? window_x0 : SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow("Snake's Decompiler", place ? window_x0 : SDL_WINDOWPOS_CENTERED,
                               place ? window_y0 : SDL_WINDOWPOS_CENTERED, window_w0, window_h0,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (window_maximised ? SDL_WINDOW_MAXIMIZED : 0) |
                                   (fullscreen && !getenv("LAUNCHER_SHOT") ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+    if (window) {
+        SDL_Surface *icon = SDL_CreateRGBSurfaceWithFormatFrom((void *)snake_icon_rgba, 64, 64, 32, 64 * 4, SDL_PIXELFORMAT_RGBA32);
+        if (icon) {
+            SDL_SetWindowIcon(window, icon);
+            SDL_FreeSurface(icon);
+        }
+    }
     renderer = window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC) : NULL;
     if (!renderer) {
         fprintf(stderr, "launcher: %s\n", SDL_GetError());

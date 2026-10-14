@@ -1,4 +1,6 @@
-# Snake's N64 decompiler
+# Snake's Decompiler
+
+An N64 recompiler, part of Snake's Suite.
 
 Turns a Nintendo 64 game ROM into a program that runs directly on your PC,
 with no emulator. It reads the game's machine code, translates every function

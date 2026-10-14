@@ -59,7 +59,7 @@ else
     mkdir -p roms build
     source=snakedecomp/launcher/launcher.c
     # (controls.h is shared with the games: the list of buttons and their names)
-    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ snakedecomp/runtime/controls.h -nt build/launcher ]; then
+    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ snakedecomp/runtime/controls.h -nt build/launcher ] || [ snakedecomp/launcher/snake_palette.h -nt build/launcher ]; then
         # shellcheck disable=SC2046
         gcc -O1 $(pkg-config --cflags sdl2) -I snakedecomp/runtime "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
     fi
