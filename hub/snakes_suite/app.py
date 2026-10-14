@@ -85,6 +85,9 @@ QLabel#pill[kind="unsupported"] {{ background: transparent; color: {T.FG3}; }}
 QFrame#statusBar {{ background: {T.TITLE}; border-top: 1px solid {T.BORDER}; }}
 QLabel#statusAccent {{ background: {T.ACCENT}; color: #ffffff; padding: 0 10px; }}
 QLabel#statusText {{ color: {T.FG2}; padding: 0 8px; font-size: 9pt; }}
+QPushButton#statusButton {{ background: {T.SELECTION}; color: {T.HIGHLIGHT}; border: none; border-radius: 0;
+                            padding: 0 10px; font-size: 9pt; }}
+QPushButton#statusButton:hover {{ background: {T.ACCENT}; color: #ffffff; }}
 QPlainTextEdit#log {{ font-family: 'JetBrains Mono', 'Cascadia Code', 'DejaVu Sans Mono', monospace; font-size: 9pt; }}
 QFrame#row {{ background: {T.SIDE}; border: 1px solid {T.BORDER}; border-radius: 8px; }}
 """
@@ -263,9 +266,10 @@ class ProgressRow(QFrame):
 class InstallDialog(QDialog):
     """Pick tools, then download and install them one after another."""
 
-    def __init__(self, parent, tools: list[Tool], chosen: set[str], *, desktop: bool = False):
+    def __init__(self, parent, tools: list[Tool], chosen: set[str], *, desktop: bool = False, auto: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("Install Snake tools")
+        self.setWindowTitle("Updating Snake tools" if auto else "Install Snake tools")
+        self.auto = auto  # updating by itself: start at once, keep each tool's shortcuts, close when done
         self.resize(560, 520)
         self.tools = tools
         self.nam = QNetworkAccessManager(self)
@@ -350,6 +354,9 @@ class InstallDialog(QDialog):
         plo.addLayout(end)
         self.stack.addWidget(progress)
         self._update_total()
+        if auto:
+            self.heading.setText("Updating…")
+            QTimer.singleShot(0, self.start)
 
     def _update_total(self):
         picked = [t for t in self.tools if self.checks[t.id].isChecked()]
@@ -404,15 +411,17 @@ class InstallDialog(QDialog):
             return self._next()
         row.set("Installing…")
         entry = tool.entry
+        desktop = (tool.manifest or {}).get("desktop_shortcut", False) if self.auto else self.desktop.isChecked()
 
         def work():
             try:
-                return packages.install_package(entry, tool.package, archive, desktop=self.desktop.isChecked())
+                return packages.install_package(entry, tool.package, archive, desktop=desktop)
             finally:
                 archive.unlink(missing_ok=True)
 
         job = Job(work)
-        job.ok.connect(lambda notes: (self.notes.extend(notes), row.set("Installed", "done", 1), self._next()))
+        job.ok.connect(lambda notes: (self.notes.extend(notes), row.set("Updated" if self.auto else "Installed", "done", 1),
+                                      self._next()))
         job.failed.connect(lambda msg: (self._fail(row, msg), self._next()))
         job.finished.connect(job.deleteLater)
         self._job = job
@@ -425,15 +434,17 @@ class InstallDialog(QDialog):
     def _all_done(self):
         done = len(self.rows) - self.failures
         self.heading.setText("All done" if not self.failures else "Finished, with problems")
-        lines = [f"Installed {done} of {len(self.rows)}."]
+        lines = [f"{'Updated' if self.auto else 'Installed'} {done} of {len(self.rows)}."]
         where = {"linux": "your application menu", "windows": "the Start menu", "macos": "your Applications folder"}[OS]
-        if done:
+        if done and not self.auto:
             lines.append(f"Find them in {where}, or open them from here.")
         lines += sorted(set(self.notes))
         self.summary.setText("\n".join(lines))
         self.close_btn.setText("Close")
         self.close_btn.setObjectName("primary")
         snake_theme.repolish(self.close_btn)
+        if self.auto and not self.failures:
+            QTimer.singleShot(2500, self.accept)
 
     def _close_or_cancel(self):
         if self.close_btn.text() == "Close":
@@ -577,6 +588,9 @@ class Hub(QMainWindow):
         self.index: dict | None = None
         self.index_state = "checking"
         self.nam = QNetworkAccessManager(self)
+        self.updating = False  # an update (of this app or of tools) is under way
+        self.hub_update: dict | None = None  # a newer Snake's Suite, when there is one
+        self.just_updated = False  # started by an update of itself
 
         root = QWidget(objectName="root")
         self.setCentralWidget(root)
@@ -632,6 +646,9 @@ class Hub(QMainWindow):
         QShortcut(QKeySequence.StandardKey.Quit, self, activated=self.close)
         self.poll = QTimer(self, interval=1500, timeout=self._poll_running)
         self.poll.start()
+        # Look for updates again now and then, for a window left open for days.
+        self.recheck = QTimer(self, interval=6 * 3600 * 1000, timeout=self.fetch_index)
+        self.recheck.start()
         self.reload()
         self.fetch_index()
 
@@ -662,6 +679,11 @@ class Hub(QMainWindow):
         menu = QMenu(more)
         menu.addAction("Open the suite's folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ig.DATA))))
         menu.addAction("Uninstall tools…", self.uninstall_many)
+        menu.addSeparator()
+        auto = menu.addAction("Update automatically")
+        auto.setCheckable(True)
+        auto.setChecked(packages.settings()["auto_update"])
+        auto.toggled.connect(self.set_auto_update)
         menu.addSeparator()
         menu.addAction("Uninstall Snake's Suite…", self.uninstall_everything)
         more.setMenu(menu)
@@ -738,6 +760,11 @@ class Hub(QMainWindow):
         lay.addWidget(accent)
         self.status = QLabel(objectName="statusText")
         lay.addWidget(self.status, 1)
+        self.hub_update_btn = QPushButton(objectName="statusButton")
+        self.hub_update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.hub_update_btn.clicked.connect(lambda: self.update_hub(self.hub_update))
+        self.hub_update_btn.hide()
+        lay.addWidget(self.hub_update_btn)
         lay.addWidget(QLabel(f"v{__version__}", objectName="statusText"))
         return bar
 
@@ -768,6 +795,8 @@ class Hub(QMainWindow):
                 self.index_state = "offline"
             reply.deleteLater()
             self.reload()
+            if self.index_state == "ok":
+                self.auto_update()
 
         reply.finished.connect(done)
 
@@ -775,9 +804,73 @@ class Hub(QMainWindow):
         self.reload()
         self.fetch_index()
 
+    # ---- updating ----------------------------------------------------------------------
+    def set_auto_update(self, on: bool) -> None:
+        packages.save_setting("auto_update", on)
+        if on and self.index_state == "ok":
+            self.auto_update()
+
+    def auto_update(self) -> None:
+        """With a fresh index: update this app first (it restarts), then every tool that is not running."""
+        if self.updating or not packages.settings()["auto_update"]:
+            return
+        if self.hub_update:
+            return self.update_hub(self.hub_update)
+        due = [t for t in self.tools if t.update_available and t.downloadable
+               and t.id not in self.running and not packages.tool_in_use(t.id, t.manifest)]
+        if not due:
+            return
+        self.updating = True
+        dialog = InstallDialog(self, due, {t.id for t in due}, auto=True)
+        dialog.finished.connect(lambda _: (setattr(self, "updating", False), self.reload()))
+        dialog.open()
+
+    def update_hub(self, pkg: dict | None) -> None:
+        """Download the new Snake's Suite, put it in place of this one, and start it."""
+        if not pkg or self.updating:
+            return
+        self.updating = True
+        self.hub_update_btn.setEnabled(False)
+        tmp = Path(tempfile.mkdtemp(prefix="snakes-suite-"))
+        download = tmp / pkg["file"]
+        self._hub_download = Download(self.nam, pkg["url"], download)
+        size = pkg.get("size") or 1
+        self._hub_download.progress.connect(lambda got, total: self.status.setText(
+            f"Updating Snake's Suite to v{pkg['version']}… {human_size(got)} of {human_size(total if total > 0 else size)}"))
+
+        def failed(msg: str):
+            self.updating = False
+            self.hub_update_btn.setEnabled(True)
+            download.unlink(missing_ok=True)
+            self.status.setText(f"Snake's Suite could not be updated: {msg}")
+
+        def restart(start: list):
+            download.unlink(missing_ok=True)
+            if QProcess.startDetached(start[0], [*start[1:], "--updated"])[0]:
+                QApplication.quit()
+            else:
+                failed("the new version is in place but did not start; open Snake's Suite again")
+
+        def downloaded(error: str):
+            if error:
+                return failed(error)
+            self.status.setText(f"Installing Snake's Suite v{pkg['version']}…")
+            job = Job(lambda: packages.replace_hub(pkg, download))
+            job.ok.connect(restart)
+            job.failed.connect(failed)
+            job.finished.connect(job.deleteLater)
+            self._hub_job = job
+            job.start()
+
+        self._hub_download.done.connect(downloaded)
+
     # ---- tools -----------------------------------------------------------------------
     def reload(self) -> None:
         self.tools = load_tools(self.index)
+        self.hub_update = packages.hub_package(self.index)
+        if self.hub_update:
+            self.hub_update_btn.setText(f"Update Snake's Suite to v{self.hub_update['version']}  ")
+        self.hub_update_btn.setVisible(bool(self.hub_update))
         for tile in self.tiles:
             tile.deleteLater()
         self.tiles = []
@@ -805,6 +898,8 @@ class Hub(QMainWindow):
         self._update_status()
 
     def _update_status(self) -> None:
+        if self.updating and self.hub_update:
+            return  # the download's progress is shown there
         installed = sum(t.installed for t in self.tools)
         supported = sum(t.supported for t in self.tools)
         text = f"{installed} of {supported} tools installed"
@@ -813,6 +908,8 @@ class Hub(QMainWindow):
             text += f" · {updates} update{'s' if updates != 1 else ''} available"
         extra = {"checking": "checking for downloads…",
                  "offline": "could not reach the download server; showing what is installed"}.get(self.index_state)
+        if self.just_updated:
+            text = f"Updated to v{__version__} · " + text
         self.status.setText(text + (f" · {extra}" if extra else ""))
 
     def _visible_tiles(self) -> list[Tile]:
@@ -1051,6 +1148,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="snakes-suite", description="Every Snake tool in one place.")
     parser.add_argument("--uninstall", metavar="TOOL", help="remove a tool, or 'suite' for everything")
     parser.add_argument("--yes", action="store_true", help="do not ask first")
+    parser.add_argument("--updated", action="store_true", help=argparse.SUPPRESS)  # started by an update of itself
     args, _qt_args = parser.parse_known_args()
 
     QApplication.setDesktopFileName("snakes-suite")
@@ -1060,6 +1158,9 @@ def main() -> int:
     snake_theme.apply(app, icon_path=ICON_PATH)
     if args.uninstall:
         return uninstall_from_command_line(args.uninstall, args.yes)
+    packages.clean_up_after_update()
     hub = Hub()
+    hub.just_updated = args.updated
+    hub._update_status()
     hub.show()
     return app.exec()

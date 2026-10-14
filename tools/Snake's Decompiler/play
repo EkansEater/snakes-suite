@@ -2,7 +2,7 @@
 # Launcher for Snake's N64 decompiler: checks what is needed, then builds and
 # runs a game from your own ROM.
 #
-#   ./play                      show the list of games in the roms/ folder
+#   ./play                      show the list of games in your ROM folder
 #   ./play path/to/folder       ...or in another folder
 #   ./play path/to/game.z64     play that ROM
 #   ./play game.z64 --wide --smooth    ...with options (see README.md)
@@ -12,13 +12,27 @@
 if [ -n "$1" ] && [ -f "$1" ]; then
     set -- "$(readlink -f "$1")" "${@:2}"
 fi
-cd "$(dirname "$(readlink -f "$0")")" || exit 1
+here="$(dirname "$(readlink -f "$0")")"
+# Everything you make (saves, states, settings, the built games) goes in the
+# folder we run from. In a copy installed by Snake's Suite that is not the
+# program's own folder, which is replaced whenever the program is updated or
+# reinstalled, but one of its own that is left alone. A copy run from its
+# source folder keeps using that folder, as it always has.
+if [ -f "$here/snake-package.json" ]; then
+    work="${XDG_DATA_HOME:-$HOME/.local/share}/snakes-decompiler"
+    mkdir -p "$work" || exit 1
+    export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+    cd "$work" || exit 1
+else
+    cd "$here" || exit 1
+fi
 
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     echo "usage: ./play [rom file] [options]"
     echo
-    echo "With no ROM given, shows a list of the games in the roms/ folder"
-    echo "(or in a folder you name) to choose from, by keyboard, mouse or gamepad."
+    echo "With no ROM given, shows a list of the games in your ROM folder (chosen"
+    echo "with the list's \"ROM folder\" button, or named here) to choose from, by"
+    echo "keyboard, mouse or gamepad."
     echo "Options: --wide  --smooth  --scale N  --stats   (see README.md)"
     exit 0
 fi
@@ -51,19 +65,20 @@ if [ $# -gt 0 ] && [ -f "$1" ]; then
     shift
 else
     # No ROM named: show the game list, a window that works with keyboard,
-    # mouse or gamepad. It lists the ROMs in a folder: the one given, or roms/.
-    folder="roms"
+    # mouse or gamepad. It lists the ROMs in a folder: the one given, else the
+    # one last chosen with its "ROM folder" button, else roms/.
+    folder=()
     if [ $# -gt 0 ] && [ -d "$1" ]; then
-        folder="$1"
+        folder=("$(readlink -f "$1")")
     fi
     mkdir -p roms build
-    source=snakedecomp/launcher/launcher.c
+    source="$here/snakedecomp/launcher/launcher.c"
     # (controls.h is shared with the games: the list of buttons and their names)
-    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ snakedecomp/runtime/controls.h -nt build/launcher ] || [ snakedecomp/launcher/snake_palette.h -nt build/launcher ]; then
+    if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ "$here/snakedecomp/runtime/controls.h" -nt build/launcher ] || [ "$here/snakedecomp/launcher/snake_palette.h" -nt build/launcher ]; then
         # shellcheck disable=SC2046
-        gcc -O1 $(pkg-config --cflags sdl2) -I snakedecomp/runtime "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
+        gcc -O1 $(pkg-config --cflags sdl2) -I "$here/snakedecomp/runtime" "$source" $(pkg-config --libs sdl2) -o build/launcher || exit 1
     fi
-    exec build/launcher "$folder"
+    exec build/launcher "${folder[@]}"
 fi
 
 echo "Starting $rom (the first run builds the game, which takes a minute or two)"

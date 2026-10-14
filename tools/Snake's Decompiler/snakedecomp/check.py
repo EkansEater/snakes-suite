@@ -44,6 +44,8 @@ from .rom import Rom
 from .survey import PRESSES, ROM_ENDINGS
 
 FOLDER = "checks"  # what is kept (and shared): results, notes, button scripts
+if not os.path.isdir(FOLDER):  # (an installed copy runs from a folder of your own; these came with the program)
+    FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "checks")
 RESULTS = os.path.join(FOLDER, "results.json")
 NOTES = os.path.join(FOLDER, "notes.txt")
 KEYS = os.path.join(FOLDER, "keys")

@@ -171,9 +171,20 @@ The ROM can be a `.z64`, `.n64` or `.v64` file, or a `.zip` with one inside.
 ./play
 ```
 
-With no ROM named, a window lists the games in the `roms/` folder
-(`./play some/folder` lists another folder). Choose one and it starts; quit
-the game and you are back at the list.
+With no ROM named, a window lists the games in your ROM folder. Choose one
+and it starts; quit the game and you are back at the list.
+
+To say where your ROMs are, click the **ROM folder** button at the top right
+of the list (or press O) and pick the folder. It is remembered from then on.
+Until you choose one, the list shows the `roms/` folder; `./play some/folder`
+lists another folder just this once.
+
+**Where your things are kept.** Run from this source folder, everything you
+make (saves, save states, settings, built games, logs, screenshots) is kept
+in folders here, as below. A copy installed by Snake's Suite keeps them
+in `~/.local/share/snakes-decompiler/` instead, so they survive the program
+being updated, uninstalled or reinstalled. Your ROMs stay wherever you keep
+them.
 
 | | Keyboard | Mouse | Gamepad |
 |---|---|---|---|
@@ -182,6 +193,7 @@ the game and you are back at the list.
 | Settings for all games | Tab, Shift+Tab | click a name along the top | LB, RB |
 | Look at the folder again | F5 | | Y |
 | Change the order of the list | S | | X |
+| Choose the ROM folder | O | click ROM folder | |
 | Full screen | F11 | | |
 | Quit | Esc | close the window | B |
 

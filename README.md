@@ -44,8 +44,10 @@ app and choose *Open*.
 Push a tag (`git tag v1.0.1 && git push --tags`) or run the **Release** workflow
 from the Actions tab. GitHub builds every tool and the one-file app on Linux,
 Windows and macOS (`packaging/build.py`) and publishes them with `index.json`,
-which the app reads to know what it can download. Raise `version` in
-`suite.json` so installed copies see the update.
+which the app reads to know what it can download. Raise the changed tool's
+`version` in `suite.json` so installed copies update themselves; when the app
+itself changed, raise the hub's `version` and `__version__` in
+`hub/snakes_suite/__init__.py` together.
 
 To build for this computer only: `python packaging/build.py tools`, `... hub`,
 then `... index release/`. Set `SNAKES_SUITE_INDEX` to another index URL to
@@ -71,6 +73,18 @@ for Snake's Code.
 that is not installed yet shows "Click to install" and installs from the kit
 with its progress in a window. Right-click a tile to reinstall, add a desktop
 shortcut, or uninstall. `Ctrl+K` searches, and Enter opens the first match.
+
+**Updates come by themselves.** Each time it opens (and every six hours while
+open) the app checks the latest release. A newer Snake's Suite downloads,
+replaces the installed one and restarts; then every tool with a newer version
+updates in a small window that closes itself. A tool that is running is left
+until the next check. Turn this off with *⋯ → Update automatically*; updates
+then wait for the tile's Update button (and the status bar's, for the app).
+
+A tool that used to keep your files inside its own folder can list them as
+`user_data` in `suite.json` (the folder they go to, and the names to move), and
+an update moves them out before replacing the program. The Decompiler does
+this: saves, states, settings and ROMs go to `~/.local/share/snakes-decompiler/`.
 
 ## The look
 

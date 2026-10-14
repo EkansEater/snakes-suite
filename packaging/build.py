@@ -267,7 +267,10 @@ def build_source(tool: dict, install: bool) -> Path:
         shutil.copy2(src, dst)
     icons_into(stage, tool)
     argv = tool["launch"][OS]
-    return archive(tool, stage, {"launch": argv[0], "cwd": True, "cli": None})
+    meta = {"launch": argv[0], "cwd": True, "cli": None}
+    if tool.get("user_data"):  # what older versions kept in the program's folder, for the app to move out
+        meta["user_data"] = tool["user_data"]
+    return archive(tool, stage, meta)
 
 
 BUILDERS = {"python": build_python, "cargo": build_cargo, "electron": build_electron}
@@ -295,7 +298,8 @@ def sha256(path: Path) -> str:
 def make_index(folder: Path) -> Path:
     """index.json: for each tool and system, the file to download, its size and checksum."""
     data, _ = catalogue()
-    index = {"version": data.get("version", "1.0.0"), "tools": {}, "hub": {}}
+    index = {"version": data.get("version", "1.0.0"), "hub_version": data["hub"].get("version", data.get("version", "1.0.0")),
+             "tools": {}, "hub": {}}
     for side in sorted(folder.glob("*.json")):
         if side.name == "index.json":
             continue

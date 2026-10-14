@@ -8,7 +8,10 @@
  * system), kept in settings/global.txt. A game's own menu changes them for
  * that game alone (see "Settings" in runtime/host.c).
  *
- *   usage: launcher <folder of ROMs>
+ *   usage: launcher [folder of ROMs]
+ *
+ * With no folder named it uses the one last chosen with the "ROM folder"
+ * button (remembered in settings/launcher.txt), or else roms/.
  *
  * It knows nothing about ROMs itself. It asks the Python tools for the list
  * ("python3 -m snakedecomp list <folder>", one line per game), and to start
@@ -47,7 +50,8 @@ typedef struct {
 static Game games[MAX_GAMES];
 static int game_count, chosen, first_shown;
 static SDL_Window *window;
-static const char *folder;
+static const char *folder;          /* the folder listed now */
+static char chosen_folder[1024];    /* the one chosen with the button, remembered */
 
 /* The orders the list can be put in. S (or X on a gamepad) steps through
  * them, and the choice is remembered in a small file for next time, along
@@ -83,9 +87,11 @@ static void sort_list(void) {
 
 static void load_memory(void) {
     FILE *file = fopen(memory_file, "r");
-    char line[120];
+    char line[1100];
     int number, w, h;
     while (file && fgets(line, sizeof line, file)) {
+        if (!strncmp(line, "roms = ", 7))
+            snprintf(chosen_folder, sizeof chosen_folder, "%.*s", (int)strcspn(line + 7, "\r\n"), line + 7);
         if (sscanf(line, "order = %d", &number) == 1 && number >= 0 && number < ORDER_COUNT)
             order = number;
         if (sscanf(line, "size = %d %d", &w, &h) == 2 && w >= 320 && h >= 240 && w < 16000 && h < 16000)
@@ -105,6 +111,8 @@ static void save_memory(void) {
         return;
     fprintf(file, "# The game list: its order and where its window was. Written by the list.\n");
     fprintf(file, "order = %d\n", order);
+    if (chosen_folder[0])
+        fprintf(file, "roms = %s\n", chosen_folder);
     fprintf(file, "size = %d %d\n", window_w0, window_h0);
     if (window_placed)
         fprintf(file, "position = %d %d\n", window_x0, window_y0);
@@ -118,6 +126,20 @@ static void next_order(void) {
     save_memory();
 }
 
+/* Put a name in single quotes for the shell, whatever is in it (a folder
+ * can be called "Snake's Games"). */
+static void shell_quote(char *to, size_t room, const char *name) {
+    size_t at = 0;
+    to[at++] = '\'';
+    for (; *name && at + 6 < room; name++)
+        if (*name == '\'')
+            memcpy(to + at, "'\\''", 4), at += 4;
+        else
+            to[at++] = *name;
+    to[at++] = '\'';
+    to[at] = 0;
+}
+
 /* Copy one tab-separated part of a line; returns where the next one starts. */
 static char *part(char *from, char *to, size_t room) {
     size_t length = strcspn(from, "\t\r\n");
@@ -126,10 +148,11 @@ static char *part(char *from, char *to, size_t room) {
 }
 
 static void read_list(void) {
-    char command[700], line[1024], number[16], was[512] = "";
+    char command[2200], name[2100], line[1024], number[16], was[512] = "";
     if (chosen < game_count)
         strcpy(was, games[chosen].path); /* stay on the same game afterwards */
-    snprintf(command, sizeof command, "python3 -m snakedecomp list '%s'", folder);
+    shell_quote(name, sizeof name, folder);
+    snprintf(command, sizeof command, "python3 -m snakedecomp list %s", name);
     FILE *list = popen(command, "r");
     game_count = 0;
     while (list && game_count < MAX_GAMES && fgets(line, sizeof line, list)) {
@@ -460,6 +483,7 @@ static const int rank_colours[][3] = {{SNAKE_HIGHLIGHT}, {SNAKE_WARNING}, {SNAKE
 static int rows_shown; /* how many rows of the list or the settings fit in the window */
 static int list_top;
 static int tab_left[TAB_COUNT + 1]; /* where each tab's name starts, for the mouse */
+static SDL_Rect folder_button;      /* the "ROM folder" button, for the mouse (w 0: not shown) */
 #define CELL_COLUMN 20   /* where a control's cells start, in letters */
 #define CELL_WIDTH 16
 #define VALUE_COLUMN 28  /* where a setting's value starts */
@@ -504,6 +528,7 @@ static void draw_games(void) {
     if (game_count == 0) {
         text(margin, list_top, "No games here. Put ROMs (.z64 .n64 .v64 or .zip) in:", BRIGHT);
         text(margin, list_top + row_height, folder, YELLOW);
+        text(margin, list_top + 3 * row_height, "Or choose the folder they are in with the ROM folder button (O).", GREY);
     }
     /* What we know about the chosen game. */
     int y = window_h - U(62);
@@ -577,6 +602,24 @@ static void draw(const char *banner, const char *banner_detail) {
         x += ((int)strlen(tab_names[i]) + 3) * letter;
     }
     tab_left[TAB_COUNT] = x - letter;
+    /* The "ROM folder" button, on the right of the tabs: it names the folder
+     * listed, and choosing it asks for another. */
+    folder_button.w = 0;
+    if (tab == TAB_GAMES) {
+        const char *last = strrchr(folder, '/');
+        last = last && last[1] ? last + 1 : folder;
+        int room = (window_w - margin - x) / letter - 4;
+        snprintf(line, sizeof line, "O  ROM folder: %s", last);
+        if (room < (int)strlen(line))
+            snprintf(line, sizeof line, "O  ROM folder");
+        if (room >= (int)strlen(line)) {
+            int w = ((int)strlen(line) + 2) * letter;
+            folder_button = (SDL_Rect){window_w - margin - w, U(20), w, U(20)};
+            box(folder_button.x, folder_button.y, w, folder_button.h, SNAKE_BORDER2);
+            box(folder_button.x + U(1), folder_button.y + U(1), w - U(2), folder_button.h - U(2), SNAKE_WIDGET);
+            text(folder_button.x + letter, U(24), line, BRIGHT);
+        }
+    }
     box(margin, U(43), window_w - 2 * margin, U(1), SNAKE_BORDER2);
     box(margin, window_h - U(62), window_w - 2 * margin, U(1), SNAKE_BORDER2);
 
@@ -668,6 +711,50 @@ static int play(const Game *game) {
     read_list();   /* it is built now */
     load_global(); /* (and its menu may have changed the settings for all games) */
     return 1;
+}
+
+/* ---- Choosing the ROM folder ---------------------------------------------------- */
+
+/* Ask for a folder with the desktop's own folder chooser (KDE's or GTK's),
+ * then list it and remember it for next time. */
+static void choose_folder(void) {
+    char start_at[1024], quoted_start[2100], command[2300], answer[1024] = "";
+    if (!realpath(folder, start_at))
+        snprintf(start_at, sizeof start_at, "%s", getenv("HOME") ? getenv("HOME") : ".");
+    shell_quote(quoted_start, sizeof quoted_start, start_at);
+    if (!system("command -v kdialog >/dev/null 2>&1"))
+        snprintf(command, sizeof command, "kdialog --title 'Choose the folder your ROMs are in' --getexistingdirectory %s 2>/dev/null",
+                 quoted_start);
+    else if (!system("command -v zenity >/dev/null 2>&1"))
+        snprintf(command, sizeof command,
+                 "zenity --file-selection --directory --title='Choose the folder your ROMs are in' --filename=%s/ 2>/dev/null",
+                 quoted_start);
+    else {
+        for (int tick = 0; tick < 50; tick++) { /* five seconds */
+            draw("No folder chooser found (kdialog or zenity).", "Name the folder instead:  ./play path/to/roms");
+            SDL_Delay(100);
+        }
+        return;
+    }
+    draw("Choose the folder your ROMs are in", "in the window that has opened.");
+    FILE *chooser = popen(command, "r");
+    if (chooser) {
+        if (!fgets(answer, sizeof answer, chooser))
+            answer[0] = 0;
+        pclose(chooser);
+    }
+    answer[strcspn(answer, "\r\n")] = 0;
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT); /* (whatever was pressed meanwhile was meant for the chooser) */
+    SDL_RaiseWindow(window);
+    if (!answer[0]) /* cancelled */
+        return;
+    snprintf(chosen_folder, sizeof chosen_folder, "%s", answer);
+    folder = chosen_folder;
+    save_memory();
+    draw("Looking for games...", folder);
+    chosen = game_count, first_shown = 0;
+    read_list();
+    chosen = 0;
 }
 
 /* ---- Input ------------------------------------------------------------------- */
@@ -791,7 +878,6 @@ static int on_a_screen(int x, int y) {
 }
 
 int main(int argc, char **argv) {
-    folder = argc > 1 ? argv[1] : "roms";
     /* A name the desktop knows our window by (otherwise it would be the
      * program file's name, "launcher"). The desktop can then keep settings for
      * it: on KDE with Wayland that is how the window's place on the screen
@@ -805,6 +891,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     load_memory();
+    /* The folder to list: the one named, else the one chosen last time if it
+     * is still there, else roms/. */
+    folder = argc > 1 ? argv[1] : chosen_folder[0] && access(chosen_folder, R_OK) == 0 ? chosen_folder : "roms";
     int place = window_placed && positions_work() && on_a_screen(window_x0, window_y0);
     window = SDL_CreateWindow("Snake's Decompiler", place ? window_x0 : SDL_WINDOWPOS_CENTERED,
                               place ? window_y0 : SDL_WINDOWPOS_CENTERED, window_w0, window_h0,
@@ -855,7 +944,7 @@ int main(int argc, char **argv) {
     int armed = 0; /* may "play" be acted on yet? See further down. */
     Uint32 armed_after = 0;
     while (running) {
-        int go = 0;
+        int go = 0, pick_folder = 0;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -930,6 +1019,10 @@ int main(int argc, char **argv) {
                     if (tab == TAB_GAMES)
                         next_order();
                     break;
+                case SDL_SCANCODE_O:
+                    if (tab == TAB_GAMES)
+                        pick_folder = 1;
+                    break;
                 case SDL_SCANCODE_F11:
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(window, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -980,7 +1073,12 @@ int main(int argc, char **argv) {
                 }
                 if (event.button.button != SDL_BUTTON_LEFT)
                     break;
-                if (tab_at(event.button.x, event.button.y) >= 0)
+                int bx = event.button.x, by = event.button.y;
+                pointer_in_dots(&bx, &by);
+                if (folder_button.w && bx >= folder_button.x && bx < folder_button.x + folder_button.w && by >= folder_button.y &&
+                    by < folder_button.y + folder_button.h)
+                    pick_folder = 1;
+                else if (tab_at(event.button.x, event.button.y) >= 0)
                     go_to_tab(tab_at(event.button.x, event.button.y));
                 else if (row_at(event.button.x, event.button.y) >= 0)
                     point_at(event.button.x, event.button.y), go = 1;
@@ -1022,6 +1120,11 @@ int main(int argc, char **argv) {
         }
         if (getenv("LAUNCHER_TEST")) /* for testing: start the chosen game by itself, once */
             go = 1;
+        if (pick_folder) {
+            choose_folder();
+            go = 0;
+            armed = 0, armed_after = SDL_GetTicks() + 300; /* (the click that closed the chooser is not "play") */
+        }
         if (go && tab != TAB_GAMES) { /* on a settings tab, "play" means "change this row" */
             change_row(0);
             go = 0;

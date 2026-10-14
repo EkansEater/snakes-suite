@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.1.0",
   "tools": [
     {
       "id": "code",
@@ -151,7 +151,21 @@
       "package": {
         "source": true
       },
-      "version": "1.0.0"
+      "user_data": {
+        "folder": "snakes-decompiler",
+        "move": [
+          "roms",
+          "saves",
+          "states",
+          "settings",
+          "build",
+          "logs",
+          "screenshots",
+          "symbols",
+          "dist"
+        ]
+      },
+      "version": "1.1.0"
     },
     {
       "id": "soundpad",
@@ -420,7 +434,7 @@
         "PySide6.Qt3DCore"
       ]
     },
-    "version": "1.0.2"
+    "version": "1.1.0"
   },
   "release": {
     "repo": "EkansEater/snakes-suite",
