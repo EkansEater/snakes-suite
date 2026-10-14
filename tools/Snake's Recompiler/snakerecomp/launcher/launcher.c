@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -106,6 +107,7 @@ static void load_memory(void) {
 }
 
 static void save_memory(void) {
+    mkdir("settings", 0755); /* (a new working folder has none yet) */
     FILE *file = fopen(memory_file, "w");
     if (!file)
         return;

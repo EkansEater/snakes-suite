@@ -76,7 +76,7 @@ else
     if [ $# -gt 0 ] && [ -d "$1" ]; then
         folder=("$(readlink -f "$1")")
     fi
-    mkdir -p roms build
+    mkdir -p roms build settings
     source="$here/snakerecomp/launcher/launcher.c"
     # (controls.h is shared with the games: the list of buttons and their names)
     if [ ! -x build/launcher ] || [ "$source" -nt build/launcher ] || [ "$here/snakerecomp/runtime/controls.h" -nt build/launcher ] || [ "$here/snakerecomp/launcher/snake_palette.h" -nt build/launcher ]; then
