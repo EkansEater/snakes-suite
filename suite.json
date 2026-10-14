@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "tools": [
     {
       "id": "code",
@@ -26,7 +26,8 @@
       ],
       "package": {
         "electron": true
-      }
+      },
+      "version": "1.0.0"
     },
     {
       "id": "compressor",
@@ -58,7 +59,8 @@
       "categories": "Utility;Archiving;Compression;",
       "accepts_files": false,
       "legacy_desktop": [],
-      "package": {}
+      "package": {},
+      "version": "1.0.0"
     },
     {
       "id": "converter",
@@ -113,7 +115,8 @@
           "PySide6.QtBluetooth",
           "PySide6.Qt3DCore"
         ]
-      }
+      },
+      "version": "1.0.0"
     },
     {
       "id": "decompiler",
@@ -147,7 +150,8 @@
       "legacy_desktop": [],
       "package": {
         "source": true
-      }
+      },
+      "version": "1.0.0"
     },
     {
       "id": "soundpad",
@@ -198,7 +202,8 @@
           "PySide6.QtBluetooth",
           "PySide6.Qt3DCore"
         ]
-      }
+      },
+      "version": "1.0.0"
     },
     {
       "id": "mp3",
@@ -254,7 +259,8 @@
           "PySide6.QtBluetooth",
           "PySide6.Qt3DCore"
         ]
-      }
+      },
+      "version": "1.0.0"
     },
     {
       "id": "daw",
@@ -296,7 +302,8 @@
       ],
       "package": {
         "microphone": true
-      }
+      },
+      "version": "1.0.0"
     },
     {
       "id": "screen",
@@ -363,7 +370,8 @@
             "imageio_ffmpeg"
           ]
         }
-      }
+      },
+      "version": "1.0.0"
     }
   ],
   "hub": {
@@ -411,7 +419,8 @@
         "PySide6.QtBluetooth",
         "PySide6.Qt3DCore"
       ]
-    }
+    },
+    "version": "1.0.1"
   },
   "release": {
     "repo": "EkansEater/snakes-suite",

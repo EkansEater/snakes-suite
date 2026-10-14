@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snakes-suite"
-version = "1.0.0"
+version = "1.0.1"
 description = "Snake's Suite: every Snake tool in one place."
 requires-python = ">=3.10"
 dependencies = ["PySide6-Essentials>=6.6"]
