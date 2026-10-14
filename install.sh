@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build SnakeDAW in release mode and add it to the application menu.
+# Build Snake's DAW in release mode and add it to the application menu.
 set -e
 cd "$(dirname "$0")"
 cargo build --release
@@ -8,7 +8,7 @@ install -m755 target/release/snakedaw "$HOME/.local/bin/snakedaw"
 cat > "$HOME/.local/share/applications/snakedaw.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=SnakeDAW
+Name=Snake's DAW
 Comment=Practice and recording
 Exec=$HOME/.local/bin/snakedaw
 Icon=audio-x-generic

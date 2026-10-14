@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>SnakeDAW</string>
+    <string>Snake's DAW</string>
     <key>CFBundleDisplayName</key>
-    <string>SnakeDAW</string>
+    <string>Snake's DAW</string>
     <key>CFBundleIdentifier</key>
     <string>org.snakedaw.SnakeDAW</string>
     <key>CFBundleExecutable</key>
@@ -22,6 +22,6 @@
     <true/>
     <!-- Without this macOS silently gives the app silence instead of the instrument. -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>SnakeDAW records and monitors your instruments and microphones.</string>
+    <string>Snake's DAW records and monitors your instruments and microphones.</string>
 </dict>
 </plist>

@@ -1,4 +1,4 @@
-//! Desktop audio capture: a virtual output device ("SnakeDAW Play-Along") that browsers and
+//! Desktop audio capture: a virtual output device ("Snake's DAW Play-Along") that browsers and
 //! players can send sound to. The DAW listens to it and mixes it into the headphones.
 
 use std::process::Command;

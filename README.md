@@ -1,4 +1,4 @@
-# SnakeDAW
+# Snake's DAW
 
 A small, free DAW for practising and recording: plug in, hear yourself through an amp and effects,
 play along, loop, and record. It runs on Linux, Windows and macOS with any audio interface.
@@ -18,7 +18,7 @@ Downloads for each system are attached to the project's releases.
 
 ## Your audio interface
 
-SnakeDAW picks an interface by itself and shows what it chose under **⚙ Audio**, where you can
+Snake's DAW picks an interface by itself and shows what it chose under **⚙ Audio**, where you can
 change it. Up to eight inputs are used.
 
 - **Linux with PipeWire or JACK** – it connects straight to the audio server. This gives the

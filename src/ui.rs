@@ -6,6 +6,7 @@ use crate::engine::NUM_INPUTS;
 use crate::fx::builtin;
 use crate::looper::{self, LoopAction};
 use crate::project::{ClipDef, InputSel, TrackDef};
+use crate::snake_theme as theme;
 use crate::util::gain_to_db;
 use eframe::egui::{
     self, pos2, vec2, Align, Align2, Button, Color32, ComboBox, CursorIcon, DragValue, FontId, Key, Layout, Modifiers,
@@ -44,7 +45,7 @@ const COLORS: [Color32; 8] = [
     Color32::from_rgb(150, 150, 220),
 ];
 const RED: Color32 = Color32::from_rgb(225, 70, 70);
-const GREEN: Color32 = Color32::from_rgb(110, 200, 110);
+const GREEN: Color32 = theme::HIGHLIGHT;
 const ORANGE: Color32 = Color32::from_rgb(230, 150, 60);
 const YELLOW: Color32 = Color32::from_rgb(230, 210, 80);
 const BLUE: Color32 = Color32::from_rgb(100, 170, 240);
@@ -91,6 +92,8 @@ pub struct UiState {
     pub restart_needed: bool,
     pub new_name: String,
     pub lv2_search: String,
+    /// The app icon, shown in the top bar.
+    pub logo: Option<egui::TextureHandle>,
     meters: HashMap<u64, (f32, f32)>,
     master_meter: (f32, f32),
     in_levels: [f32; NUM_INPUTS + 1],
@@ -111,6 +114,7 @@ impl Default for UiState {
             show_open: false,
             show_new: false,
             show_lv2: false,
+            logo: None,
             show_help: false,
             show_looper: false,
             restart_needed: false,
@@ -161,7 +165,7 @@ fn big(ui: &mut Ui, text: &str, color: Option<Color32>) -> Response {
 
 /// Draw a level meter for a linear peak value, on a -60..0 dB scale.
 fn meter(p: &Painter, rect: Rect, level: f32, vertical: bool) {
-    p.rect_filled(rect, 1.0, Color32::from_gray(20));
+    p.rect_filled(rect, 1.0, theme::INPUT);
     let db = gain_to_db(level);
     let frac = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
     let color = if db > -1.0 { RED } else if db > -9.0 { YELLOW } else { GREEN };
@@ -225,9 +229,11 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         self.tick();
         self.shortcuts(ctx);
-        egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| self.status_bar(ui));
-        egui::TopBottomPanel::bottom("fx").resizable(true).default_height(250.0).min_height(120.0).show(ctx, |ui| self.fx_panel(ui));
+        egui::TopBottomPanel::top("top").frame(theme::header_frame()).show(ctx, |ui| self.top_bar(ui));
+        egui::TopBottomPanel::bottom("status").frame(theme::status_frame()).show(ctx, |ui| self.status_bar(ui));
+        egui::TopBottomPanel::bottom("fx")
+            .frame(egui::Frame::new().fill(theme::SIDE).inner_margin(8.0).stroke(Stroke::new(1.0_f32, theme::BORDER)))
+            .resizable(true).default_height(250.0).min_height(120.0).show(ctx, |ui| self.fx_panel(ui));
         egui::CentralPanel::default().show(ctx, |ui| self.timeline(ui));
         self.windows(ctx);
         self.dev_screenshot(ctx);
@@ -347,6 +353,11 @@ impl App {
 
     fn top_bar(&mut self, ui: &mut Ui) {
         egui::menu::bar(ui, |ui| {
+            if let Some(logo) = &self.ui.logo {
+                ui.add(egui::Image::new(logo).fit_to_exact_size(vec2(20.0, 20.0)));
+            }
+            ui.label(RichText::new("Snake's DAW").strong().color(theme::FG));
+            ui.add_space(6.0);
             ui.menu_button("File", |ui| {
                 if ui.button("New project…").clicked() {
                     self.ui.new_name.clear();
@@ -395,7 +406,7 @@ impl App {
                 }
             });
             ui.separator();
-            ui.label(RichText::new(&self.project.name).strong());
+            ui.label(RichText::new(&self.project.name).color(theme::FG2));
         });
         ui.add_space(2.0);
 
@@ -502,7 +513,7 @@ impl App {
                     self.io.cpu_load(),
                     xruns
                 );
-                ui.label(RichText::new(text).color(if self.io.output_connected() { Color32::GRAY } else { ORANGE }));
+                ui.label(RichText::new(text).color(if self.io.output_connected() { theme::FG2 } else { ORANGE }));
                 if !self.io.output_connected() {
                     ui.label(RichText::new("No audio output connected – check ⚙ Audio").color(ORANGE));
                 }
@@ -623,8 +634,8 @@ impl App {
         let frac = if max_scroll > 0.0 { (self.ui.scroll / max_scroll).clamp(0.0, 1.0) as f32 } else { 0.0 };
         let handle = Rect::from_min_size(pos2(track.left() + frac * travel, track.top() + 2.0), vec2(handle_w, SCROLLBAR_H - 4.0));
         let p = ui.painter();
-        p.rect_filled(track, 3.0, Color32::from_gray(22));
-        p.rect_filled(handle, 3.0, Color32::from_gray(if resp.hovered() || resp.dragged() { 120 } else { 80 }));
+        p.rect_filled(track, 3.0, theme::INPUT);
+        p.rect_filled(handle, 3.0, if resp.hovered() || resp.dragged() { theme::FG3 } else { theme::BORDER2 });
     }
 
     fn ruler(&mut self, ui: &mut Ui, rect: Rect, view: View) {
@@ -632,15 +643,15 @@ impl App {
         let p = ui.painter_at(rect);
         // Top strip: the loop region. Below it: bar numbers, where clicking moves the playhead.
         let strip = Rect::from_min_max(rect.min, pos2(rect.right(), rect.top() + LOOP_H));
-        p.rect_filled(rect, 0.0, Color32::from_gray(30));
-        p.rect_filled(strip, 0.0, Color32::from_gray(22));
+        p.rect_filled(rect, 0.0, theme::SIDE);
+        p.rect_filled(strip, 0.0, theme::INPUT);
 
         let (ls, le) = (self.project.loop_start, self.project.loop_end);
         let has_loop = le > ls;
         let (lx0, lx1) = (view.x(ls), view.x(le));
         if has_loop {
             let bar = Rect::from_min_max(pos2(lx0, strip.top() + 1.0), pos2(lx1, strip.bottom() - 1.0));
-            let (fill, edge) = if self.project.loop_on { (BLUE.gamma_multiply(0.75), Color32::WHITE) } else { (Color32::from_gray(70), Color32::from_gray(140)) };
+            let (fill, edge) = if self.project.loop_on { (BLUE.gamma_multiply(0.75), Color32::WHITE) } else { (theme::BUTTON2, theme::FG3) };
             p.rect_filled(bar, 3.0, fill);
             for x in [lx0, lx1 - 3.0] {
                 p.rect_filled(Rect::from_min_max(pos2(x, bar.top()), pos2(x + 3.0, bar.bottom())), 1.0, edge);
@@ -659,8 +670,8 @@ impl App {
             if x > rect.right() {
                 break;
             }
-            p.vline(x, strip.bottom() + 12.0..=rect.bottom(), Stroke::new(1.0_f32, Color32::from_gray(110)));
-            p.text(pos2(x + 3.0, strip.bottom() + 1.0), Align2::LEFT_TOP, (n + 1).to_string(), FontId::proportional(11.0), Color32::from_gray(170));
+            p.vline(x, strip.bottom() + 12.0..=rect.bottom(), Stroke::new(1.0_f32, theme::BORDER2));
+            p.text(pos2(x + 3.0, strip.bottom() + 1.0), Align2::LEFT_TOP, (n + 1).to_string(), FontId::proportional(11.0), theme::FG2);
             n += step;
         }
 
@@ -758,7 +769,7 @@ impl App {
     fn track_header(&mut self, ui: &mut Ui, rect: Rect, t: &mut TrackDef) -> bool {
         let selected = self.ui.sel_track == Some(t.id);
         let color = COLORS[t.color % COLORS.len()];
-        ui.painter().rect_filled(rect, 0.0, Color32::from_gray(if selected { 52 } else { 36 }));
+        ui.painter().rect_filled(rect, 0.0, if selected { theme::SELECTION } else { theme::WIDGET });
         ui.painter().rect_filled(Rect::from_min_size(rect.min, vec2(5.0, rect.height())), 0.0, color);
         let pressed = ui.input(|i| i.pointer.primary_pressed().then(|| i.pointer.interact_pos()).flatten());
         if pressed.is_some_and(|p| rect.contains(p)) && ui.rect_contains_pointer(rect) {
@@ -825,7 +836,7 @@ impl App {
         let resp = ui.interact(rect, ui.id().with(("lane", t.id)), Sense::click_and_drag());
         let p = ui.painter_at(rect);
         let selected = self.ui.sel_track == Some(t.id);
-        p.rect_filled(rect, 0.0, Color32::from_gray(if selected { 30 } else { 24 }));
+        p.rect_filled(rect, 0.0, if selected { theme::HOVER } else { theme::BG });
 
         // Beat and bar grid.
         let beat = self.beat_frames();
@@ -839,8 +850,8 @@ impl App {
                 if x > rect.right() {
                     break;
                 }
-                let gray = if n % bpb == 0 { 58 } else { 38 };
-                p.vline(x, rect.y_range(), Stroke::new(1.0_f32, Color32::from_gray(gray)));
+                let line = if n % bpb == 0 { theme::BORDER2 } else { theme::BORDER };
+                p.vline(x, rect.y_range(), Stroke::new(1.0_f32, line));
                 n += stride;
             }
         }
@@ -1061,7 +1072,7 @@ impl App {
                 for (i, f) in chain.iter_mut().enumerate() {
                     let Some(h) = self.fx.get(&f.id) else { continue };
                     ui.push_id(f.id, |ui| {
-                        let fill = Color32::from_gray(if f.bypass { 30 } else { 46 });
+                        let fill = if f.bypass { theme::SIDE } else { theme::BUTTON2 };
                         egui::Frame::group(ui.style()).fill(fill).show(ui, |ui| {
                             ui.set_width(214.0);
                             ui.set_min_height(height.max(60.0));
@@ -1211,11 +1222,11 @@ impl App {
 
             let (rect, _) = ui.allocate_exact_size(vec2(320.0, 130.0), Sense::hover());
             let p = ui.painter_at(rect);
-            p.rect_filled(rect, 6.0, Color32::from_gray(18));
+            p.rect_filled(rect, 6.0, theme::INPUT);
             let centre = rect.center().x;
             let bar_y = rect.bottom() - 30.0;
-            p.hline(rect.left() + 20.0..=rect.right() - 20.0, bar_y, Stroke::new(2.0_f32, Color32::from_gray(70)));
-            p.vline(centre, bar_y - 12.0..=bar_y + 12.0, Stroke::new(2.0_f32, Color32::from_gray(150)));
+            p.hline(rect.left() + 20.0..=rect.right() - 20.0, bar_y, Stroke::new(2.0_f32, theme::BORDER2));
+            p.vline(centre, bar_y - 12.0..=bar_y + 12.0, Stroke::new(2.0_f32, theme::FG2));
             match &self.tuner.reading {
                 Some(r) => {
                     let in_tune = r.cents.abs() < 5.0;
@@ -1225,11 +1236,11 @@ impl App {
                     p.circle_filled(pos2(x, bar_y), 9.0, color);
                     let hint = if in_tune { "in tune".to_string() } else if r.cents < 0.0 { "too low: tighten".into() } else { "too high: loosen".into() };
                     let text = format!("{:.1} Hz   {:+.0} cents   {hint}", r.freq, r.cents);
-                    p.text(pos2(centre, rect.bottom() - 9.0), Align2::CENTER_CENTER, text, FontId::proportional(12.0), Color32::GRAY);
+                    p.text(pos2(centre, rect.bottom() - 9.0), Align2::CENTER_CENTER, text, FontId::proportional(12.0), theme::FG2);
                 }
                 None => {
-                    p.text(pos2(centre, rect.top() + 42.0), Align2::CENTER_CENTER, "–", FontId::proportional(54.0), Color32::from_gray(90));
-                    p.text(pos2(centre, rect.bottom() - 9.0), Align2::CENTER_CENTER, "Play a single string", FontId::proportional(12.0), Color32::GRAY);
+                    p.text(pos2(centre, rect.top() + 42.0), Align2::CENTER_CENTER, "–", FontId::proportional(54.0), theme::FG3);
+                    p.text(pos2(centre, rect.bottom() - 9.0), Align2::CENTER_CENTER, "Play a single string", FontId::proportional(12.0), theme::FG2);
                 }
             }
         });
@@ -1496,7 +1507,7 @@ impl App {
             ui.label(RichText::new("Smaller buffers feel more immediate; raise the size if you hear crackles.").weak());
             self.ui.restart_needed |= restart;
             if self.ui.restart_needed {
-                ui.label(RichText::new("Close and reopen SnakeDAW to use the new audio settings.").color(ORANGE));
+                ui.label(RichText::new("Close and reopen Snake's DAW to use the new audio settings.").color(ORANGE));
             }
             if changed || restart {
                 self.io.apply_connections(&self.cfg);
