@@ -154,12 +154,18 @@ def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files
     app_id = meta.get("wm_class") or f"snakes-{meta['id']}"
     icon_name = f"snakes-{meta['id']}"
     hicolor = xdg_data() / "icons" / "hicolor"
+    icon_file = None
     for ext, sub in (("svg", "scalable"), ("png", "512x512")):
         if ext in icons:
             dst = hicolor / sub / "apps" / f"{icon_name}.{ext}"
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(icons[ext], dst)
             files.append(str(dst))
+            icon_file = icon_file or dst
+    # A full path, not the theme name: Plasma remembers names it looked up and could not find, and
+    # the hub's own window asks for "snakes-suite" before installing itself, so a bare name would
+    # stay a blank icon in the menu and on the desktop until the next login.
+    icon_ref = str(icon_file) if icon_file else icon_name
 
     exec_line = " ".join(desktop_quote(a) for a in launch["launch"])
     if meta.get("accepts_files"):
@@ -171,7 +177,7 @@ def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files
         f"GenericName={meta.get('tagline', '')}",
         f"Comment={meta.get('description', '')}",
         f"Exec={exec_line}",
-        f"Icon={icon_name}",
+        f"Icon={icon_ref}",
         "Terminal=false",
         f"Categories={meta.get('categories', 'Utility;')}",
         f"StartupWMClass={app_id}",

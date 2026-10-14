@@ -1,5 +1,5 @@
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "tools": [
     {
       "id": "code",
@@ -440,7 +440,7 @@
         "PySide6.Qt3DCore"
       ]
     },
-    "version": "1.1.1"
+    "version": "1.1.2"
   },
   "release": {
     "repo": "EkansEater/snakes-suite",
