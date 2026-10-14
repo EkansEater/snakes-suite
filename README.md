@@ -41,7 +41,12 @@ app and choose *Open*.
 
 ## Releasing
 
-Push a tag (`git tag v1.0.1 && git push --tags`) or run the **Release** workflow
+The easy way: `python ship.py`. It shows what changed since the last release,
+raises those versions for you, and asks whether to **update locally** (build
+and install the changed tools on this computer), **update GitHub** (commit,
+push and publish the release), or both. `--dry-run` only shows the plan.
+
+By hand: push a tag (`git tag v1.0.1 && git push --tags`) or run the **Release** workflow
 from the Actions tab. GitHub builds every tool and the one-file app on Linux,
 Windows and macOS (`packaging/build.py`) and publishes them with `index.json`,
 which the app reads to know what it can download. Raise the changed tool's
