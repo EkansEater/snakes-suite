@@ -1,5 +1,5 @@
 {
-  "version": "1.1.5",
+  "version": "1.1.6",
   "tools": [
     {
       "id": "word",
@@ -33,7 +33,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "sheets",
@@ -66,7 +66,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "slides",
@@ -97,7 +97,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "paint",
@@ -131,7 +131,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "photo",
@@ -169,7 +169,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "player",
@@ -217,7 +217,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "movie",
@@ -246,7 +246,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "id": "code",

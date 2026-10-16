@@ -1,0 +1,62 @@
+# Builds the ffmpeg that ships inside Snake's Studio on every system, whenever its
+# recipe (packaging/ffmpeg/) changes on main, and keeps it in the cache. So a broken
+# recipe shows up here, as a red run, instead of as a release without ffmpeg; and
+# releases find it ready (a cache made on main is visible to the release tags).
+name: ffmpeg
+
+on:
+  push:
+    branches: [main]
+    paths: ["packaging/ffmpeg/**", ".github/workflows/ffmpeg.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-15, macos-15-intel]   # as in release.yml
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ffmpeg from the cache
+        id: ffcache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packaging/ffmpeg/**') }}
+
+      - name: Build ffmpeg
+        if: steps.ffcache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          case "$RUNNER_OS" in
+            Linux) sudo apt-get update && sudo apt-get install -y nasm meson ninja-build ;;
+            macOS) brew install nasm meson ninja pkgconf ;;
+          esac
+          python packaging/build.py ffmpeg build/ffmpeg
+
+      - name: Keep it in the cache
+        if: steps.ffcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ffmpeg
+          key: ${{ steps.ffcache.outputs.cache-primary-key }}
+
+      - name: Check it runs
+        shell: bash
+        run: |
+          ff=build/ffmpeg/ffmpeg; [ "$RUNNER_OS" = Windows ] && ff=build/ffmpeg/ffmpeg.exe
+          "$ff" -hide_banner -version | head -1
+          "$ff" -hide_banner -f lavfi -i testsrc2=duration=1:size=320x240:rate=10 -f lavfi -i sine=duration=1 \
+            -c:v libx264 -c:a aac -shortest -y build/check.mp4
+          ls -l build/check.mp4

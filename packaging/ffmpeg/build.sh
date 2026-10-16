@@ -112,7 +112,8 @@ src=$(fetch "$DAV1D_URL" "$DAV1D_SHA256")
 say ffmpeg
 src=$(fetch "$FFMPEG_URL" "$FFMPEG_SHA256")
 platform=()
-if [ "$OS" = Darwin ]; then platform=(--enable-videotoolbox --enable-audiotoolbox); fi
+# macOS keeps iconv in its own system library (libiconv), which the link must name.
+if [ "$OS" = Darwin ]; then platform=(--enable-videotoolbox --enable-audiotoolbox --extra-libs=-liconv); fi
 CONFIGURE=(--prefix="$P" --pkg-config-flags=--static --extra-cflags="-I$P/include" --extra-ldflags="-L$P/lib"
   --extra-version=snake --enable-gpl --enable-version3 --disable-autodetect --disable-debug
   --disable-doc --disable-ffplay --disable-network --disable-protocols --enable-protocol=file,pipe
