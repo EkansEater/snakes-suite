@@ -4,6 +4,7 @@
 import { h, svg, rafOnce, isMac, drag, clamp, fmtTime } from './dom.js';
 import { icon } from './icons.js';
 import { menubar, showMenu, contextMenu, closeMenus } from './menu.js';
+import { drawer, drawerButtons } from './phone.js';
 import * as commands from './commands.js';
 import { formatKeys } from './keys.js';
 import { host, inElectron } from './host.js';
@@ -170,7 +171,7 @@ export async function createShell({ id, name, menus = [], quick = [], about = ''
   setTimeout(() => quickBar.append(...quick.filter((q) => commands.get(q)).map((q) => tb(q))), 0);
   const bar = menubar(menus);
   const titlebar = h(`div.titlebar${mac ? '.mac' : ''}`,
-    h('img.app-icon', { src: `../icons/${id}.svg`, alt: '' }), bar, quickBar, h('div.spacer'), titleEl, winCtl);
+    h('img.app-icon', { src: `../icons/${id}.svg`, alt: '' }), bar, quickBar, h('div.spacer'), titleEl, drawerButtons, winCtl);
   titlebar.addEventListener('dblclick', (e) => {
     if (e.target === titlebar || e.target.classList.contains('spacer')) host.win.toggleMaximize();
   });
@@ -236,6 +237,8 @@ export async function createShell({ id, name, menus = [], quick = [], about = ''
     applyTheme(t);
     refresh();
   }
+  // A pinch over the menus or panels (see zoom.js).
+  window.addEventListener('snake-ui-zoom', (e) => uiScale(e.detail));
   function uiScale(delta) {
     const cur = host.settings.get('uiScale', 1);
     const next = delta === 0 ? 1 : clamp(Math.round((cur + delta) * 10) / 10, 0.7, 2);
@@ -373,8 +376,10 @@ function zoomBox({ get, set, min = 0.1, max = 5, fit = null }) {
 // ---------------------------------------------------------------------------
 // Splitters: drag to resize a side panel, double-click to hide or restore it
 // ---------------------------------------------------------------------------
-export function splitter(panel, { side = 'left', min = 140, max = 640, key = null, initial = 260, vertical = false } = {}) {
+export function splitter(panel, { side = 'left', min = 140, max = 640, key = null, initial = 260, vertical = false, title = null, icon: ic = null } = {}) {
   const el = h(`div.splitter.${vertical ? 'h' : 'v'}`);
+  // On a phone a side panel slides in over the work instead (kit/phone.js).
+  if (!vertical) drawer(panel, { side, title, icon: ic });
   const prop = vertical ? 'height' : 'width';
   let size = key ? host.settings.get(key, initial) : initial;
   const apply = () => { panel.style[prop] = `${size}px`; panel.style.flex = 'none'; };

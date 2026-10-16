@@ -14,3 +14,7 @@
 .tile .tag { color: var(--fg2); font-size: 12px; text-align: center; }
 .hero .web-note { margin-top: 8px; font-size: 13px; }
 .hero .web-note a { color: var(--accent); }
+
+/* Phones: the logo above the words, smaller margins. */
+.phone .home { padding: 18px 16px; }
+.phone .hero { flex-direction: column; align-items: flex-start; gap: 10px; }

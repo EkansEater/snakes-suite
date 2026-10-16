@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window theme behind the Compose UI, so nothing flashes white while it starts. -->
+    <style name="Theme.Snake" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/snake_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/snake_title</item>
+        <item name="android:colorAccent">@color/snake_accent</item>
+    </style>
+</resources>

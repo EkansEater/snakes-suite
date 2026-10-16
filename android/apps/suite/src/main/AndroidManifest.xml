@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+
+    <!-- Android 11+ only shows us the packages we name. -->
+    <queries>
+        <package android:name="com.snake.suite.code" />
+        <package android:name="com.snake.suite.compressor" />
+        <package android:name="com.snake.suite.converter" />
+        <package android:name="com.snake.suite.soundpad" />
+        <package android:name="com.snake.suite.mp3" />
+        <package android:name="com.snake.suite.daw" />
+        <package android:name="com.snake.suite.screen" />
+    </queries>
+
+    <application
+        android:label="Snake's Master Suite"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.Snake"
+        android:allowBackup="true">
+        <activity android:name=".hub.MainActivity" android:exported="true" android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

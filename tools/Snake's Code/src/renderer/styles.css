@@ -13,6 +13,8 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
+/* Fingers scroll; a pinch is ours (app.js zooms what is under it), not the browser's. */
+:where(html, body, body *) { touch-action: pan-x pan-y; }
 body {
   font-family: var(--ui-font);
   font-size: 13px;

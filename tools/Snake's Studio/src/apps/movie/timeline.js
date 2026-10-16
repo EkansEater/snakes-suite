@@ -3,8 +3,11 @@
 import { h, clamp, fmtTime } from '../../kit/dom.js';
 import { icon } from '../../kit/icons.js';
 import { end, mediaOf, projectDuration, snapPoints, trackOf, findClip, TRANSITIONS } from './model.js';
+import { pinch, isPinching } from '../../kit/zoom.js';
+import { isPhone } from '../../kit/phone.js';
 
-const HEAD = 150;
+// The track names column: narrower on a phone (style.css matches it).
+let HEAD = 150;
 const ROW_H = { video: 64, text: 38, audio: 52 };
 const EDGE = 7;
 
@@ -49,6 +52,7 @@ export class Timeline {
   }
 
   render() {
+    HEAD = isPhone() ? 96 : 150;
     const p = this.project();
     const rows = p.tracks.map((tr) => this.row(tr, p));
     this.rows.replaceChildren(...rows);
@@ -221,11 +225,19 @@ export class Timeline {
       this.zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.clientX);
     }, { passive: false });
 
+    // Two fingers stretch or squeeze time, around their midpoint.
+    let pps0 = this.pps;
+    pinch(this.el, {
+      begin: () => { pps0 = this.pps; },
+      change: (scale, c) => this.zoomAt(clamp(pps0 * scale, 2, 1200) / this.pps, c.x),
+    });
+    this.el.style.touchAction = 'pan-x pan-y';
+
     // Scrub on the ruler.
     this.rulerRow.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target.closest('.tl-corner')) return;
+      if (e.button !== 0 || e.target.closest('.tl-corner') || isPinching(this.el)) return;
       this.rulerRow.setPointerCapture(e.pointerId);
-      const go = (ev) => { this.engine.seek(this.timeAt(ev.clientX)); this.placePlayhead(); };
+      const go = (ev) => { if (isPinching(this.el)) return; this.engine.seek(this.timeAt(ev.clientX)); this.placePlayhead(); };
       go(e);
       const up = () => { this.rulerRow.removeEventListener('pointermove', go); this.rulerRow.removeEventListener('pointerup', up); };
       this.rulerRow.addEventListener('pointermove', go);
@@ -233,12 +245,26 @@ export class Timeline {
     });
 
     this.rows.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || isPinching(this.el)) return;
       const clipEl = e.target.closest('.tl-clip');
       if (e.target.closest('.tl-head')) return;
       if (!clipEl) {
-        // Empty space: move the playhead, drop the selection.
-        if (e.target.closest('.tl-lane')) { this.engine.seek(this.timeAt(e.clientX)); this.placePlayhead(); this.select([]); }
+        // Empty space: move the playhead, drop the selection. A finger does that
+        // when it lifts without moving (moving scrolls, two fingers zoom).
+        if (!e.target.closest('.tl-lane')) return;
+        const go = () => { this.engine.seek(this.timeAt(e.clientX)); this.placePlayhead(); this.select([]); };
+        if (e.pointerType !== 'touch') { go(); return; }
+        this.rows.addEventListener('pointerup', (ev) => {
+          if (!isPinching(this.el) && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 10) go();
+        }, { once: true });
+        return;
+      }
+      // A finger on a clip that is not selected yet scrolls; a tap selects it,
+      // and then the finger can move or trim it.
+      if (e.pointerType === 'touch' && !this.selected.has(clipEl.dataset.clip)) {
+        this.rows.addEventListener('pointerup', (ev) => {
+          if (!isPinching(this.el) && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 10) this.select([clipEl.dataset.clip]);
+        }, { once: true });
         return;
       }
       this.clipDown(e, clipEl);
@@ -297,9 +323,10 @@ export class Timeline {
     const r = clipEl.getBoundingClientRect();
     const local = e.clientX - r.left;
     let mode = 'move';
+    const edge = e.pointerType === 'touch' ? EDGE * 2 : EDGE; // fingers are wider than pointers
     if (e.target.classList.contains('tl-fade')) mode = e.target.classList.contains('in') ? 'fadeIn' : 'fadeOut';
-    else if (local < EDGE) mode = 'trimL';
-    else if (local > r.width - EDGE) mode = 'trimR';
+    else if (local < edge && r.width > edge * 3) mode = 'trimL';
+    else if (local > r.width - edge && r.width > edge * 3) mode = 'trimR';
     const m = mediaOf(p, c);
     const maxSrc = m && (m.kind === 'video' || m.kind === 'audio') && m.duration ? m.duration : Infinity;
     const x0 = e.clientX;
@@ -356,9 +383,25 @@ export class Timeline {
       if (mode === 'trimL') this.engine.seek(c.start);
       if (mode === 'trimR') this.engine.seek(end(c) - 1 / 30);
     };
-    const up = () => {
+    const stop = () => {
       this.el.removeEventListener('pointermove', mv);
       this.el.removeEventListener('pointerup', up);
+      this.el.removeEventListener('pointercancel', cancel);
+      this.el.removeEventListener('snake-pinchstart', cancel);
+    };
+    // A second finger (zooming) or the system taking the finger: put everything back.
+    const cancel = () => {
+      stop();
+      if (!changed) return;
+      if (targetTrack !== tr) { targetTrack.clips.splice(targetTrack.clips.indexOf(c), 1); tr.clips.push(c); }
+      for (const q of orig) Object.assign(q.x, { start: q.start, dur: q.dur, in: q.in, fadeIn: q.fadeIn, fadeOut: q.fadeOut });
+      this.render();
+      this.engine.redraw();
+    };
+    this.el.addEventListener('pointercancel', cancel);
+    this.el.addEventListener('snake-pinchstart', cancel);
+    const up = () => {
+      stop();
       if (!changed) return;
       // Record the change for undo: put it back, then apply it as one step.
       const after = moving.map((x) => ({ x, start: x.start, dur: x.dur, in: x.in, fadeIn: x.fadeIn, fadeOut: x.fadeOut }));

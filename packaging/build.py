@@ -471,8 +471,9 @@ def reuse(tool: dict) -> bool:
 def carry_android(folder: Path) -> None:
     """Bring the Android APKs of the latest release into `folder`, for the next release to keep.
 
-    They are signed on the developer's computer (Snake's Suite APK, tools/release.py --publish),
-    not built here. An APK already in `folder` is left as it is.
+    They are signed on the developer's computer (android/, tools/release.py --publish),
+    not built here. An APK already in `folder` is left as it is. The Studio APK is listed
+    under each of the seven Studio apps; it is carried once, as "studio".
     """
     old = last_index()
     wanted = [(tool_id, entry, key, pkg)
@@ -481,11 +482,17 @@ def carry_android(folder: Path) -> None:
     wanted += [("suite", {"version": pkg.get("version", old.get("hub_version", "0"))}, key, pkg)
                for key, pkg in old.get("hub", {}).items() if key.startswith("android")]
     folder.mkdir(parents=True, exist_ok=True)
+    done: set[str] = set()
     for tool_id, entry, key, pkg in wanted:
+        if pkg["file"] in done:
+            continue
+        done.add(pkg["file"])
         out = folder / pkg["file"]
         if not out.exists() and not fetch(old, pkg, out):
             continue
-        meta = {"id": tool_id, "name": tool_id, "version": pkg.get("version", entry["version"]), "platform": key}
+        meta = {"id": pkg.get("shared") or tool_id, "name": tool_id, "version": pkg.get("version", entry["version"]), "platform": key}
+        if pkg.get("shared"):
+            meta["shared"] = pkg["shared"]
         Path(str(out) + ".json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         say(f"{pkg['file']}: carried over from v{old['version']}")
 
@@ -516,7 +523,7 @@ def make_index(folder: Path) -> Path:
             **{k: meta[k] for k in ("launch", "cli", "cwd", "app_bundle", "shared") if k in meta},
         }
         if meta["platform"].startswith("android"):
-            # Android APKs are built and signed elsewhere (Snake's Suite APK) and can lag the
+            # Android APKs are built and signed elsewhere (android/, on your computer) and can lag the
             # desktop build of the same tool, so each one says its own version.
             package["version"] = meta["version"]
             if meta["id"] == "suite":
@@ -527,7 +534,9 @@ def make_index(folder: Path) -> Path:
             package["shared"] = "studio"
             for app in (t for t in data["tools"] if t.get("studio_app")):
                 e = index["tools"].setdefault(app["id"], {"version": app.get("version", meta["version"]), "packages": {}})
-                e["packages"][meta["platform"]] = {**package, "args": [f"--app={app['studio_app']}"]}
+                # On Android each app has its own launcher activity, so no switch is needed.
+                args = {} if meta["platform"].startswith("android") else {"args": [f"--app={app['studio_app']}"]}
+                e["packages"][meta["platform"]] = {**package, **args}
             continue
         entry = index["tools"].setdefault(meta["id"], {"version": meta["version"], "packages": {}})
         if not meta["platform"].startswith("android"):

@@ -146,6 +146,54 @@ window.addEventListener('wheel', (e) => {
   setZoom(zoom + dir * 0.5);
 }, { passive: false, capture: true });
 
+// Pinching with two fingers on a touch screen does the same, the code editor
+// included. (A touchpad pinch already arrives as Ctrl+wheel.)
+{
+  const fingers = new Map();
+  let pinch = null;
+  const spread = () => {
+    const [a, b] = [...fingers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+  const begin = (target) => {
+    const el = target instanceof Element ? target : null;
+    const md = el && el.closest('.markdown-preview');
+    if (el && el.closest('.monaco-editor')) return { kind: 'editor', from: settings.get('editor.fontSize') };
+    if (el && el.closest('.xterm')) return { kind: 'terminal', from: settings.get('terminal.integrated.fontSize') };
+    if (md) return { kind: 'markdown', md, from: parseFloat(md.style.zoom) || 1 };
+    return { kind: 'window', from: zoom };
+  };
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.size === 2) pinch = { ...begin(e.target), d0: spread(), scale: 1 };
+  }, true);
+  window.addEventListener('pointermove', (e) => {
+    if (!fingers.has(e.pointerId)) return;
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pinch || fingers.size !== 2) return;
+    e.stopImmediatePropagation();
+    pinch.scale = spread() / pinch.d0;
+    const font = (key, min, max) => {
+      const size = Math.round(Math.max(min, Math.min(max, pinch.from * pinch.scale)));
+      if (size !== settings.get(key)) settings.set(key, size);
+    };
+    if (pinch.kind === 'editor') font('editor.fontSize', 6, 72);
+    else if (pinch.kind === 'terminal') font('terminal.integrated.fontSize', 6, 64);
+    else if (pinch.kind === 'markdown') pinch.md.style.zoom = String(Math.max(0.5, Math.min(3, pinch.from * pinch.scale)));
+  }, true);
+  const lift = (e) => {
+    if (!fingers.delete(e.pointerId) || !pinch || fingers.size === 2) return;
+    // The whole window is zoomed once, when the fingers let go (steps of 1.2x).
+    if (pinch.kind === 'window' && Math.abs(Math.log(pinch.scale)) > 0.1) setZoom(Math.round((pinch.from + Math.log(pinch.scale) / Math.log(1.2)) * 2) / 2);
+    pinch = null;
+  };
+  window.addEventListener('pointerup', lift, true);
+  window.addEventListener('pointercancel', lift, true);
+  // The editor scrolls itself with touch events: not while two fingers zoom it.
+  window.addEventListener('touchmove', (e) => { if (e.touches.length === 2) { e.preventDefault(); e.stopPropagation(); } }, { capture: true, passive: false });
+}
+
 // ---------------------------------------------------------------------------
 // Workspace lifecycle
 // ---------------------------------------------------------------------------

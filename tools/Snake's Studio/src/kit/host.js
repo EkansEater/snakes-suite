@@ -1,12 +1,16 @@
-// Where the app runs: inside Snake's Studio (Electron, window.snakeHost) or in a
-// plain browser (the online mirror). Apps only ever talk to `host`, so the same
-// code works in both.
+// Where the app runs: inside Snake's Studio (Electron, window.snakeHost), inside
+// the phone apps (window.SnakeAndroid, android/apps/studio; window.SnakeIOS, ios/)
+// or in a plain browser (the online mirror). Apps only ever talk to `host`, so the
+// same code works in all.
 //
 // A file is { id, name, ext, size, mtime, writable, dir?, url? }.
 import { h, extOf, download } from './dom.js';
 import { toast } from './dialogs.js';
 
 const E = window.snakeHost || null;
+// The phone apps' bridge. Android answers writes at once, iOS with a promise: both are awaited.
+const A = E ? null : window.SnakeAndroid || window.SnakeIOS || null;
+const IOS = !!(A && A === window.SnakeIOS);
 
 // On the website, refuse to run inside another site's frame (so no page can dress the
 // apps up and trick clicks or typing into them). A <meta> policy cannot say this.
@@ -18,6 +22,13 @@ if (!E && window.top !== window.self) {
   a.textContent = "Open Snake's Studio in its own tab";
   document.body.replaceChildren(a);
   throw new Error("Snake's Studio does not run inside other pages");
+}
+// On the website, keep a copy of the apps for offline use (dist/sw.js, see build.mjs).
+// Not in the desktop or Android apps (their files are on the device already), and on
+// a developer's localhost only when asked for (localStorage "snake-sw" = "1").
+if (!E && !A && 'serviceWorker' in navigator &&
+    (location.protocol === 'https:' || (location.hostname === 'localhost' && localStorage.getItem('snake-sw') === '1'))) {
+  navigator.serviceWorker.register('../sw.js', { scope: '../' }).catch(() => {});
 }
 const appId = (document.documentElement.dataset.app || location.pathname.split('/').filter(Boolean).slice(-2)[0] || 'studio');
 
@@ -264,6 +275,123 @@ const browser = {
 };
 
 // ---------------------------------------------------------------------------
+// Phone implementation: the website's code, with the phone's own file pickers,
+// printing and app switching (android/apps/studio in Kotlin, ios/ in Swift).
+// Files the person picked are served at /file/<id>/<name> (with seeking, for
+// video); saving sends the bytes over in pieces.
+// ---------------------------------------------------------------------------
+function android() {
+  const pending = new Map();
+  const listeners = new Map();
+  let seq = 0;
+  let closeGuard = null;
+  window.__snakeReply = (id, ok, json) => {
+    const p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    const value = json == null ? undefined : JSON.parse(json);
+    if (ok) p.resolve(value);
+    else p.reject(new Error(value));
+  };
+  window.__snakeEmit = (channel, json) => {
+    for (const cb of listeners.get(channel) || []) {
+      try { cb(...JSON.parse(json)); } catch (err) { console.error(err); }
+    }
+  };
+  const call = (channel, ...args) => new Promise((resolve, reject) => {
+    const id = ++seq;
+    pending.set(id, { resolve, reject });
+    A.invoke(id, channel, JSON.stringify(args));
+  });
+  const on = (channel, cb) => {
+    if (!listeners.has(channel)) listeners.set(channel, new Set());
+    listeners.get(channel).add(cb);
+    return () => listeners.get(channel).delete(cb);
+  };
+  const fileURL = (f) => `${location.origin}/file/${encodeURIComponent(f.id)}/${encodeURIComponent(f.name)}`;
+  const CHUNK = 768 * 1024;
+  const base64 = (bytes) => {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
+  async function write(f, data) {
+    const blob = data instanceof Blob ? data : new Blob([typeof data === 'string' ? new TextEncoder().encode(data) : data]);
+    const token = await A.writeBegin(f.id);
+    if (!token) throw new Error(`“${f.name}” cannot be written.`);
+    try {
+      for (let i = 0; i < blob.size; i += CHUNK) {
+        const part = new Uint8Array(await blob.slice(i, i + CHUNK).arrayBuffer());
+        if (!(await A.writeChunk(token, base64(part)))) throw new Error(`Writing “${f.name}” failed.`);
+      }
+    } catch (err) {
+      await A.writeEnd(token, false);
+      throw err;
+    }
+    const done = JSON.parse(await A.writeEnd(token, true));
+    if (done.error) throw new Error(done.error);
+    return { ...f, size: done.size, mtime: done.mtime };
+  }
+  // Android's back button: first close what is open on top, then leave (asking about unsaved work).
+  window.__snakeBack = () => {
+    const top = document.querySelector('.menu, .palette, .overlay, .drawer-scrim');
+    if (top) {
+      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      if (document.body.contains(top) && top.classList.contains('drawer-scrim')) top.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      return 'handled';
+    }
+    (async () => {
+      const ok = closeGuard ? await closeGuard.ask() : true;
+      if (ok) call('win:close');
+    })();
+    return 'asking';
+  };
+  return {
+    ...browser,
+    kind: IOS ? 'ios' : 'android',
+    async init() {
+      const info = await call('app:init', appId);
+      return { name: document.title, ffmpeg: false, ...info };
+    },
+    openFiles: ({ filters, multiple } = {}) => call('file:open', { filters: filters || [], multiple: !!multiple }),
+    openFolder: ({ filters } = {}) => call('file:openFolder', { filters: filters || [] }),
+    async read(f) {
+      const r = await fetch(fileURL(f));
+      if (!r.ok) throw new Error(`“${f.name}” could not be read.`);
+      return new Uint8Array(await r.arrayBuffer());
+    },
+    write,
+    async saveAs({ name = 'Untitled', filters = [] } = {}, data) {
+      const f = await call('file:saveAs', { name, filters });
+      if (!f) return null;
+      return data === undefined ? f : write(f, data);
+    },
+    recent: () => call('file:recent'),
+    openRecent: (key) => call('file:openRecent', key),
+    forgetRecent: (key) => call('file:forgetRecent', key === undefined ? null : key),
+    async dropped() { return []; },
+    mediaURL: fileURL,
+    async printPDF() { await call('print', document.title); return null; },
+    async print() { await call('print', document.title); },
+    win: {
+      ...browser.win,
+      close() { call('win:close'); },
+      forceClose() { call('win:close'); },
+      setTitle(t) { document.title = t; call('win:title', t); },
+      setFullScreen(on) { call('win:fullScreen', !!on); },
+      toggleFullScreen() { call('win:fullScreen', null); },
+      onFullScreen: (cb) => on('win:fullScreen', cb),
+      newWindow() {},
+      async openPage() { return 0; },
+    },
+    onOpen: (cb) => on('file:opened', cb),
+    onBeforeClose(cb) { closeGuard = cb; },
+    openExternal: (url) => call('openExternal', String(url)),
+    launch: (id) => call('launch', id),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Electron implementation: a thin layer over the preload bridge
 // ---------------------------------------------------------------------------
 function electron() {
@@ -317,9 +445,11 @@ function electron() {
   };
 }
 
-export const host = E ? electron() : browser;
+export const host = E ? electron() : A ? android() : browser;
 export const inElectron = !!E;
-export const platform = E ? null : 'web';
+/** Inside the Android or iOS app (not the website). */
+export const inPhoneApp = !!A;
+export const platform = E ? null : A ? (IOS ? 'ios' : 'android') : 'web';
 
 /** Read a file as text, guessing UTF-8/UTF-16 from its byte order mark. */
 export async function readText(f) {

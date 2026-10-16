@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Open with another app" from the explorer: any file the editor can see. -->
+<paths>
+    <root-path name="root" path="/" />
+</paths>

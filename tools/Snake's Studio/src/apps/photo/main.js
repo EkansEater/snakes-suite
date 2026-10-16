@@ -151,7 +151,7 @@ const vp = new Viewport({
 });
 const centre = h('div.ph-centre', optionsBar, vp.el);
 const side = h('div.ph-side');
-shell.main.append(h('div.ph-left', toolbox, colorsBox), centre, splitter(side, { side: 'right', key: 'sideWidth', initial: 290, min: 220, max: 520 }), side);
+shell.main.append(h('div.ph-left', toolbox, colorsBox), centre, splitter(side, { side: 'right', key: 'sideWidth', initial: 290, min: 220, max: 520, title: 'Layers and panels', icon: 'layers' }), side);
 
 function currentComposite() {
   if (!doc) return null;
@@ -446,8 +446,30 @@ let drag = null;
 let previewing = false; // a dialog is showing a live preview: the picture only pans and zooms
 let pickCallback = null;
 
+// One-tap tools wait for a finger to lift, so a pinch never fills or picks by accident.
+const TAP_TOOLS = ['wand', 'eyedropper', 'fill', 'text', 'zoom'];
+
+/** A second finger arrived: this is a pinch, so drop whatever the first finger began. */
+function cancelGesture() {
+  if (!drag) return;
+  if (drag.stroke) { cancelAnimationFrame(strokeFrame); strokeFrame = 0; edit = null; }
+  if (drag.float && floating) {
+    // Put the lifted pixels back where they were.
+    const { L, piece, b } = floating;
+    L.canvas.getContext('2d').drawImage(piece, b.x - L.x, b.y - L.y);
+    floating = null;
+    edit = null;
+  }
+  if (!transform) override = null;
+  drag = null;
+  guide = null;
+  render();
+  vp.renderOverlay();
+}
+
 function pointer(kind, e) {
   if (!doc) return;
+  if (kind === 'cancel') { cancelGesture(); return; }
   const p = vp.toImage(e);
   p.pressure = e.pointerType === 'pen' ? (e.pressure || 0.5) : 1;
   if (kind === 'leave') { cursor = null; vp.renderOverlay(); posItem.textContent = ''; colorItem.style.display = 'none'; return; }
@@ -466,9 +488,12 @@ function pointer(kind, e) {
     if (compare) { compareDrag(e); return; }
     vp.scroller.setPointerCapture(e.pointerId);
     drag = { p0: p, e0: e, moved: false, last: p };
+    if (e.pointerType === 'touch' && TAP_TOOLS.includes(st.tool)) { drag.tap = true; return; }
     down(p, e);
     return;
   }
+  if (kind === 'move' && drag && drag.tap) return;
+  if (kind === 'up' && drag && drag.tap) { const d = drag; down(d.p0, d.e0); drag = d; }
   if (kind === 'move' && drag) {
     drag.moved = drag.moved || Math.hypot(p.x - drag.p0.x, p.y - drag.p0.y) * vp.zoom > 2;
     move(p, e);

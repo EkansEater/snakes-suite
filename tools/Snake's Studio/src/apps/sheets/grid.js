@@ -3,7 +3,7 @@
 // Selection, editing, fill handle, resizing, frozen panes, pointing at cells
 // while typing a formula, and hover zoom live here.
 import { h, clamp, rafOnce } from '../../kit/dom.js';
-import { keepAnchor, stepZoom } from '../../kit/zoom.js';
+import { keepAnchor, stepZoom, pinch, isPinching } from '../../kit/zoom.js';
 import { key, rowOf, colOf, DEF_W, DEF_H } from './engine.js';
 import { colName, MAX_ROWS, MAX_COLS, refSpans, cycleAbsolute, callAt, isErr } from './formula.js';
 import { FN, FN_NAMES, Spark } from './functions.js';
@@ -1082,7 +1082,24 @@ export class Grid {
       const next = Math.abs(dy) >= 40 && Number.isInteger(dy) ? stepZoom(this.zoom, dy < 0 ? 1 : -1, 0.25, 4) : this.zoom * Math.exp(-dy * 0.01);
       this.setZoom(next, { x: e.clientX, y: e.clientY });
     }, { passive: false });
-    sc.addEventListener('pointerdown', (e) => this.pointerDown(e));
+    // Two fingers zoom; one finger scrolls (the browser does that), and a tap selects.
+    let z0 = 1;
+    pinch(sc, { begin: () => { z0 = this.zoom; }, change: (scale, c) => this.setZoom(clamp(z0 * scale, 0.25, 4), c) });
+    sc.style.touchAction = 'pan-x pan-y';
+    let touch = null;
+    sc.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' && !this.editing) { touch = e; return; }
+      this.pointerDown(e);
+    });
+    sc.addEventListener('pointerup', (e) => {
+      const t = touch;
+      touch = null;
+      if (!t || isPinching(sc) || Math.hypot(e.clientX - t.clientX, e.clientY - t.clientY) > 10) return;
+      // A tap: act as a click, then end the drag that started.
+      this.pointerDown(t);
+      window.dispatchEvent(new PointerEvent('pointerup', { clientX: t.clientX, clientY: t.clientY, pointerId: t.pointerId, pointerType: 'touch' }));
+    });
+    sc.addEventListener('pointercancel', () => { touch = null; });
     sc.addEventListener('pointermove', (e) => this.pointerHover(e));
     sc.addEventListener('pointerleave', () => this.hideTip());
     sc.addEventListener('dblclick', (e) => this.doubleClick(e));
@@ -1290,14 +1307,17 @@ export class Grid {
       onMove(last);
       if (!timer) timer = setInterval(tick, 40);
     };
-    const up = () => {
+    const stop = () => {
       clearInterval(timer);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      onEnd(last);
+      window.removeEventListener('pointercancel', stop);
     };
+    const up = () => { stop(); onEnd(last); };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    // The system took the finger over (scrolling, a pinch): give up without finishing.
+    window.addEventListener('pointercancel', stop);
   }
 
   resizeDrag(e, edge) {

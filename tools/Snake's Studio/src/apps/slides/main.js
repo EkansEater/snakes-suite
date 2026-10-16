@@ -4,11 +4,12 @@ import { icon } from '../../kit/icons.js';
 import { host, inElectron, decodeText } from '../../kit/host.js';
 import * as commands from '../../kit/commands.js';
 import { createShell, tb, sep, combo, select, startScreen, onDropFiles, guardClose, refresh, splitter } from '../../kit/shell.js';
+import { toggleDrawer } from '../../kit/phone.js';
 import { showMenu, contextMenu, popover, closeMenus } from '../../kit/menu.js';
 import { modal, toast, errorToast, busy, promptBox, confirmBox } from '../../kit/dialogs.js';
 import { pickColor, colorPicker } from '../../kit/color.js';
 import { knownFonts, allFonts, FONT_SIZES } from '../../kit/fonts.js';
-import { stepZoom } from '../../kit/zoom.js';
+import { stepZoom, pinch } from '../../kit/zoom.js';
 import { CHART_TYPES } from '../../kit/charts.js';
 import { History } from '../../kit/history.js';
 import { SIZES, THEMES, SHAPES, LAYOUTS, makeSlide, newPresentation, renderSlide, settle, shapePath, themeColor, textOf } from './model.js';
@@ -54,12 +55,12 @@ const I = (id, extra) => commands.item(id, extra);
 // ---------------------------------------------------------------------------
 const sorterList = h('div.sorter-list', { tabindex: 0 });
 const sorter = h('div.panel.sorter', h('div.panel-head', 'Slides', h('span.grow'), tb({ icon: 'plus', tip: 'New slide', run: () => commands.run('slide.new') })), sorterList);
-const sorterSplit = splitter(sorter, { side: 'left', key: 'sorterW', initial: 210, min: 130, max: 420 });
+const sorterSplit = splitter(sorter, { side: 'left', key: 'sorterW', initial: 210, min: 130, max: 420, title: 'Slides', icon: 'slide' });
 const notes = h('textarea.notes-input', { placeholder: 'Speaker notes: what to say on this slide. Only you see them in the presenter view.', spellcheck: true });
 const notesPanel = h('div.notes-panel', notes);
 const notesSplit = splitter(notesPanel, { side: 'bottom', key: 'notesH', initial: 110, min: 40, max: 400, vertical: true });
 const format = h('div.panel.format-panel', h('div.panel-head', h('span.fp-title', 'Slide'), h('span.grow'), tb({ icon: 'x', tip: 'Hide panel', run: () => commands.run('view.format') })), h('div.panel-body.fp-body'));
-const formatSplit = splitter(format, { side: 'right', key: 'formatW', initial: 270, min: 220, max: 480 });
+const formatSplit = splitter(format, { side: 'right', key: 'formatW', initial: 270, min: 220, max: 480, title: 'Format', icon: 'sliders' });
 
 const ed = new SlideEditor({
   pres, settings,
@@ -704,6 +705,11 @@ async function presenterView() {
   });
   notesBox.addEventListener('wheel', (e) => { if (!e.ctrlKey) return; e.preventDefault(); const z = clamp(settings.get('pvNotes', 20) + (e.deltaY < 0 ? 2 : -2), 10, 64); settings.set('pvNotes', z); notesBox.style.fontSize = `${z}px`; }, { passive: false });
   notesBox.style.fontSize = `${settings.get('pvNotes', 20)}px`;
+  let n0 = 20;
+  pinch(notesBox, {
+    begin: () => { n0 = settings.get('pvNotes', 20); },
+    change: (scale) => { const z = clamp(Math.round(n0 * scale), 10, 64); settings.set('pvNotes', z); notesBox.style.fontSize = `${z}px`; },
+  });
   const onKey = (e) => { if (sh.key(e)) { e.preventDefault(); e.stopPropagation(); } };
   window.addEventListener('keydown', onKey, true);
   channel.onmessage = (m) => {
@@ -796,6 +802,7 @@ commands.register(
 );
 
 function togglePanel(panel, split, key) {
+  if (toggleDrawer(panel)) { if (panel === format) buildFormat(); return; } // a phone: the panel slides in
   const hide = !panel.classList.contains('hidden');
   panel.classList.toggle('hidden', hide);
   split.classList.toggle('hidden', hide);

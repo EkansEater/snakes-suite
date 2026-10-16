@@ -53,6 +53,19 @@ The apps are not signed by Microsoft or Apple, so the first time: on Windows
 choose *More info → Run anyway* if SmartScreen warns; on macOS right-click the
 app and choose *Open*.
 
+### On a phone
+
+- **Android:** install `snakes-suite-android.apk` from the latest release (allow your
+  browser to install apps when Android asks). It is Snake's Master Suite for Android
+  and installs the rest: the seven Studio apps (one app with seven icons), Code,
+  Compressor, Converter, SoundPad, MP3 Converter, DAW and Screen Recorder. Built from
+  `android/`.
+- **iPhone and iPad:** open the [website](https://ekanseater.github.io/snakes-suite/)
+  in Safari and use *Share → Add to Home Screen* on any app; it then works offline too.
+  A native app is in `ios/` (see its README for what installing it takes).
+
+Everywhere, two fingers pinch to zoom what is under them; the mouse wheel does the same with Ctrl.
+
 ## Releasing
 
 The easy way: `python ship.py`. It shows what changed since the last release,

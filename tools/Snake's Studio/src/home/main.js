@@ -2,7 +2,7 @@
 // online mirror).
 import { h } from '../kit/dom.js';
 import { createShell } from '../kit/shell.js';
-import { host, inElectron } from '../kit/host.js';
+import { host, inElectron, inPhoneApp } from '../kit/host.js';
 import { contextMenu } from '../kit/menu.js';
 import { toast } from '../kit/dialogs.js';
 import { item } from '../kit/commands.js';
@@ -26,11 +26,11 @@ const shell = await createShell({
   ],
 });
 shell.showStatus(true);
-shell.statusLeft.append(h('span.item', inElectron ? 'Sandboxed · files only open when you choose them' : 'Running in your browser'));
+shell.statusLeft.append(h('span.item', inElectron || inPhoneApp ? 'Sandboxed · files only open when you choose them' : 'Running in your browser'));
 const DOWNLOAD = 'https://github.com/EkansEater/snakes-suite/releases/latest';
 
 function launch(id) {
-  if (inElectron) {
+  if (inElectron || inPhoneApp) {
     host.launch(id).then(() => toast(`Opening ${APPS.find((a) => a[0] === id)[1]}…`, { timeout: 2000 }));
   } else location.href = `../${id}/index.html`;
 }
@@ -39,7 +39,7 @@ const groups = ['Office', 'Create', 'Media'];
 const page = h('div.home',
   h('div.hero', h('img', { src: '../icons/studio.svg', alt: '' }),
     h('div', h('h1', "Snake's Studio"), h('p', 'Office, creative and media apps. Part of Snake’s Master Suite.'),
-      inElectron ? null : h('p.web-note', 'Your files stay on your computer: nothing you open here is uploaded. ',
+      inElectron || inPhoneApp ? null : h('p.web-note', 'Your files stay on your computer: nothing you open here is uploaded. ',
         h('a', { href: DOWNLOAD, target: '_blank', rel: 'noopener noreferrer' }, 'Get the desktop apps'),
         ' for Windows, macOS and Linux (they also play and export many more video formats).'))),
   ...groups.map((g) => h('section',

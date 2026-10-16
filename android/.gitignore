@@ -1,0 +1,16 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+/dist/
+keystore.properties
+*.jks
+/native/*/target/
+
+
+# Native build outputs (./build.sh natives makes them again)
+/apps/*/src/main/jniLibs/
+/media/src/main/jniLibs/
+/native/ffmpeg/*.log

@@ -1,0 +1,34 @@
+# Snake's Studio for iPhone and iPad. XcodeGen makes the Xcode project from this file
+# (`xcodegen generate`, on a Mac); .github/workflows/ios.yml does it on GitHub's Macs.
+# Before generating, the Studio's pages go into ./studio:
+#   (cd "../tools/Snake's Studio" && node build.mjs) && rm -rf studio && cp -R "../tools/Snake's Studio/dist" studio
+name: SnakesStudio
+options:
+  bundleIdPrefix: com.snake.suite
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  SnakesStudio:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources/Assets.xcassets
+      - path: studio
+        type: folder
+        buildPhase: resources
+    info:
+      path: Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.snake.suite.studio
+        PRODUCT_NAME: SnakesStudio
+        MARKETING_VERSION: ${STUDIO_VERSION}
+        CURRENT_PROJECT_VERSION: ${STUDIO_BUILD}
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: YES

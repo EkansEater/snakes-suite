@@ -1,0 +1,49 @@
+/* Snake's Code on Android: touch-friendly tweaks over the desktop stylesheet. */
+
+/* The phone draws its own status and navigation bars; leave room for them. */
+html.android body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+  height: 100vh;
+}
+
+/* There is no window to minimise or maximise. */
+html.android .window-controls {
+  display: none !important;
+}
+
+/* Bigger targets for fingers. */
+html.android .sash.vertical { width: 10px; }
+html.android .sash.horizontal { height: 10px; }
+
+/* Parts of the workbench the View button hides. */
+html.android.hide-menubar #titlebar { display: none !important; }
+html.android.hide-tabs .tab-bar { display: none !important; }
+
+/* The View button and its sheet. */
+#android-view-button {
+  position: fixed; right: 14px; bottom: 14px; z-index: 10000;
+  width: 44px; height: 44px; border-radius: 22px; border: 1px solid #323a34;
+  background: rgba(21, 25, 22, 0.88); color: #7ee787; font-size: 22px; line-height: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+#android-view-sheet {
+  display: none; position: fixed; right: 12px; bottom: 66px; z-index: 10001;
+  width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 100px); overflow-y: auto;
+  background: #1f2420; border: 1px solid #323a34; border-radius: 10px; padding: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55); color: #d5ddd7; font-size: 14px;
+}
+#android-view-sheet.open { display: block; }
+#android-view-sheet .avs-head { color: #8a978e; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; padding: 8px 8px 4px; }
+#android-view-sheet button { font: inherit; color: inherit; cursor: pointer; }
+#android-view-sheet .avs-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: none; border: none; padding: 9px 8px; border-radius: 6px;
+}
+#android-view-sheet .avs-toggle:active { background: #222823; }
+#android-view-sheet .avs-check { width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid #5d6a62; flex: none; }
+#android-view-sheet .avs-toggle.on .avs-check { background: #3fb950; border-color: #3fb950; }
+#android-view-sheet .avs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; }
+#android-view-sheet .avs-grid button { background: #2a2f2b; border: none; border-radius: 6px; padding: 10px 6px; }
+#android-view-sheet .avs-grid button:active { background: #2b4a35; }

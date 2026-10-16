@@ -3,7 +3,81 @@
 //    anchored at the pointer; canvas apps may also zoom on a plain wheel.
 //  * wheel-adjust: turning the wheel over a slider, number box or drop-down
 //    changes it without clicking first (Alt = fine steps).
+//  * pinch: two fingers on a touch screen zoom what is under them, the way
+//    Ctrl+wheel does with a mouse (the wheel itself is left for mouse users).
 import { clamp } from './dom.js';
+
+// ---------------------------------------------------------------------------
+// Two-finger pinch
+// ---------------------------------------------------------------------------
+const pinching = new WeakSet();
+/** Is a two-finger gesture going on over this element? (Tools ignore its fingers then.) */
+export const isPinching = (el) => pinching.has(el);
+
+/**
+ * pinch(el, { begin(center), change(scale, center, pan), end() })
+ * scale is relative to the start of the gesture; center and pan are in client
+ * pixels (pan: how far the midpoint moved since the start). A second finger
+ * also fires a 'snake-pinchstart' event on el, so tools can drop a stroke
+ * the first finger started.
+ */
+export function pinch(el, { begin = () => {}, change, end = () => {}, fallback = false }) {
+  const pts = new Map();
+  if (!fallback) el.dataset.pinch = '';
+  let start = null;
+  const mid = () => {
+    const [a, b] = [...pts.values()];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    // The page-wide fallback leaves alone anything that zooms itself.
+    if (fallback && e.target.closest && e.target.closest('[data-pinch]')) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      start = mid();
+      pinching.add(el);
+      el.dispatchEvent(new CustomEvent('snake-pinchstart'));
+      begin({ x: start.x, y: start.y });
+    }
+  }, { capture: true });
+  el.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!start || pts.size < 2) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const m = mid();
+    change(m.d / start.d, { x: m.x, y: m.y }, { x: m.x - start.x, y: m.y - start.y });
+  }, { capture: true, passive: false });
+  const lift = (e) => {
+    if (!pts.delete(e.pointerId)) return;
+    if (start && pts.size < 2) {
+      start = null;
+      end();
+    }
+    // Until the last finger lifts it is still a pinch: the finger left behind
+    // must not draw, drag or count as a tap.
+    if (pts.size === 0) setTimeout(() => pinching.delete(el), 0);
+  };
+  // On the window: a finger may be captured by something else before it lifts.
+  for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, lift, { capture: true });
+}
+
+// Pinching anywhere else (menus, panels) makes the whole interface bigger or smaller.
+// Safari's own page zoom is turned off: every zoomable thing zooms itself.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('gesturechange', (e) => e.preventDefault());
+let uiPinch = null;
+pinch(document.documentElement, {
+  fallback: true,
+  begin: () => { uiPinch = { scale: 1 }; },
+  change: (scale) => { if (uiPinch) uiPinch.scale = scale; },
+  end: () => {
+    if (uiPinch && Math.abs(Math.log(uiPinch.scale)) > 0.15) window.dispatchEvent(new CustomEvent('snake-ui-zoom', { detail: uiPinch.scale > 1 ? 0.1 : -0.1 }));
+    uiPinch = null;
+  },
+});
 
 /** Zoom presets the status bar and menus offer. */
 export const ZOOM_STEPS = [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8, 12, 16, 24, 32];
@@ -39,6 +113,17 @@ export function hoverZoom(el, { get, set, min = 0.1, max = 8, plain = null }) {
     next = clamp(next, min, max);
     if (Math.abs(next - z) > 1e-6) set(next, { x: e.clientX, y: e.clientY });
   }, { passive: false });
+  // Two fingers do the same on a touch screen.
+  let z0 = 1;
+  pinch(el, {
+    begin: () => { z0 = get(); },
+    change: (scale, center) => {
+      const next = clamp(z0 * scale, min, max);
+      if (Math.abs(next - get()) > 1e-4) set(next, center);
+    },
+  });
+  // The page itself must not zoom or scroll sideways under a pinch here (one finger still scrolls).
+  if (!el.style.touchAction) el.style.touchAction = 'pan-x pan-y';
 }
 
 /**

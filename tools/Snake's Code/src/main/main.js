@@ -13,6 +13,22 @@ try {
   console.error('node-pty unavailable, terminal disabled:', err.message);
 }
 
+// On Linux, Node hands every descriptor Chromium keeps open (its IPC sockets, shared
+// memory, the GPU device) to the programs it starts: the terminal's shell and
+// whatever runs in it, ripgrep, git. So they start through a fixed bash line that
+// closes everything but stdin, stdout and stderr and then becomes the program, its
+// arguments untouched ("$@": the shell parses nothing). The pid stays the same.
+// macOS starts children with close-on-exec by default; Windows passes only the
+// standard handles.
+const CLOSE_FDS = 'for f in /dev/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] 2>/dev/null && eval "exec $n>&-"; done; exec "$@"';
+const BASH = process.platform === 'linux'
+  ? ['/bin/bash', '/usr/bin/bash'].find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } })
+  : null;
+/** [command, args] that start `exe` with `args` and no inherited descriptors. */
+function clean(exe, args) {
+  return BASH ? [BASH, ['-c', CLOSE_FDS, 'snake-exec', exe, ...args]] : [exe, args];
+}
+
 const ROOT = path.join(__dirname, '..', '..');
 const DIST = path.join(ROOT, 'dist');
 const isDev = process.argv.includes('--dev');
@@ -342,7 +358,7 @@ ipcMain.handle('fs:listFiles', async (_e, root, excludes = []) => {
     return new Promise((resolve) => {
       const args = ['--files', '--hidden', '--glob', '!.git'];
       for (const g of excludes) args.push('--glob', '!' + g);
-      execFile(rgPath, args, { cwd: root, maxBuffer: 256 * 1024 * 1024 }, (err, stdout) => {
+      execFile(...clean(rgPath, args), { cwd: root, maxBuffer: 256 * 1024 * 1024 }, (err, stdout) => {
         resolve(stdout ? stdout.split('\n').filter(Boolean).slice(0, 200000) : []);
       });
     });
@@ -409,7 +425,7 @@ ipcMain.handle('search:run', async (e, q) => {
     if (q.noIgnore) args.push('--no-ignore');
     args.push('--', q.query, '.');
     return new Promise((resolve) => {
-      const proc = spawn(rgPath, args, { cwd: q.root });
+      const proc = spawn(...clean(rgPath, args), { cwd: q.root });
       activeSearch = proc;
       const files = new Map();
       let count = 0;
@@ -499,7 +515,7 @@ ipcMain.handle('pty:create', (e, opts = {}) => {
   const win = winOf(e);
   const shellPath = opts.shell || process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
   const id = ++ptyCounter;
-  const proc = pty.spawn(shellPath, opts.args || [], {
+  const proc = pty.spawn(...clean(shellPath, opts.args || []), {
     name: 'xterm-256color',
     cols: opts.cols || 80,
     rows: opts.rows || 24,
@@ -533,7 +549,7 @@ ipcMain.handle('pty:cwd', async (e, id) => {
 // ---------------------------------------------------------------------------
 ipcMain.handle('git:run', (_e, cwd, args, opts = {}) =>
   new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env || {}) } }, (err, stdout, stderr) => {
+    execFile(...clean('git', args), { cwd, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env || {}) } }, (err, stdout, stderr) => {
       resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: stdout || '', stderr: stderr || (err && !stderr ? err.message : '') });
     });
   }),
@@ -577,7 +593,7 @@ ipcMain.handle('clipboard:read', () => clipboard.readText());
 // Run a one-off command and capture its output (used by tasks discovery etc.)
 ipcMain.handle('proc:exec', (_e, cmd, args, cwd) =>
   new Promise((resolve) => {
-    execFile(cmd, args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(...clean(cmd, args), { cwd, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ code: err ? err.code || 1 : 0, stdout: stdout || '', stderr: stderr || '' });
     });
   }),

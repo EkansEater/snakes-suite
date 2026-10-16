@@ -6,9 +6,11 @@ import { icon } from '../../kit/icons.js';
 import { host, inElectron } from '../../kit/host.js';
 import * as commands from '../../kit/commands.js';
 import { createShell, onDropFiles, refresh, splitter, select } from '../../kit/shell.js';
+import { toggleDrawer, closeDrawers, isPhone } from '../../kit/phone.js';
 import { showMenu, contextMenu } from '../../kit/menu.js';
 import { modal, toast, errorToast } from '../../kit/dialogs.js';
 import { canvasBytes } from '../../kit/raster.js';
+import { pinch, isPinching } from '../../kit/zoom.js';
 import { parseSubtitles, cuesAt, cueNodes, decodeSubtitleBytes } from './subs.js';
 import { AudioChain, BANDS, EQ_PRESETS } from './audio.js';
 
@@ -116,7 +118,7 @@ const listPanel = h('div.pl-panel',
     btn('save', 'Save the playlist', () => commands.run('media.savePlaylist')), btn('trash', 'Clear the playlist', () => commands.run('list.clear'))),
   h('div.pl-panel-filter', listFilter), listEl, listInfo);
 const centre = h('div.pl-centre', stage, controls);
-shell.main.append(centre, splitter(listPanel, { side: 'right', key: 'listWidth', initial: 300, min: 200, max: 600 }), listPanel);
+shell.main.append(centre, splitter(listPanel, { side: 'right', key: 'listWidth', initial: 300, min: 200, max: 600, title: 'Playlist', icon: 'playlist' }), listPanel);
 if (!settings.get('playlistOpen', true)) { listPanel.classList.add('hidden'); listPanel.previousSibling.classList.add('hidden'); }
 
 // ---------------------------------------------------------------------------
@@ -521,23 +523,44 @@ stage.addEventListener('wheel', (e) => {
   setVolume(volume() + (e.deltaY < 0 ? 5 : -5));
 }, { passive: false });
 
+// Two fingers zoom the picture where they are (and move it).
+{
+  let z0 = 1;
+  let p0 = null;
+  let c0 = null;
+  pinch(stage, {
+    begin: (c) => { z0 = view.zoom; p0 = { x: view.panX, y: view.panY }; c0 = c; },
+    change: (scale, c) => {
+      const r = stage.getBoundingClientRect();
+      const cx = c0.x - r.left - r.width / 2;
+      const cy = c0.y - r.top - r.height / 2;
+      const z = clamp(z0 * scale, 1, 8);
+      const k = z / z0;
+      setView(z === 1 ? { zoom: 1, panX: 0, panY: 0 } : { zoom: z, panX: cx - (cx - p0.x) * k + (c.x - c0.x), panY: cy - (cy - p0.y) * k + (c.y - c0.y) });
+    },
+    end: () => showOsd(`Zoom ${Math.round(view.zoom * 100)}%`),
+  });
+  stage.style.touchAction = 'none';
+}
+
 // Click: play or pause. Double-click: full screen. Drag when zoomed: look around.
 let clickTimer = 0;
 stage.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || e.target.closest('.pl-empty, .pl-error')) return;
+  if (e.button !== 0 || e.target.closest('.pl-empty, .pl-error') || isPinching(stage)) return;
   stage.focus({ preventScroll: true });
   const x0 = e.clientX; const y0 = e.clientY;
   const p0 = { x: view.panX, y: view.panY };
   let moved = false;
   stage.setPointerCapture(e.pointerId);
   const mv = (ev) => {
+    if (isPinching(stage)) { moved = true; return; }
     if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 4) moved = true;
     if (moved && view.zoom > 1) setView({ panX: p0.x + ev.clientX - x0, panY: p0.y + ev.clientY - y0 });
   };
   const up = () => {
     stage.removeEventListener('pointermove', mv);
     stage.removeEventListener('pointerup', up);
-    if (!moved && cur) { clearTimeout(clickTimer); clickTimer = setTimeout(() => togglePlay(), 0); }
+    if (!moved && cur && !isPinching(stage)) { clearTimeout(clickTimer); clickTimer = setTimeout(() => togglePlay(), 0); }
   };
   stage.addEventListener('pointermove', mv);
   stage.addEventListener('pointerup', up);
@@ -844,6 +867,8 @@ function renderList() {
       h('span.pl-title', { 'data-tip': it.name }, it.title),
       h('span.pl-dur', it.duration ? fmtTime(it.duration) : ''));
     row.addEventListener('click', (e) => {
+      // On a phone a tap plays it, and the playlist slides away to show it.
+      if (isPhone() && !(e.ctrlKey || e.metaKey || e.shiftKey)) { play(i, { start: null }); closeDrawers(); return; }
       if (e.ctrlKey || e.metaKey) { if (selected.has(it.id)) selected.delete(it.id); else selected.add(it.id); } else if (e.shiftKey && selected.size) {
         const last = list.findIndex((x) => selected.has(x.id));
         const [a, b] = last < i ? [last, i] : [i, last];
@@ -866,7 +891,7 @@ listFilter.addEventListener('input', renderList);
 listFilter.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { const first = listEl.querySelector('.pl-row'); if (first) play(Number(first.dataset.i)); } });
 
 function dragRow(e, row, i) {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || e.pointerType === 'touch') return; // a finger scrolls the list
   const y0 = e.clientY;
   let moved = false;
   let target = null;
@@ -1285,7 +1310,7 @@ commands.register(
   C('subs.up', 'Move Subtitles Up', null, () => { subStyle.position += 20; settings.set('subPos', subStyle.position); layout(); }, { category: 'Subtitles' }),
   C('subs.down', 'Move Subtitles Down', null, () => { subStyle.position = Math.max(0, subStyle.position - 20); settings.set('subPos', subStyle.position); layout(); }, { category: 'Subtitles' }),
   C('subs.auto', 'Load Matching Subtitle Files', null, () => { settings.set('autoSubs', !settings.get('autoSubs', true)); refresh(); }, { category: 'Subtitles', checked: () => settings.get('autoSubs', true) }),
-  C('view.playlist', 'Playlist', 'Ctrl+L', () => { const hide = !listPanel.classList.contains('hidden'); listPanel.classList.toggle('hidden', hide); listPanel.previousSibling.classList.toggle('hidden', hide); settings.set('playlistOpen', !hide); setTimeout(layout, 30); refresh(); }, { icon: 'playlist', category: 'View', checked: () => !listPanel.classList.contains('hidden') }),
+  C('view.playlist', 'Playlist', 'Ctrl+L', () => { if (toggleDrawer(listPanel)) return; const hide = !listPanel.classList.contains('hidden'); listPanel.classList.toggle('hidden', hide); listPanel.previousSibling.classList.toggle('hidden', hide); settings.set('playlistOpen', !hide); setTimeout(layout, 30); refresh(); }, { icon: 'playlist', category: 'View', checked: () => !listPanel.classList.contains('hidden') }),
   C('view.wheel', 'The Wheel Zooms the Picture (otherwise volume)', null, () => { settings.set('wheelZooms', !settings.get('wheelZooms', false)); refresh(); }, { category: 'View', checked: () => settings.get('wheelZooms', false) }),
   C('list.remove', 'Remove From the Playlist', 'Delete', () => removeSelected(), { category: 'Playlist', when: () => selected.size > 0 }),
   C('list.clear', 'Clear the Playlist', null, () => clearList(), { icon: 'trash', category: 'Playlist', when: () => list.length > 0 }),

@@ -60,9 +60,14 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
+/* Fingers scroll; pinching is the app's (kit/zoom.js zooms what is under them).
+   Without this the browser claims a pinch for itself and cancels the fingers.
+   :where() keeps it weaker than any rule that wants touch-action: none. */
+:where(html, body, body *) { touch-action: pan-x pan-y; }
 body {
   background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font);
   -webkit-font-smoothing: antialiased; user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
 }
 input, textarea, select, button { font: inherit; color: inherit; }
 [contenteditable], input, textarea { user-select: text; }
@@ -86,7 +91,11 @@ a { color: var(--highlight); }
 ::-webkit-scrollbar-thumb:active { background-color: var(--accent); border-width: 2px; }
 
 /* ---- the app frame ---- */
-.app { display: flex; flex-direction: column; height: 100vh; }
+.app {
+  display: flex; flex-direction: column; height: 100vh; height: 100dvh; /* dvh: a phone's browser bars excluded */
+  /* Installed on an iPhone the page reaches under the notch and the home bar: keep clear of them. */
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
 .titlebar {
   height: 34px; flex: none; display: flex; align-items: center; background: var(--title);
   border-bottom: 1px solid var(--border); -webkit-app-region: drag; padding-left: 8px; gap: 4px; position: relative;
@@ -348,6 +357,61 @@ input[type="color"] { width: 28px; height: 24px; border: 1px solid var(--border2
 
 /* ---- narrow windows: the document name gives way to the menus ---- */
 @media (max-width: 900px) { .titlebar .title { display: none; } }
+
+/* ---- phones (kit/phone.js sets .phone below 720 px) ---- */
+.menubar > .menu-all, .drawer-btns { display: none; }
+.phone .menubar > button { display: none; }
+.phone .menubar > .menu-all { display: grid; place-items: center; width: 40px; padding: 0; height: 30px; }
+.phone .titlebar { height: 42px; padding-left: 6px; gap: 2px; }
+.phone .titlebar .quick { margin-right: 0; gap: 0; }
+.phone .drawer-btns { display: flex; gap: 2px; margin-right: 6px; }
+.phone .tb { height: 36px; min-width: 36px; }
+.phone .tb.big { height: 46px; font-size: 10.5px; }
+.phone .ribbon-tabs { overflow-x: auto; scrollbar-width: none; padding: 2px 6px 0; }
+.phone .ribbon-tabs button { flex: none; padding: 7px 11px 8px; }
+.phone .rgroup { padding: 0 5px; }
+.phone .rgroup .rgroup-label { display: none; }
+.phone .toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.phone .statusbar { height: 30px; }
+.phone .zoombox input[type="range"] { width: 64px; }
+.phone .zoombox .pct { min-width: 38px; }
+.phone .menu { min-width: min(250px, calc(100vw - 16px)); max-width: calc(100vw - 8px); max-height: calc(100dvh - 16px); }
+.phone .menu-item { height: 40px; }
+.phone .menu-item .mi-keys { display: none; }
+.menu-back { color: var(--fg2); border-bottom: 1px solid var(--border2); border-radius: 5px 5px 0 0; margin-bottom: 4px; }
+.phone .dialog { min-width: 0; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+.phone .dialog-head { padding: 12px 14px 4px; }
+.phone .dialog-body { padding: 8px 14px 12px; }
+.phone .dialog-foot { padding: 10px 14px 12px; flex-wrap: wrap; }
+.phone .field { grid-template-columns: 92px minmax(0, 1fr); }
+/* Dialog layouts made for a desktop (fixed widths, two columns side by side) fold to the screen. */
+.phone .dialog-body > *, .phone .dialog-body > * > * { max-width: 100%; min-width: 0; }
+.phone .dialog-body [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: minmax(0, 1fr) !important; }
+.phone .toasts { left: 8px; right: 8px; bottom: 44px; align-items: stretch; }
+.phone .toast { max-width: none; }
+.phone .palette { top: 8px; width: calc(100vw - 16px); }
+.phone .palette .items { max-height: calc(100dvh - 90px); }
+.phone .busy .card { min-width: 0; width: calc(100vw - 32px); }
+/* Side panels slide in from their edge, over the work. */
+.phone .splitter.v { display: none; }
+.phone [data-drawer] {
+  position: fixed !important; top: 0; bottom: 0; z-index: 8500; width: min(86vw, 360px) !important;
+  display: flex !important; flex-direction: column; box-shadow: var(--shadow); transition: transform .2s ease-out; visibility: hidden;
+}
+.phone [data-drawer="left"] { left: 0; transform: translateX(-104%); border-right: 1px solid var(--border2); }
+.phone [data-drawer="right"] { right: 0; transform: translateX(104%); border-left: 1px solid var(--border2); }
+.phone [data-drawer].drawer-open { transform: none; visibility: visible; }
+.drawer-scrim { position: fixed; inset: 0; z-index: 8400; background: rgba(0, 0, 0, .45); animation: fade .15s; }
+/* Start screens stack: the actions on top, templates and recent files below. */
+.phone .start { flex-direction: column; }
+.phone .start .start-side {
+  width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 12px; gap: 4px;
+  border-right: 0; border-bottom: 1px solid var(--border);
+}
+.phone .start .start-side h1 { width: 100%; margin: 0 0 4px 4px; font-size: 18px; }
+.phone .start .start-side h1 img { width: 26px; height: 26px; }
+.phone .start .start-main { padding: 14px 14px 28px; flex: none; }
+.phone .templates { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-bottom: 20px; }
 
 /* ---- printing hides the chrome ---- */
 @page { background: #fff; }

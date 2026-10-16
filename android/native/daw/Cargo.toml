@@ -1,0 +1,27 @@
+[package]
+name = "snakedaw-android"
+version = "0.1.0"
+edition = "2021"
+description = "Snake's DAW engine for Android: the desktop app's own audio engine, controller and effects behind a JNI facade"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Same as Snake's DAW/Cargo.toml, minus the egui window, JACK and LV2.
+cpal = "0.18"
+rtrb = "0.3"
+crossbeam-channel = "0.5"
+hound = "3.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+dirs = "5"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jni = "0.21"
+ndk-context = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

@@ -836,7 +836,20 @@ function closeTextBox(commit) {
 // Pointer
 // ---------------------------------------------------------------------------
 let drag0 = null;
+// One-tap tools wait for a finger to lift, so a pinch never fills or stamps by accident.
+const TAP_TOOLS = ['fill', 'picker', 'stamp', 'text', 'zoom'];
+
+/** A second finger arrived: this is a pinch, so drop whatever the first finger began. */
+function cancelGesture() {
+  if (stroke) { clearInterval(stroke.timer); stroke = null; }
+  preview = null;
+  if (curve && curve.stage === 0) curve = null;
+  drag0 = null;
+  vp.render();
+}
+
 function pointer(kind, e) {
+  if (kind === 'cancel') { cancelGesture(); return; }
   const p = vp.toImage(e);
   if (kind === 'leave') { cursor = null; vp.renderOverlay(); posItem.textContent = ''; return; }
   cursor = p;
@@ -854,11 +867,17 @@ function pointer(kind, e) {
     if (e.button === 2 && ['select', 'lasso', 'text', 'zoom', 'picker'].includes(st.tool)) return; // the context menu
     vp.scroller.setPointerCapture(e.pointerId);
     drag0 = { p, e, button: e.button, moved: false };
+    if (e.pointerType === 'touch' && TAP_TOOLS.includes(st.tool)) { drag0.tap = true; return; }
     down(p, e);
     return;
   }
-  if (kind === 'move' && drag0) { drag0.moved = true; move(p, e); vp.render(); return; }
-  if (kind === 'up' && drag0) { up(p, e); drag0 = null; vp.render(); }
+  if (kind === 'move' && drag0) { if (drag0.tap) return; drag0.moved = true; move(p, e); vp.render(); return; }
+  if (kind === 'up' && drag0) {
+    if (drag0.tap) { const d = drag0; down(d.p, d.e); drag0 = d; }
+    up(p, e);
+    drag0 = null;
+    vp.render();
+  }
   if (kind === 'dblclick' && st.tool === 'curve') commitCurve();
 }
 

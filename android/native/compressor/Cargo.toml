@@ -1,0 +1,22 @@
+[package]
+name = "snake-android"
+version = "0.1.0"
+edition = "2021"
+description = "JNI bridge from Snake's Compressor for Android"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# The desktop engine, for the archive format, so archives move between phone and PC.
+snake = { path = "../../../tools/Snake's Compressor", default-features = false }
+jni = "0.21"
+zstd = { version = "0.13", features = ["zstdmt"] }
+blake3 = "1"
+anyhow = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

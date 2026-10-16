@@ -4,6 +4,7 @@ import { icon } from '../../kit/icons.js';
 import { host, inElectron, readText, decodeText } from '../../kit/host.js';
 import * as commands from '../../kit/commands.js';
 import { createShell, tb, sep, combo, select, startScreen, onDropFiles, guardClose, refresh, splitter } from '../../kit/shell.js';
+import { toggleDrawer } from '../../kit/phone.js';
 import { showMenu, contextMenu, popover, closeMenus } from '../../kit/menu.js';
 import { modal, toast, errorToast, busy, promptBox, confirmBox } from '../../kit/dialogs.js';
 import { pickColor } from '../../kit/color.js';
@@ -67,7 +68,7 @@ ed.onEditHeader = () => headerFooterDialog();
 // Layout: navigation pane | workspace | find bar overlay
 const nav = h('div.panel.nav-pane', h('div.panel-head', 'Navigation', h('span.grow'),
   tb({ icon: 'x', tip: 'Close', run: () => commands.run('view.nav') })), h('div.panel-body.nav-list'));
-const navSplit = splitter(nav, { side: 'left', key: 'navWidth', initial: 240, min: 160, max: 480 });
+const navSplit = splitter(nav, { side: 'left', key: 'navWidth', initial: 240, min: 160, max: 480, title: 'Navigation', icon: 'toc' });
 shell.main.append(nav, navSplit, ed.el);
 if (!settings.get('nav', false)) { nav.classList.add('hidden'); navSplit.classList.add('hidden'); }
 
@@ -1097,6 +1098,7 @@ function moveSection(from, to) {
   buildNav();
 }
 function toggleNav() {
+  if (toggleDrawer(nav)) { buildNav(); return; } // a phone: the pane slides in
   const hide = !nav.classList.contains('hidden');
   nav.classList.toggle('hidden', hide);
   navSplit.classList.toggle('hidden', hide);

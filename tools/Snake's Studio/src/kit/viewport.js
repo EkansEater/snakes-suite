@@ -2,7 +2,7 @@
 // The wheel zooms around the pointer (or scrolls, if set so); Space or the
 // middle button drags the view; real scroll bars show where you are.
 import { h, clamp, rafOnce } from './dom.js';
-import { stepZoom } from './zoom.js';
+import { stepZoom, pinch, isPinching } from './zoom.js';
 import { checkerPattern } from './raster.js';
 
 export class Viewport {
@@ -212,10 +212,24 @@ export class Viewport {
         sc.addEventListener('pointerup', up);
         return;
       }
-      if (onPointer) onPointer('down', e);
+      if (onPointer && !isPinching(sc)) onPointer('down', e);
     });
-    sc.addEventListener('pointermove', (e) => onPointer && onPointer('move', e));
-    sc.addEventListener('pointerup', (e) => onPointer && onPointer('up', e));
+    // Two fingers: zoom at their midpoint and move the picture with them.
+    let z0 = 1;
+    let last = null;
+    pinch(sc, {
+      begin: (c) => { z0 = this.zoom; last = c; },
+      change: (scale, c) => {
+        this.setZoom(clamp(z0 * scale, 0.02, 64), c);
+        sc.scrollLeft -= c.x - last.x;
+        sc.scrollTop -= c.y - last.y;
+        last = c;
+      },
+    });
+    // A second finger means "zoom", not "draw": drop what the first finger started.
+    sc.addEventListener('snake-pinchstart', () => onPointer && onPointer('cancel', null));
+    sc.addEventListener('pointermove', (e) => { if (onPointer && !isPinching(sc)) onPointer('move', e); });
+    sc.addEventListener('pointerup', (e) => { if (onPointer && !isPinching(sc)) onPointer('up', e); });
     sc.addEventListener('pointerleave', (e) => onPointer && onPointer('leave', e));
     sc.addEventListener('dblclick', (e) => onPointer && onPointer('dblclick', e));
   }

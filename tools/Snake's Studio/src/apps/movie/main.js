@@ -20,6 +20,8 @@ import { placement, titleLayout } from './render.js';
 import { Engine } from './engine.js';
 import { Timeline } from './timeline.js';
 import { buildJob, recordPreview } from './export.js';
+import { pinch, isPinching } from '../../kit/zoom.js';
+import { closeDrawers } from '../../kit/phone.js';
 
 const VIDEO = ['mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', 'ts', 'm2ts', '3gp', 'ogv'];
 const AUDIO = ['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'oga', 'opus', 'wma', 'aiff', 'aif', 'mka'];
@@ -115,7 +117,7 @@ const tlTools = h('div.mv-tltools',
   tb({ icon: 'zoomIn', tip: 'Zoom in the timeline', run: () => timeline.zoomAt(1.5) }),
   exportBtn);
 
-const top = h('div.mv-top', library, splitter(library, { side: 'left', key: 'libWidth', initial: 270, min: 200, max: 480 }), preview, splitter(inspector, { side: 'right', key: 'inspWidth', initial: 300, min: 240, max: 520 }), inspector);
+const top = h('div.mv-top', library, splitter(library, { side: 'left', key: 'libWidth', initial: 270, min: 200, max: 480, title: 'Media, titles and looks', icon: 'film' }), preview, splitter(inspector, { side: 'right', key: 'inspWidth', initial: 300, min: 240, max: 520, title: 'Settings of the selection', icon: 'sliders' }), inspector);
 const bottom = h('div.mv-bottom', tlTools);
 shell.main.append(h('div.mv-root', top, splitter(bottom, { vertical: true, side: 'bottom', key: 'tlHeight', initial: 300, min: 160, max: 700 }), bottom));
 
@@ -407,6 +409,7 @@ function addTrack(kind) {
 
 function addToTimeline(m, { trackId = null, at = null } = {}) {
   if (m.missing) return;
+  closeDrawers(); // on a phone: show where it went
   let tr = trackId ? p.tracks.find((t) => t.id === trackId) : null;
   if (tr && tr.kind === 'text') tr = null;
   if (tr && tr.kind === 'video' && m.kind === 'audio') tr = null;
@@ -423,6 +426,7 @@ function addToTimeline(m, { trackId = null, at = null } = {}) {
 }
 
 function addTitle(key, at = engine.t, trackId = null) {
+  closeDrawers();
   const preset = TITLE_PRESETS[key] || TITLE_PRESETS.big;
   let tr = trackId ? p.tracks.find((t) => t.id === trackId && t.kind === 'text') : null;
   if (!tr) tr = p.tracks.find((t) => t.kind === 'text');
@@ -703,10 +707,16 @@ function hitSelected(pt) {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || isPinching(canvas)) return;
   const pt = canvasPoint(e);
   const c = hitSelected(pt);
-  if (!c) { engine.toggle(); return; }
+  if (!c) {
+    // A finger might be the first of two (a pinch): play or pause when it lifts.
+    if (e.pointerType !== 'touch') { engine.toggle(); return; }
+    const tap = (ev) => { if (!isPinching(canvas) && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 10) engine.toggle(); };
+    canvas.addEventListener('pointerup', tap, { once: true });
+    return;
+  }
   const isText = trackOf(p, c).kind === 'text';
   const x0 = isText ? c.style.x : c.x;
   const y0 = isText ? c.style.y : c.y;
@@ -724,9 +734,16 @@ canvas.addEventListener('pointerdown', (e) => {
     if (isText) c.style = { ...c.style, x: nx, y: ny }; else { c.x = nx; c.y = ny; }
     engine.redraw();
   };
-  const up = () => {
+  const stop = () => {
     canvas.removeEventListener('pointermove', mv);
     canvas.removeEventListener('pointerup', up);
+    canvas.removeEventListener('snake-pinchstart', cancel);
+  };
+  // A second finger turns the move into a resize: put the clip back where it was.
+  const cancel = () => { stop(); restore(before); engine.redraw(); };
+  canvas.addEventListener('snake-pinchstart', cancel);
+  const up = () => {
+    stop();
     if (!moved) { engine.toggle(); return; }
     const after = snapshot();
     restore(before);
@@ -735,6 +752,27 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.addEventListener('pointermove', mv);
   canvas.addEventListener('pointerup', up);
 });
+// Two fingers on the preview resize the selected title or picture.
+{
+  let c0 = null;
+  let s0 = 1;
+  pinch(canvas, {
+    begin: (pt) => {
+      const r = canvas.getBoundingClientRect();
+      const sel = selectedClips()[0];
+      c0 = hitSelected({ x: ((pt.x - r.left) / r.width) * p.width, y: ((pt.y - r.top) / r.height) * p.height })
+        || (sel && ['text', 'video'].includes(trackOf(p, sel).kind) ? sel : null);
+      if (c0) s0 = trackOf(p, c0).kind === 'text' ? c0.style.size : c0.scale;
+    },
+    change: (scale) => {
+      if (!c0) return;
+      if (trackOf(p, c0).kind === 'text') edit('Text size', () => { c0.style = { ...c0.style, size: clamp(s0 * scale, 0.01, 0.4) }; }, { key: `${c0.id}:pinch` });
+      else edit('Size', () => { c0.scale = clamp(s0 * scale, 0.05, 6); }, { key: `${c0.id}:pinch` });
+    },
+  });
+  canvas.style.touchAction = 'none';
+}
+
 // The wheel over the selected title or picture changes its size; elsewhere it steps through frames.
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();

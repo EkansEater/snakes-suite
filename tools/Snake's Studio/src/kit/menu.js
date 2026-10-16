@@ -5,6 +5,7 @@
 import { h, svg, clamp } from './dom.js';
 import { icon } from './icons.js';
 import { formatKeys } from './keys.js';
+import { isPhone, lastWasTouch } from './phone.js';
 
 const open = []; // stack of open menus (submenus on top)
 const isField = (t) => t instanceof Element && !!t.closest('input, textarea, select, [contenteditable="true"]');
@@ -64,6 +65,7 @@ class Menu {
       it.submenu ? svg(icon('chevronRight', 12, 'class="mi-sub"')) : null);
     if (it.danger) row.style.color = 'var(--error-soft)';
     row.addEventListener('mouseenter', () => {
+      if (lastWasTouch()) return; // a tap, not a hover: the click decides
       this.setActive(i);
       clearTimeout(this.subTimer);
       if (it.submenu) this.subTimer = setTimeout(() => this.openSub(i), 140);
@@ -108,6 +110,16 @@ class Menu {
     const r = this.rows[i].getBoundingClientRect();
     this.sub = new Menu(it.submenu, this);
     this.sub.index = i;
+    if (isPhone()) {
+      // No room beside it: the submenu takes the menu's place, with a way back.
+      const box = this.el.getBoundingClientRect();
+      const back = h('div.menu-item.menu-back', { role: 'menuitem' }, h('span.mi-icon', { html: icon('chevronLeft', 15) }), h('span.mi-label', it.label));
+      back.addEventListener('click', (e) => { e.stopPropagation(); this.closeSub(); this.el.focus(); });
+      this.sub.el.prepend(back);
+      this.sub.el.style.minWidth = `${box.width}px`;
+      this.sub.show(box.left, box.top);
+      return;
+    }
     this.sub.show(r.right - 2, r.top - 5, { flipX: r.left + 2 });
   }
 
@@ -227,7 +239,12 @@ window.addEventListener('pointerdown', (e) => {
   closeMenus();
 }, true);
 window.addEventListener('blur', () => closeMenus());
-window.addEventListener('resize', () => closeMenus());
+// (Only a change of width: on phones the height changes when the keyboard comes and goes.)
+let lastWidth = window.innerWidth;
+window.addEventListener('resize', () => {
+  if (window.innerWidth !== lastWidth) closeMenus();
+  lastWidth = window.innerWidth;
+});
 window.addEventListener('wheel', (e) => {
   if (open.length && !open.some((m) => m.el.contains(e.target))) closeMenus();
 }, { passive: true, capture: true });
@@ -251,6 +268,16 @@ export function menubar(menus) {
     const m = showMenu(menus[i].items, { anchor: btn, focusFirst, onClose: () => { btn.classList.remove('open'); current = -1; } });
     m.bar = { step: (d) => openAt((i + d + buttons.length) % buttons.length, true) };
   };
+
+  // On phones (kit.css) the menus fold into this one button.
+  const all = h('button.menu-all', { 'aria-label': 'Menu', html: icon('menu', 17) });
+  all.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (all.classList.contains('open')) { closeMenus(); return; }
+    all.classList.add('open');
+    showMenu(menus.map((m) => ({ label: m.label.replace('&', ''), submenu: m.items })), { anchor: all, onClose: () => all.classList.remove('open') });
+  });
+  bar.append(all);
 
   menus.forEach((m, i) => {
     const amp = m.label.indexOf('&');

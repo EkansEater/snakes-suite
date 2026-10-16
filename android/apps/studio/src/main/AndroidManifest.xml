@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Snake's Studio for Android: one APK, seven apps. Each has its own launcher icon and
+     task (its own entry in Recents), like the desktop's seven windows of one runtime.
+     The file types match suite.json's "mime" lists. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Movie Maker's voice-over (asked for when it is first used). No internet: everything stays on the phone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <application
+        android:label="Snake's Studio"
+        android:icon="@mipmap/ic_word"
+        android:theme="@style/Theme.Snake"
+        android:allowBackup="true">
+        <activity android:name=".WordActivity" android:exported="true" android:label="Snake's Word"
+            android:icon="@mipmap/ic_word" android:roundIcon="@mipmap/ic_word"
+            android:taskAffinity="com.snake.suite.studio.word" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="Open with Snake's Word">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.oasis.opendocument.text" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/rtf" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".SheetsActivity" android:exported="true" android:label="Snake's Spreadsheets"
+            android:icon="@mipmap/ic_sheets" android:roundIcon="@mipmap/ic_sheets"
+            android:taskAffinity="com.snake.suite.studio.sheets" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="Open with Snake's Spreadsheets">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="text/tab-separated-values" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".SlidesActivity" android:exported="true" android:label="Snake's Slides"
+            android:icon="@mipmap/ic_slides" android:roundIcon="@mipmap/ic_slides"
+            android:taskAffinity="com.snake.suite.studio.slides" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="Open with Snake's Slides">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".PaintActivity" android:exported="true" android:label="Snake's Paint"
+            android:icon="@mipmap/ic_paint" android:roundIcon="@mipmap/ic_paint"
+            android:taskAffinity="com.snake.suite.studio.paint" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="Open with Snake's Paint">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="image/png" />
+                <data android:mimeType="image/bmp" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/webp" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".PhotoActivity" android:exported="true" android:label="Snake's Photo"
+            android:icon="@mipmap/ic_photo" android:roundIcon="@mipmap/ic_photo"
+            android:taskAffinity="com.snake.suite.studio.photo" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="Open with Snake's Photo">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="image/png" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/webp" />
+                <data android:mimeType="image/gif" />
+                <data android:mimeType="image/bmp" />
+                <data android:mimeType="image/avif" />
+                <data android:mimeType="image/vnd.adobe.photoshop" />
+                <data android:mimeType="image/openraster" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".PlayerActivity" android:exported="true" android:label="Snake's Player"
+            android:icon="@mipmap/ic_player" android:roundIcon="@mipmap/ic_player"
+            android:taskAffinity="com.snake.suite.studio.player" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="Open with Snake's Player">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="audio/x-mpegurl" />
+                <data android:mimeType="audio/x-scpls" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".MovieActivity" android:exported="true" android:label="Snake's Movie Maker"
+            android:icon="@mipmap/ic_movie" android:roundIcon="@mipmap/ic_movie"
+            android:taskAffinity="com.snake.suite.studio.movie" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -12,6 +12,8 @@ Works with PySide6 and PyQt6 (whichever the app has already imported).
 What it adds to a window:
   * Ctrl+wheel makes what is under the pointer bigger or smaller: lists, tables and
     text boxes on their own, anything else the whole interface (Ctrl+0 resets).
+    Pinching does the same, on a touchpad or a touch screen.
+  * On a touch screen one finger scrolls lists and text boxes.
   * Turning the wheel while scrolling a page no longer grabs drop-downs, number boxes
     and sliders that pass under the pointer.
   * A command palette (Ctrl+Shift+P or F1): every menu item and button, searchable.
@@ -22,6 +24,7 @@ What it adds to a window:
 
 from __future__ import annotations
 
+import math
 import re
 import sys
 import time
@@ -100,7 +103,12 @@ def install(window, *, name: str | None = None, remember_geometry: bool = True):
             self.base_sheet = None
             self.ui_zoom = float(self.settings.value("uiZoom", 1.0) or 1.0)
             self.last_scroll = 0.0
+            self.pinch = None  # the gesture going on: what it zooms and by how much so far
             self.taken = self._existing_shortcuts()
+            # Touch-screen pinches anywhere in the window come here (see on_gesture).
+            window.grabGesture(QtCore.Qt.GestureType.PinchGesture)
+            for area in window.findChildren(QtWidgets.QAbstractScrollArea):
+                self.touch_scroll(area)
             if self.ui_zoom != 1.0:
                 self.set_ui_zoom(self.ui_zoom, announce=False)
             # Our shortcuts, unless the app already uses those keys.
@@ -163,6 +171,85 @@ def install(window, *, name: str | None = None, remember_geometry: bool = True):
                 w.resizeRowsToContents()
             self.flash(f"{round(new / base * 100)}%")
 
+        # ---- pinch (touchpad or touch screen) ----
+        def pinch_begin(self, global_pos) -> None:
+            w = QtWidgets.QApplication.widgetAt(global_pos)
+            target = None
+            while w is not None and w is not window:
+                if isinstance(w, (QtWidgets.QAbstractItemView, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
+                    target = w
+                    break
+                w = w.parentWidget()
+            self.pinch = {"target": target, "scale": 1.0, "steps": 0}
+
+        def pinch_change(self, factor: float) -> None:
+            """The fingers moved apart (factor > 1) or together since last time."""
+            p = self.pinch
+            if p is None or factor <= 0:
+                return
+            p["scale"] = max(0.2, min(5.0, p["scale"] * factor))
+            if p["target"] is not None:
+                # A list or text box: one point of text per 15% of pinch.
+                want = round(math.log(p["scale"]) / math.log(1.15))
+                if want != p["steps"]:
+                    self.zoom_widget(p["target"], want - p["steps"])
+                    p["steps"] = want
+            else:
+                # The whole interface is redrawn once, when the fingers stop.
+                self.flash(f"Interface {round(max(0.6, min(2.5, self.ui_zoom * p['scale'])) * 100)}%")
+
+        def pinch_end(self) -> None:
+            p, self.pinch = self.pinch, None
+            if p is not None and p["target"] is None and abs(math.log(p["scale"])) > 0.04:
+                self.set_ui_zoom(round(self.ui_zoom * p["scale"] * 20) / 20)
+
+        def on_native_gesture(self, ev) -> bool:
+            G = QtCore.Qt.NativeGestureType
+            kind = ev.gestureType()
+            if kind == G.BeginNativeGesture:
+                self.pinch = None
+                return False
+            if kind == G.ZoomNativeGesture:
+                if self.pinch is None:
+                    self.pinch_begin(ev.globalPosition().toPoint())
+                self.pinch_change(1.0 + ev.value())
+                ev.accept()  # or Qt offers it to every parent too
+                return True
+            if kind == G.EndNativeGesture:
+                self.pinch_end()
+            return False
+
+        def on_gesture(self, ev) -> bool:
+            g = ev.gesture(QtCore.Qt.GestureType.PinchGesture)
+            if g is None:
+                return False
+            S = QtCore.Qt.GestureState
+            state = g.state()
+            if state == S.GestureStarted:
+                self.pinch_begin(g.centerPoint().toPoint())
+            elif state == S.GestureUpdated:
+                if self.pinch is None:
+                    self.pinch_begin(g.centerPoint().toPoint())
+                # Qt can hand over the same finger movement twice (its total then
+                # counts it twice too): take each movement once.
+                step = (round(g.scaleFactor(), 6), g.centerPoint().x(), g.centerPoint().y())
+                if step != self.pinch.get("last"):
+                    self.pinch["last"] = step
+                    self.pinch_change(g.scaleFactor())
+            elif state == S.GestureFinished:
+                self.pinch_end()
+            elif state == S.GestureCanceled:
+                self.pinch = None
+            ev.accept(g)
+            return True
+
+        def touch_scroll(self, area) -> None:
+            """One finger on a touch screen scrolls (and flicks) this list or text box."""
+            if area.property("snakeErgoTouch"):
+                return
+            area.setProperty("snakeErgoTouch", True)
+            QtWidgets.QScroller.grabGesture(area.viewport(), QtWidgets.QScroller.ScrollerGestureType.TouchGesture)
+
         def flash(self, text: str) -> None:
             QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, window, window.rect(), 900)
 
@@ -173,6 +260,12 @@ def install(window, *, name: str | None = None, remember_geometry: bool = True):
                 return self.on_wheel(obj, ev)
             if t == E.ContextMenu and isinstance(obj, QtWidgets.QWidget) and obj.window() is window:
                 return self.on_context(obj, ev)
+            if t == E.NativeGesture and isinstance(obj, QtWidgets.QWidget) and obj.window() is window:
+                return self.on_native_gesture(ev)
+            if t == E.Gesture and obj is window:
+                return self.on_gesture(ev)
+            if t == E.Polish and isinstance(obj, QtWidgets.QAbstractScrollArea) and obj.window() is window:
+                self.touch_scroll(obj)
             if t == E.Close and obj is window and remember_geometry:
                 self.settings.setValue(f"geometry/{key}", window.saveGeometry())
             return False
@@ -344,7 +437,7 @@ def install(window, *, name: str | None = None, remember_geometry: bool = True):
                 table.setItem(r, 1, QtWidgets.QTableWidgetItem(k))
             table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
             table.resizeColumnToContents(1)
-            hint = QtWidgets.QLabel("Ctrl+wheel over a list or text box makes its text bigger or smaller; anywhere else, the whole window.")
+            hint = QtWidgets.QLabel("Ctrl+wheel or a pinch over a list or text box makes its text bigger or smaller; anywhere else, the whole window.")
             hint.setObjectName("hint")
             hint.setWordWrap(True)
             lay.addWidget(table)

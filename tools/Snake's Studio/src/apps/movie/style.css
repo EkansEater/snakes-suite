@@ -67,7 +67,7 @@ body.mv-recording .mv-transport [data-tip="Record a voice-over"] { color: #fff; 
 .mv-export { margin-left: 8px; display: inline-flex; align-items: center; gap: 6px; }
 .tl { flex: 1; overflow: auto; position: relative; outline: none; min-height: 0; background: var(--bg); }
 .tl-content { position: relative; min-height: 100%; }
-.tl-ruler { position: sticky; top: 0; z-index: 5; display: flex; height: 26px; background: var(--side); border-bottom: 1px solid var(--border); cursor: ew-resize; }
+.tl-ruler { touch-action: none; position: sticky; top: 0; z-index: 5; display: flex; height: 26px; background: var(--side); border-bottom: 1px solid var(--border); cursor: ew-resize; }
 .tl-corner { position: sticky; left: 0; z-index: 6; width: 150px; flex: none; background: var(--side); border-right: 1px solid var(--border); display: flex; align-items: center; padding-left: 10px; cursor: default; }
 .tl-timecode { font-family: var(--mono); font-size: 12px; color: var(--highlight); }
 .tl-ruler-canvas { position: sticky; left: 150px; display: block; }
@@ -83,6 +83,8 @@ body.mv-recording .mv-transport [data-tip="Record a voice-over"] { color: #fff; 
 .tl-row.hidden-track .tl-clip { opacity: .4; }
 .tl-lane { position: relative; flex: none; }
 .tl-clip { position: absolute; top: 3px; bottom: 3px; border-radius: 6px; overflow: hidden; cursor: grab; user-select: none; border: 1px solid rgba(0,0,0,.35); box-sizing: border-box; background-size: auto 100%; background-repeat: repeat-x; }
+/* A selected clip follows the finger; other clips let it scroll the timeline. */
+.tl-clip.sel { touch-action: none; }
 .tl-clip.video { background-color: #2f5a8a; }
 .tl-clip.audio { background-color: #24502f; }
 .tl-clip.text { background-color: #7a4bb0; }
@@ -106,3 +108,13 @@ body.mv-recording .mv-transport [data-tip="Record a voice-over"] { color: #fff; 
 .tl-fadeshape.out { right: 0; background: linear-gradient(to bottom left, rgba(0,0,0,.55) 50%, transparent 50%); }
 .tl-playhead { position: absolute; top: 0; width: 2px; margin-left: -1px; background: #e5534b; z-index: 7; pointer-events: none; }
 .tl-playhead-knob { position: absolute; top: 0; left: -6px; width: 14px; height: 14px; background: #e5534b; clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }
+
+/* ---- phones: a narrower names column, the timeline tools scroll sideways ---- */
+.phone .tl-corner, .phone .tl-head { width: 96px; }
+.phone .tl-ruler-canvas { left: 96px; }
+.phone .tl-head { padding: 0 2px 0 6px; gap: 0; }
+.phone .mv-tltools { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.phone .mv-tltools > * { flex: none; }
+.phone .tl-head { flex-wrap: wrap; align-content: center; row-gap: 0; }
+.phone .tl-head .tl-kind { display: none; }
+.phone .tl-head .tl-tname { flex: 1 0 100%; font-size: 11px; line-height: 14px; }

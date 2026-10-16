@@ -7,6 +7,7 @@
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -30,13 +31,17 @@ const page = (id, title, icon, script = 'app.js', css = 'style.css') => `<!docty
 <html lang="en" data-app="${id}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#111412">
 <title>${title}</title>
 <link rel="icon" href="../icons/${icon}.svg">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="../icons/${icon}.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="${title.replace("Snake's ", '')}">
 <link rel="stylesheet" href="${css}">
 </head>
 <body>
@@ -99,10 +104,53 @@ const opts = {
   legalComments: 'none',
 };
 
+/**
+ * sw.js: on the website, a copy of every file for offline use, so the apps work
+ * without a connection once opened (and when installed to a phone's home screen).
+ * The version is a hash of the files, so a new build replaces the copy.
+ */
+function serviceWorker() {
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (!f.endsWith('.map') && e.name !== 'sw.js') files.push(path.relative(out, f).split(path.sep).join('/'));
+    }
+  };
+  walk(out);
+  files.sort();
+  const hash = crypto.createHash('sha256');
+  for (const f of files) hash.update(f).update(fs.readFileSync(path.join(out, f)));
+  const version = hash.digest('hex').slice(0, 16);
+  fs.writeFileSync(path.join(out, 'sw.js'), `// Snake's Studio, offline copy for the website. Made by build.mjs; do not edit.
+const CACHE = 'snake-studio-${version}';
+const FILES = ${JSON.stringify(files)};
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', (e) => {
+  e.waitUntil(caches.keys()
+    .then((keys) => Promise.all(keys.filter((k) => k.startsWith('snake-studio-') && k !== CACHE).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== location.origin) return;
+  e.respondWith(caches.open(CACHE).then(async (c) => {
+    const hit = await c.match(req, { ignoreSearch: true }) || (url.pathname.endsWith('/') && await c.match(new URL('index.html', url)));
+    return hit || fetch(req);
+  }));
+});
+`);
+}
+
 copyStatic();
 if (watch) {
   const ctx = await esbuild.context(opts);
   await ctx.watch();
 } else {
   await esbuild.build(opts);
+  serviceWorker();
 }
