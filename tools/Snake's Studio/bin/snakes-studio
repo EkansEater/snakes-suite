@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run Snake's Studio from source: bin/snakes-studio --app=word [files...]
+here="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$here/node_modules/.bin/electron" "$here" "$@"

@@ -18,10 +18,41 @@ const DIST = path.join(ROOT, 'dist');
 const isDev = process.argv.includes('--dev');
 
 app.setName("Snake's Code");
+app.enableSandbox();
 // Windows groups taskbar buttons and picks their icon by this id.
 if (process.platform === 'win32') app.setAppUserModelId('Snake.Suite.Code');
 if (process.env.SNAKE_USER_DATA) app.setPath('userData', process.env.SNAKE_USER_DATA);
 Menu.setApplicationMenu(null);
+
+// ---------------------------------------------------------------------------
+// Only our own windows' pages may use the editor's powers (files, terminal, git).
+// ---------------------------------------------------------------------------
+function trusted(event) {
+  const frame = event.senderFrame;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!frame || !win || !windows.has(win) || frame !== event.sender.mainFrame) return false;
+  try {
+    return path.resolve(new URL(frame.url).pathname) === path.resolve(DIST, 'index.html') || decodeURIComponent(new URL(frame.url).pathname).endsWith('/dist/index.html');
+  } catch { return false; }
+}
+const rawHandle = ipcMain.handle.bind(ipcMain);
+const rawOn = ipcMain.on.bind(ipcMain);
+ipcMain.handle = (channel, fn) => rawHandle(channel, (e, ...args) => {
+  if (!trusted(e)) throw new Error('Refused');
+  return fn(e, ...args);
+});
+ipcMain.on = (channel, fn) => rawOn(channel, (e, ...args) => {
+  if (!trusted(e)) return undefined;
+  return fn(e, ...args);
+});
+
+/** Web and mail links open in the browser; nothing else leaves the app this way. */
+function openExternal(url) {
+  try {
+    const u = new URL(String(url));
+    if (['http:', 'https:', 'mailto:'].includes(u.protocol)) shell.openExternal(u.href);
+  } catch {}
+}
 
 // ---------------------------------------------------------------------------
 // Persistent JSON stores (settings.json, keybindings.json, state.json)
@@ -76,7 +107,8 @@ function createWindow(openPath) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
+      webviewTag: false,
       spellcheck: false,
     },
   });
@@ -114,15 +146,17 @@ function createWindow(openPath) {
 
   // Open links in the external browser instead of inside the app
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) {
+    // The window only ever shows the editor itself.
+    if (url !== win.webContents.getURL()) {
       e.preventDefault();
-      shell.openExternal(url);
+      openExternal(url);
     }
   });
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
   return win;
 }
 
@@ -150,7 +184,17 @@ if (!gotLock) {
       if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
     }
   });
-  app.whenReady().then(() => createWindow(argPath(process.argv)));
+  app.on('web-contents-created', (_e, contents) => {
+  // Nothing downloads behind your back, and pages get no camera, microphone or location.
+  contents.session.on('will-download', (ev, item) => { ev.preventDefault(); item.cancel(); });
+});
+app.whenReady().then(() => {
+  const { session } = require('electron');
+  const allowed = new Set(['clipboard-sanitized-write', 'clipboard-read', 'fullscreen']);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+});
+app.whenReady().then(() => createWindow(argPath(process.argv)));
 }
 
 app.on('window-all-closed', () => app.quit());
@@ -524,7 +568,7 @@ ipcMain.handle('dialog:message', async (e, opts) => {
   return r.response;
 });
 
-ipcMain.on('shell:openExternal', (_e, url) => shell.openExternal(url));
+ipcMain.on('shell:openExternal', (_e, url) => openExternal(url));
 ipcMain.on('shell:showItemInFolder', (_e, p) => shell.showItemInFolder(p));
 ipcMain.on('shell:openPath', (_e, p) => shell.openPath(p));
 ipcMain.on('clipboard:write', (_e, text) => clipboard.writeText(text));

@@ -56,9 +56,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pyinstaller \
-            "./tools/Snake's Converter" "./tools/Snake's MP3 Converter" "./tools/Snake's Screen Recorder" ./hub
+            "./tools/Snake's Converter" "./tools/Snake's MP3 Converter" "./tools/Snake's Screen Recorder" \
+            "./tools/Snake's SoundPad" ./hub
           if [ "$RUNNER_OS" = "Linux" ]; then
-            python -m pip install "./tools/Snake's SoundPad" "PyGObject<3.51"
+            python -m pip install "PyGObject<3.51"
           fi
 
       - name: Build the tools
@@ -91,15 +92,19 @@ jobs:
           merge-multiple: true
       - name: Android apps from the last release
         run: python packaging/build.py android dist
-      - name: Index for the app
-        run: python packaging/build.py index dist
+      - name: Index for the app (signed when the SNAKE_INDEX_KEY secret is set)
+        env:
+          SNAKE_INDEX_KEY: ${{ secrets.SNAKE_INDEX_KEY }}
+        run: |
+          python -m pip install cryptography
+          python packaging/build.py index dist
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then tag="v$(python -c 'import json;print(json.load(open("suite.json"))["version"])')"; fi
-          notes="Download **Snake's Suite** for your system below (Snakes-Suite-…), open it, and pick the tools you want.
+          notes="Download **Snake's Master Suite** for your system below (Snakes-Suite-…), open it, and pick the tools you want.
 
           - Windows: \`Snakes-Suite-windows-x86_64.exe\`. If SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.
           - macOS: \`Snakes-Suite-macos-arm64.dmg\` (Apple silicon) or \`-x86_64.dmg\` (Intel). The first time, right-click the app and choose *Open*.
@@ -108,5 +113,5 @@ jobs:
           The other files are the tools themselves; the app downloads them for you."
           shopt -s nullglob  # publish what was built, even if one system had a problem
           gh release delete "$tag" --yes --cleanup-tag=false 2>/dev/null || true
-          gh release create "$tag" --title "Snake's Suite ${tag#v}" --notes "$notes" --latest \
-            dist/index.json dist/Snakes-Suite-* dist/snakes-*.tar.gz dist/snakes-*.zip dist/snakes-*.apk
+          gh release create "$tag" --title "Snake's Master Suite ${tag#v}" --notes "$notes" --latest \
+            dist/index.json* dist/Snakes-Suite-* dist/snakes-*.tar.gz dist/snakes-*.zip dist/snakes-*.apk

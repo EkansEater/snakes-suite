@@ -125,6 +125,27 @@ function setZoom(level) {
   window.snake.win.setZoom(zoom);
 }
 
+// Ctrl+wheel makes whatever is under the pointer bigger or smaller: the terminal
+// its text, a Markdown preview its page, anything else the whole window. (The
+// code editor zooms its own text: editor.mouseWheelZoom.)
+window.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || !(e.target instanceof Element)) return;
+  if (e.target.closest('.monaco-editor')) return;
+  e.preventDefault();
+  const dir = e.deltaY < 0 ? 1 : -1;
+  if (e.target.closest('.xterm')) {
+    const size = Math.max(6, Math.min(64, settings.get('terminal.integrated.fontSize') + dir));
+    settings.set('terminal.integrated.fontSize', size);
+    return;
+  }
+  const md = e.target.closest('.markdown-preview');
+  if (md) {
+    md.style.zoom = String(Math.max(0.5, Math.min(3, (parseFloat(md.style.zoom) || 1) + dir * 0.1)));
+    return;
+  }
+  setZoom(zoom + dir * 0.5);
+}, { passive: false, capture: true });
+
 // ---------------------------------------------------------------------------
 // Workspace lifecycle
 // ---------------------------------------------------------------------------

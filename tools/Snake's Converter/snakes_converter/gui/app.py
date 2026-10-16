@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from .. import APP_NAME, __version__
 from .main_window import MainWindow
-from . import snake_theme
+from . import snake_ergo, snake_theme
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
@@ -24,5 +24,6 @@ def run() -> int:
     snake_theme.apply(app, icon_path=ASSETS / "icon.svg")
 
     window = MainWindow(ASSETS)
+    snake_ergo.install(window)
     window.show()
     return app.exec()

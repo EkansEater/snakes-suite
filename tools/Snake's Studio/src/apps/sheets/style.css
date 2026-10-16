@@ -1,0 +1,78 @@
+@import "../../kit/kit.css";
+
+.sheets-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* ---- formula bar ---- */
+.formula-bar { display: flex; align-items: flex-start; gap: 4px; padding: 4px 6px; background: var(--side); border-bottom: 1px solid var(--border); flex: none; }
+.name-box { width: 120px; font-family: var(--mono); font-size: 12px; height: 28px; }
+.fb-sep { width: 1px; height: 22px; background: var(--border2); margin: 3px 2px; }
+.formula-input { flex: 1; height: 28px; min-height: 28px; resize: none; font-family: var(--mono); font-size: 12.5px; line-height: 18px; padding: 4px 8px; overflow: hidden; white-space: pre-wrap; }
+.formula-bar.tall .formula-input { height: 96px; overflow: auto; }
+
+/* ---- grid ---- */
+.grid-wrap { flex: 1; position: relative; overflow: hidden; min-height: 0; outline: none; }
+.grid-canvas { position: absolute; left: 0; top: 0; }
+.grid-scroll { position: absolute; inset: 0; overflow: scroll; outline: none; }
+.grid-spacer { position: relative; }
+.grid-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.cell-editor {
+  position: absolute; z-index: 5; border: 0; outline: 2px solid var(--accent); outline-offset: 0; resize: none; overflow: hidden;
+  opacity: 0; pointer-events: none; white-space: pre; box-shadow: 0 2px 10px rgba(0,0,0,.25); border-radius: 0; color: transparent; caret-color: transparent;
+}
+.cell-editor.on { opacity: 1; pointer-events: auto; caret-color: auto; }
+.fn-ac { position: absolute; z-index: 30; max-height: 280px; min-width: 320px; }
+.fn-ac .mi-keys { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
+.fn-hint { position: absolute; z-index: 31; background: var(--widget); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 9px; font: 12px var(--mono); box-shadow: var(--shadow); max-width: 520px; pointer-events: none; }
+.fn-hint u { text-decoration: none; font-weight: 700; color: var(--highlight); }
+.fn-hint .muted { font-family: var(--font); margin-top: 2px; }
+.cell-tip { position: absolute; z-index: 32; background: #fff8c5; color: #3b2f00; border: 1px solid #d4a72c; border-radius: 4px; padding: 6px 9px; max-width: 280px; white-space: pre-wrap; box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
+
+/* ---- charts over the grid ---- */
+.chart-box { position: absolute; border: 1px solid var(--border2); border-radius: 6px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.28); cursor: move; background: var(--bg); }
+.chart-box.on { outline: 2px solid var(--accent); }
+.chart-box canvas { display: block; width: 100%; height: 100%; }
+.chart-tools { position: absolute; top: 4px; right: 4px; display: none; gap: 2px; background: var(--widget); border-radius: 6px; border: 1px solid var(--border2); }
+.chart-box:hover .chart-tools, .chart-box.on .chart-tools { display: flex; }
+.chart-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--accent) 50%); opacity: .7; }
+.chart-tip { position: absolute; background: var(--widget); border: 1px solid var(--border2); border-radius: 5px; padding: 3px 7px; font-size: 12px; pointer-events: none; white-space: nowrap; box-shadow: var(--shadow); }
+
+/* ---- sheet tabs ---- */
+.tab-bar { height: 32px; flex: none; display: flex; align-items: stretch; gap: 4px; padding: 0 6px; background: var(--side); border-top: 1px solid var(--border); }
+.tab-bar > .tb { align-self: center; }
+.sheet-tabs { display: flex; gap: 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; align-items: stretch; }
+.sheet-tabs::-webkit-scrollbar { display: none; }
+.sheet-tab { border: 0; background: transparent; color: var(--fg2); padding: 0 16px; border-top: 2px solid transparent; white-space: nowrap; cursor: default; position: relative; }
+.sheet-tab:hover { background: var(--hover); color: var(--fg); }
+.sheet-tab.on { background: var(--bg); color: var(--fg); border-top-color: var(--accent); font-weight: 600; }
+.sheet-tab.colored::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 3px; height: 3px; border-radius: 2px; background: var(--tab); }
+.sheet-tab.drop { box-shadow: inset 2px 0 0 var(--accent); }
+.sel-stats .item b { font-variant-numeric: tabular-nums; }
+
+/* ---- dialogs ---- */
+.filter-pop { width: 290px; padding: 6px; }
+.filter-list { max-height: 230px; overflow: auto; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+.filter-list label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fmt-list { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px; }
+.fmt-preview { font: 18px var(--mono); padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input); min-height: 46px; }
+.fn-list { height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px; }
+.fn-info { min-height: 44px; }
+.find-results { max-height: 240px; overflow: auto; }
+.recover { margin-bottom: 24px; }
+.recover .list-item .dir { color: var(--fg3); font-size: 12px; }
+
+/* ---- template thumbnails ---- */
+.sheet-thumb { position: absolute; inset: 0; overflow: hidden; background: #fff; padding: 4px; }
+.sheet-thumb table { border-collapse: collapse; width: 100%; table-layout: fixed; font: 7px var(--font); color: #222; }
+.sheet-thumb td { border: 1px solid #e3e7e4; padding: 1px 2px; white-space: nowrap; overflow: hidden; height: 11px; }
+
+/* ---- printing: only the table ---- */
+.print-view { display: none; }
+@media print {
+  body.printing-sheet .app { display: none !important; }
+  body.printing-sheet .print-view { display: block; padding: 0; color: #000; }
+  .print-view .print-title { font: 600 11pt var(--font); margin-bottom: 6pt; }
+  .print-view table { border-collapse: collapse; table-layout: fixed; font: 10pt "Carlito", "Calibri", "Inter", sans-serif; }
+  .print-view td { padding: 2px 4px; overflow: hidden; }
+  .print-view table.grid-lines td { border: 1px solid #d5dbd7; }
+  @page { margin: 0.5in; }
+}

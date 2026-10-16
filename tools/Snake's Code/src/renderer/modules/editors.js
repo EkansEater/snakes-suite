@@ -1617,14 +1617,39 @@ registerEditorKind('binary', {
 
 marked.setOptions({ gfm: true, breaks: false });
 
+// Markdown can carry any HTML. Only what a document needs survives: known
+// tags, a few attributes, and links to the web, mail, anchors or files.
+const SAFE_TAGS = new Set(['a', 'abbr', 'b', 'blockquote', 'br', 'code', 'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'input', 'ins', 'kbd', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'samp', 'small', 'span',
+  'strong', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul']);
+const DROP_TAGS = new Set(['script', 'style', 'iframe', 'frame', 'object', 'embed', 'form', 'button', 'textarea', 'select', 'svg', 'math', 'link',
+  'meta', 'base', 'template', 'noscript', 'audio', 'video', 'source', 'track', 'canvas', 'applet', 'portal']);
+const SAFE_ATTRS = { '*': ['title', 'id', 'align', 'lang', 'dir'], a: ['href'], img: ['src', 'alt', 'width', 'height'], code: ['class'], pre: ['class'],
+  td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'], ol: ['start'], details: ['open'], input: ['type', 'checked', 'disabled'] };
+const safeUrl = (v, img) => {
+  const t = String(v).trim();
+  if (/^(https?:|mailto:|#)/i.test(t)) return true;
+  if (img && /^data:image\/(png|jpe?g|gif|webp);/i.test(t)) return true;
+  if (img && /^file:/i.test(t)) return true;
+  return !/^[a-z][a-z0-9+.-]*:/i.test(t); // relative paths (opened as files)
+};
+
 function sanitize(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script, iframe, object, embed, style[onload], link').forEach((n) => n.remove());
-  doc.querySelectorAll('*').forEach((n) => {
-    for (const a of [...n.attributes]) {
-      if (/^on/i.test(a.name) || (/^(href|src|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+  const clean = (node) => {
+    for (const child of [...node.children]) {
+      const tag = child.localName;
+      if (DROP_TAGS.has(tag) || (tag === 'input' && child.getAttribute('type') !== 'checkbox')) { child.remove(); continue; }
+      clean(child);
+      if (!SAFE_TAGS.has(tag)) { child.replaceWith(...child.childNodes); continue; }
+      const ok = new Set([...SAFE_ATTRS['*'], ...(SAFE_ATTRS[tag] || [])]);
+      for (const a of [...child.attributes]) {
+        const keep = ok.has(a.name) && (!['href', 'src'].includes(a.name) || safeUrl(a.value, tag === 'img')) && (a.name !== 'class' || /^(language-[\w+#-]+\s*)+$/.test(a.value));
+        if (!keep) child.removeAttribute(a.name);
+      }
     }
-  });
+  };
+  clean(doc.body);
   return doc.body.innerHTML;
 }
 

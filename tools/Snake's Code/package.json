@@ -1,7 +1,7 @@
 {
   "name": "snakes-code",
   "version": "1.0.0",
-  "description": "Snake's Code — a fully featured desktop code editor built on Electron + Monaco",
+  "description": "Snake's Code \u2014 a fully featured desktop code editor built on Electron + Monaco",
   "main": "src/main/main.js",
   "scripts": {
     "build": "node build.mjs",
@@ -64,6 +64,15 @@
       "target": "dir",
       "category": "public.app-category.developer-tools",
       "identity": "-"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "loadBrowserProcessSpecificV8Snapshot": false
     }
   }
 }

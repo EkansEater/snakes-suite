@@ -2,6 +2,253 @@
   "version": "1.1.4",
   "tools": [
     {
+      "id": "word",
+      "name": "Snake's Word",
+      "tagline": "Word processor",
+      "description": "Write letters, reports and books: pages, styles, tables, pictures, outline; opens and saves Word (.docx), ODT, Markdown, HTML; exports PDF.",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "word",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-word",
+      "command": "snakes-word",
+      "categories": "Office;WordProcessor;",
+      "accepts_files": true,
+      "mime": [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.oasis.opendocument.text",
+        "text/markdown",
+        "application/rtf"
+      ],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "sheets",
+      "name": "Snake's Spreadsheets",
+      "tagline": "Spreadsheets",
+      "description": "About 250 functions, charts, filters, conditional formatting and pivot summaries; opens and saves Excel (.xlsx) and CSV.",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "sheets",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-sheets",
+      "command": "snakes-sheets",
+      "categories": "Office;Spreadsheet;",
+      "accepts_files": true,
+      "mime": [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/csv",
+        "text/tab-separated-values"
+      ],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "slides",
+      "name": "Snake's Slides",
+      "tagline": "Presentations",
+      "description": "Themes, layouts, animations, transitions, presenter view with notes; opens and saves PowerPoint (.pptx); exports PDF.",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "slides",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-slides",
+      "command": "snakes-slides",
+      "categories": "Office;Presentation;",
+      "accepts_files": true,
+      "mime": [
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      ],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "paint",
+      "name": "Snake's Paint",
+      "tagline": "Drawing",
+      "description": "Quick drawings and pixel art: brushes, shapes, text, fill, mirror painting, selections.",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "paint",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-paint",
+      "command": "snakes-paint",
+      "categories": "Graphics;2DGraphics;RasterGraphics;",
+      "accepts_files": true,
+      "mime": [
+        "image/png",
+        "image/bmp",
+        "image/jpeg",
+        "image/webp"
+      ],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "photo",
+      "name": "Snake's Photo",
+      "tagline": "Photo editor",
+      "description": "Layers, masks, adjustments, filters, healing and clone brushes, crop and transform; opens and saves Photoshop (.psd) and OpenRaster (.ora).",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "photo",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-photo",
+      "command": "snakes-photo",
+      "categories": "Graphics;2DGraphics;RasterGraphics;Photography;",
+      "accepts_files": true,
+      "mime": [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "image/bmp",
+        "image/avif",
+        "image/vnd.adobe.photoshop",
+        "image/openraster"
+      ],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "player",
+      "name": "Snake's Player",
+      "tagline": "Media player",
+      "description": "Plays nearly any video or music: playlists, subtitles, equaliser, speed, A-B loops, snapshots.",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "player",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-player",
+      "command": "snakes-player",
+      "categories": "AudioVideo;Player;Video;Audio;",
+      "accepts_files": true,
+      "mime": [
+        "video/mp4",
+        "video/x-matroska",
+        "video/webm",
+        "video/quicktime",
+        "video/x-msvideo",
+        "video/x-ms-wmv",
+        "video/mpeg",
+        "video/ogg",
+        "audio/mpeg",
+        "audio/flac",
+        "audio/ogg",
+        "audio/x-wav",
+        "audio/wav",
+        "audio/mp4",
+        "audio/aac",
+        "audio/x-ms-wma",
+        "audio/x-mpegurl",
+        "audio/x-scpls"
+      ],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "movie",
+      "name": "Snake's Movie Maker",
+      "tagline": "Video editor",
+      "description": "Put clips, music, pictures and titles on a timeline; transitions, looks, motion, voice-over; export MP4, WebM or GIF.",
+      "folder": "tools/Snake's Studio",
+      "kind": "electron",
+      "studio_app": "movie",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {},
+      "wm_class": "snakes-movie",
+      "command": "snakes-movie",
+      "categories": "AudioVideo;Video;AudioVideoEditing;",
+      "accepts_files": true,
+      "mime": [],
+      "legacy_desktop": [],
+      "package": {
+        "electron": true,
+        "studio": true
+      },
+      "version": "1.0.0"
+    },
+    {
       "id": "code",
       "name": "Snake's Code",
       "tagline": "Code editor",
@@ -177,7 +424,7 @@
       "id": "soundpad",
       "name": "Snake's SoundPad",
       "tagline": "Soundboard",
-      "description": "Play clips through a virtual mic into Discord and games.",
+      "description": "Play sound clips into voice chat: its own virtual microphone on Linux, a free virtual cable on Windows and macOS.",
       "folder": "tools/Snake's SoundPad",
       "kind": "python",
       "module": "snakepad",
@@ -185,12 +432,15 @@
         "."
       ],
       "platforms": [
-        "linux"
+        "linux",
+        "windows",
+        "macos"
       ],
       "needs": [
         "Python 3.10+",
-        "mpv",
-        "PipeWire (pactl)"
+        "Linux: PipeWire (pactl) and mpv, or a virtual cable",
+        "Windows: VB-CABLE (free)",
+        "macOS: BlackHole (free)"
       ],
       "qt_theme": "snakepad/snake_theme.py",
       "assets": {
@@ -396,8 +646,8 @@
   ],
   "hub": {
     "id": "suite",
-    "name": "Snake's Suite",
-    "tagline": "Every Snake tool in one place",
+    "name": "Snake's Master Suite",
+    "tagline": "Every Snake app in one place",
     "folder": "hub",
     "kind": "python",
     "module": "snakes_suite",

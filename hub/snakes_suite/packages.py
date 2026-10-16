@@ -1,4 +1,4 @@
-"""Install ready-made tool packages, the way the one-file Snake's Suite app does.
+"""Install ready-made tool packages, the way the one-file Snake's Master Suite app does.
 
 The release on GitHub has an index.json listing, for every tool and system,
 the archive to download with its size and SHA-256. The app downloads one
@@ -201,6 +201,8 @@ def retire_former(tool: dict) -> None:
 def tool_in_use(tool_id: str, manifest: dict | None) -> bool:
     """Is the installed program running? An update must not replace it under its feet."""
     roots = [ig.APPS / (manifest or {}).get("id", tool_id)]  # (a renamed tool: where its old id put it)
+    if (manifest or {}).get("shared"):
+        roots.append(shared_dir(manifest["shared"]))
     launch = (manifest or {}).get("launch") or []
     if launch[:1] == ["open"] and len(launch) > 1:
         roots.append(Path(launch[1]))
@@ -235,7 +237,7 @@ def tool_in_use(tool_id: str, manifest: dict | None) -> bool:
 
 # --------------------------------------------------------------------------- updating this app
 def hub_package(index: dict | None) -> dict | None:
-    """This system's build of Snake's Suite in the release index, if newer than the one running and if
+    """This system's build of Snake's Master Suite in the release index, if newer than the one running and if
     the one running is the installed copy (a copy run from the download or the source is left alone)."""
     from . import __version__
 
@@ -308,11 +310,56 @@ def clean_up_after_update() -> None:
             pass
 
 
-def install_package(tool: dict, pkg: dict, archive: Path, *, desktop: bool) -> list[str]:
+def shared_dir(name: str) -> Path:
+    """Where a package several apps share is unpacked (Snake's Studio holds seven apps)."""
+    return ig.APPS / f"_{name}"
+
+
+def shared_ready(pkg: dict) -> bool:
+    """Is this exact shared package already unpacked? Then there is nothing to download."""
+    if not pkg.get("shared"):
+        return False
+    try:
+        mark = json.loads((shared_dir(pkg["shared"]) / ".snake-shared.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return mark.get("sha256") == pkg.get("sha256")
+
+
+def _shared_users(name: str, except_id: str | None = None) -> list[str]:
+    return [i for i in ig.installed_ids() if i != except_id and (ig.read_manifest(i) or {}).get("shared") == name]
+
+
+def _install_shared(tool: dict, pkg: dict, archive: Path | None) -> dict:
+    """Unpack a shared package once; returns its snake-package.json."""
+    dest = shared_dir(pkg["shared"])
+    if not shared_ready(pkg):
+        if archive is None or not archive.exists():
+            raise InstallError("the download is missing. Please try again.")
+        if any(tool_in_use(i, ig.read_manifest(i)) for i in _shared_users(pkg["shared"])):
+            raise InstallError("close the other Snake's Studio apps first, then try again.")
+        staging = Path(tempfile.mkdtemp(prefix=f"{pkg['shared']}-", dir=ig.DATA if ig.DATA.exists() else None))
+        try:
+            _extract(archive, staging)
+            (staging / ".snake-shared.json").write_text(json.dumps({"sha256": pkg["sha256"], "file": pkg.get("file")}), encoding="utf-8")
+            shutil.rmtree(dest, ignore_errors=True)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(staging), str(dest))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    return json.loads((dest / "snake-package.json").read_text(encoding="utf-8"))
+
+
+def install_package(tool: dict, pkg: dict, archive: Path | None, *, desktop: bool) -> list[str]:
     """Check, unpack and register a downloaded package. Returns notes for the user."""
-    if pkg.get("sha256") and sha256(archive) != pkg["sha256"]:
+    # Every package must say what it should be: a download that does not match is refused.
+    if not pkg.get("sha256"):
+        raise InstallError("the release does not list a checksum for this download, so it was not installed.")
+    if archive is not None and archive.exists() and sha256(archive) != pkg["sha256"]:
         raise InstallError("the download is damaged (its checksum does not match). Please try again.")
     tool_id = tool["id"]
+    if pkg.get("shared"):
+        return _install_shared_app(tool, pkg, archive, desktop=desktop)
     old = ig.read_manifest(tool_id)
     if old:
         ig.remove_integration(old)
@@ -372,6 +419,37 @@ def install_package(tool: dict, pkg: dict, archive: Path, *, desktop: bool) -> l
     return notes
 
 
+def _install_shared_app(tool: dict, pkg: dict, archive: Path | None, *, desktop: bool) -> list[str]:
+    """One app of a shared package: the package once, then this app's own launcher and icon."""
+    tool_id = tool["id"]
+    old = ig.read_manifest(tool_id)
+    if old:
+        ig.remove_integration(old)
+    meta = _install_shared(tool, pkg, archive)
+    dest = shared_dir(pkg["shared"])
+    args = [a for a in pkg.get("args", []) if isinstance(a, str) and a.startswith("--app=")]
+    if ig.OS == "macos" and meta.get("app_bundle"):
+        bundle = dest / meta["app_bundle"]
+        exe = next((bundle / "Contents" / "MacOS").iterdir())
+    else:
+        exe = dest / meta["launch"]
+        if ig.OS != "windows":
+            exe.chmod(exe.stat().st_mode | 0o111)
+    launch = {"launch": [str(exe), *args], "cwd": None}
+    if ig.OS == "linux" and _userns_restricted():
+        launch["launch"].append("--no-sandbox")
+    icons = ig.copy_icons(tool_id, ASSETS, tool.get("icon", tool_id))
+    files, registry, notes = ig.integrate(tool, launch, icons, desktop=desktop, uninstaller=uninstaller_for(tool_id))
+    ig.write_manifest({
+        "id": tool_id, "name": tool["name"], "tagline": tool.get("tagline", ""), "description": tool.get("description", ""),
+        "kind": tool.get("kind"), "version": pkg.get("version", meta.get("version", "1.0.0")), "package": pkg.get("file"),
+        "shared": pkg["shared"], "launch": launch["launch"], "cwd": None, "command": None, "icons": icons,
+        "files": files, "registry": registry, "desktop_shortcut": desktop,
+        "installed": datetime.datetime.now().isoformat(timespec="seconds"),
+    })
+    return notes
+
+
 def self_install(*, desktop: bool) -> list[str]:
     """Copy the running one-file app into the suite's folder and give it a menu entry."""
     hub = catalogue().get("hub", {})
@@ -384,8 +462,8 @@ def self_install(*, desktop: bool) -> list[str]:
     launch: dict = {"cwd": None}
     running = Path(sys.executable)
     if ig.OS == "macos":
-        bundle = running.parents[2]  # .../Snake's Suite.app/Contents/MacOS/<exe>
-        app = ig.applications_dir() / f"{hub.get('name', "Snake's Suite")}.app"
+        bundle = running.parents[2]  # .../Snake's Master Suite.app/Contents/MacOS/<exe>
+        app = ig.applications_dir() / f"{hub.get('name', "Snake's Master Suite")}.app"
         if bundle.resolve() != app.resolve():
             if app.exists():
                 shutil.rmtree(app)
@@ -405,7 +483,7 @@ def self_install(*, desktop: bool) -> list[str]:
                      [str(Path(launch["app_bundle"]) / "Contents" / "MacOS" / running.name)]), "--uninstall", "suite"]
     files, registry, notes = ig.integrate(meta, launch, icons, desktop=desktop, uninstaller=uninstaller)
     ig.write_manifest({
-        "id": "suite", "name": meta.get("name", "Snake's Suite"), "kind": "hub",
+        "id": "suite", "name": meta.get("name", "Snake's Master Suite"), "kind": "hub",
         "version": hub.get("version", catalogue().get("version", "1.0.0")), "launch": launch["launch"], "cwd": None,
         "command": meta.get("command"), "icons": icons, "files": files, "registry": registry,
         "desktop_shortcut": desktop, "installed": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -423,6 +501,9 @@ def uninstall(tool_id: str) -> list[str]:
     if not manifest:
         return []
     problems = ig.remove_integration(manifest)
+    shared = manifest.get("shared")
+    if shared and not _shared_users(shared, except_id=tool_id):
+        shutil.rmtree(shared_dir(shared), ignore_errors=True)  # the last app of a shared package
     running_here = FROZEN and tool_id == "suite" and Path(sys.executable).resolve().is_relative_to(ig.APPS.resolve())
     if running_here and ig.OS == "windows":
         # A running program cannot delete itself on Windows: let a helper do it once we have quit.

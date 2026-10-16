@@ -1,0 +1,14 @@
+@import "../kit/kit.css";
+.home { flex: 1; overflow: auto; padding: 32px 40px; }
+.hero { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; }
+.hero img { width: 72px; height: 72px; }
+.hero h1 { font-size: 30px; font-weight: 300; margin: 0; }
+.hero p { margin: 4px 0 0; color: var(--fg2); font-size: 14px; }
+.home h2 { font-size: 11.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--fg2); margin: 22px 0 10px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+.tile { background: var(--side); border: 1px solid var(--border); border-radius: 12px; padding: 18px 14px; display: flex;
+  flex-direction: column; align-items: center; gap: 6px; cursor: pointer; color: var(--fg); transition: transform .12s, border-color .12s; }
+.tile:hover { border-color: var(--accent); transform: translateY(-2px); background: var(--hover); }
+.tile img { width: 64px; height: 64px; }
+.tile .name { font-weight: 600; font-size: 14px; }
+.tile .tag { color: var(--fg2); font-size: 12px; text-align: center; }

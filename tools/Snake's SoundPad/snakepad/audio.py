@@ -89,6 +89,18 @@ def move_untargeted_recordings(to: str) -> None:
 class VirtualDevices:
     """Creates and tears down the virtual sink, virtual mic and mic loopback."""
 
+    mode = "virtual"
+    supports_default = True
+    mic_label = MIC_DESC
+
+    @staticmethod
+    def list_inputs() -> list[tuple[str, str]]:
+        return [(s.name, s.description) for s in list_input_sources()]
+
+    @staticmethod
+    def default_input() -> str:
+        return default_source()
+
     def __init__(self) -> None:
         self.sink_module: int | None = None
         self.mic_module: int | None = None

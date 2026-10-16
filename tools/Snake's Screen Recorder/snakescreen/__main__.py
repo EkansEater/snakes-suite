@@ -81,6 +81,8 @@ def main():
             pump.start()
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)  # let Ctrl+C in a terminal quit
+    from . import snake_ergo
+    snake_ergo.install(window)
     window.show()
     if args.command == "toggle":
         QTimer.singleShot(300, window.toggle_recording)

@@ -1,0 +1,86 @@
+/* How slides look, wherever they are drawn (editor, thumbnails, show, print). */
+.slide { position: absolute; left: 0; top: 0; overflow: hidden; transform-origin: 0 0; user-select: none; }
+.slide .theme-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 14px; }
+.slide .item { position: absolute; box-sizing: border-box; transform-origin: 50% 50%; }
+.slide .shape-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.slide .item-text { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+.slide .text-inner { outline: none; white-space: pre-wrap; overflow-wrap: break-word; min-height: 1em; cursor: inherit; }
+.slide .text-inner p { margin: 0 0 .25em; }
+.slide .text-inner p:last-child { margin-bottom: 0; }
+.slide .text-inner ul, .slide .text-inner ol { margin: 0; padding-left: 1.2em; }
+.slide .text-inner li { margin: 0 0 .35em; }
+.slide .text-inner.bullets > p { display: list-item; list-style: disc; margin-left: 1.1em; }
+.slide .text-inner.numbered { counter-reset: n; }
+.slide .text-inner.numbered > p { counter-increment: n; position: relative; padding-left: 1.6em; }
+.slide .text-inner.numbered > p::before { content: counter(n) "."; position: absolute; left: 0; opacity: .8; }
+.slide .text-inner a { color: inherit; }
+.slide .text-inner.empty::before { content: attr(data-prompt); opacity: .45; }
+.slide .text-inner[contenteditable="true"] { cursor: text; user-select: text; }
+.slide .item-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; box-sizing: border-box; }
+.slide .img-placeholder { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; border: 2px dashed rgba(128,128,128,.6); border-radius: 12px; color: rgba(128,128,128,.9); font: 20px var(--font, sans-serif); background: rgba(128,128,128,.08); }
+.slide .item-chart { position: absolute; inset: 0; width: 100%; height: 100%; }
+.slide .item-table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; }
+.slide .item-table th { background: var(--head); color: #fff; text-align: left; padding: .35em .6em; font-weight: 700; }
+.slide .item-table td { padding: .35em .6em; border-bottom: 1px solid var(--line); }
+.slide .item-table.striped tr:nth-child(even) td { background: rgba(128,128,128,.12); }
+.slide .slide-number { position: absolute; right: 28px; bottom: 18px; font-size: 18px; opacity: .8; }
+
+/* builds and transitions in the show */
+.build-hidden { visibility: hidden; }
+.anim-fade { animation: a-fade var(--dur, .5s) ease both; }
+.anim-fly { animation: a-fly var(--dur, .5s) cubic-bezier(.2,.8,.3,1) both; }
+.anim-flyLeft { animation: a-flyLeft var(--dur, .5s) cubic-bezier(.2,.8,.3,1) both; }
+.anim-zoom { animation: a-zoom var(--dur, .5s) cubic-bezier(.2,.8,.3,1) both; }
+.anim-pop { animation: a-pop var(--dur, .5s) cubic-bezier(.3,1.6,.5,1) both; }
+.anim-wipe { animation: a-wipe var(--dur, .5s) ease both; }
+@keyframes a-fade { from { opacity: 0; } }
+@keyframes a-fly { from { opacity: 0; translate: 0 60px; } }
+@keyframes a-flyLeft { from { opacity: 0; translate: -80px 0; } }
+@keyframes a-zoom { from { opacity: 0; scale: .4; } }
+@keyframes a-pop { 0% { opacity: 0; scale: .2; } }
+@keyframes a-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.tin-fade { animation: t-fadein var(--dur) ease both; }
+.tout-fade { animation: t-fadeout var(--dur) ease both; }
+.tin-slide.fwd { animation: t-slideinR var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tin-slide.back { animation: t-slideinL var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tout-slide { animation: t-fadeout var(--dur) ease both; }
+.tin-push.fwd { animation: t-pushinU var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tout-push.fwd { animation: t-pushoutU var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tin-push.back { animation: t-pushinD var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tout-push.back { animation: t-pushoutD var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tin-zoom { animation: t-zoomin var(--dur) cubic-bezier(.3,.8,.3,1) both; }
+.tout-zoom { animation: t-fadeout var(--dur) ease both; }
+.tin-cover.fwd { animation: t-slideinR var(--dur) cubic-bezier(.3,.8,.3,1) both; z-index: 2; }
+.tin-cover.back { animation: t-slideinL var(--dur) cubic-bezier(.3,.8,.3,1) both; z-index: 2; }
+.tout-cover { animation: none; }
+.tin-flip { animation: t-flipin var(--dur) ease both; backface-visibility: hidden; }
+.tout-flip { animation: t-flipout var(--dur) ease both; backface-visibility: hidden; }
+@keyframes t-fadein { from { opacity: 0; } }
+@keyframes t-fadeout { to { opacity: 0; } }
+@keyframes t-slideinR { from { translate: 100vw 0; } }
+@keyframes t-slideinL { from { translate: -100vw 0; } }
+@keyframes t-pushinU { from { translate: 0 100vh; } }
+@keyframes t-pushoutU { to { translate: 0 -100vh; } }
+@keyframes t-pushinD { from { translate: 0 -100vh; } }
+@keyframes t-pushoutD { to { translate: 0 100vh; } }
+@keyframes t-zoomin { from { opacity: 0; scale: .6; } }
+@keyframes t-flipin { from { rotate: y 90deg; } 50% { rotate: y 90deg; } }
+@keyframes t-flipout { to { rotate: y -90deg; } 50% { rotate: y -90deg; } }
+
+/* the show itself */
+.show-overlay, .audience { position: fixed; inset: 0; z-index: 20000; background: #000; }
+.show-stage { position: absolute; inset: 0; overflow: hidden; background: #000; cursor: none; }
+.show-stage.moving { cursor: default; }
+.show-stage.pen { cursor: crosshair; }
+.show-stage.laser { cursor: none; }
+.show-frame { position: absolute; inset: 0; }
+.show-frame .slide { position: absolute; }
+.show-ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.show-laser { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: radial-gradient(#ff5050 0 40%, rgba(255,40,40,.45) 60%, transparent 70%); pointer-events: none; box-shadow: 0 0 14px 4px rgba(255,40,40,.5); }
+.show-blank { position: absolute; inset: 0; }
+.show-end { position: absolute; inset: 0; display: grid; place-items: center; color: #9aa59d; font: 20px var(--font, sans-serif); }
+.show-bar { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 4px; align-items: center; opacity: 0; transition: opacity .2s; background: rgba(20,24,21,.8); border-radius: 10px; padding: 4px; color: #d5ddd7; font: 13px var(--font, sans-serif); }
+.show-stage.moving .show-bar, .show-bar:hover { opacity: 1; }
+.show-bar button { border: 0; background: transparent; color: inherit; width: 32px; height: 30px; border-radius: 6px; font-size: 16px; cursor: pointer; }
+.show-bar button:hover { background: rgba(255,255,255,.12); }
+.show-bar span { padding: 0 6px; font-variant-numeric: tabular-nums; }

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import snake_theme
-from .audio import MIC_DESC, AudioError, Player, VirtualDevices, default_source, list_input_sources
+from .audio import AudioError
 from .ipc import CommandServer
 from .library import AUDIO_EXTS, Library, is_audio_file
 
@@ -23,8 +23,13 @@ COL_NUM, COL_NAME, COL_VOL, COL_PATH = range(4)
 ICON_PATH = Path(__file__).resolve().parent / "assets" / "icon.svg"
 
 
+def _os_name() -> str:
+    import sys
+    return "windows" if sys.platform.startswith("win") else "macos" if sys.platform == "darwin" else "linux"
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, devices: VirtualDevices, player: Player, library: Library) -> None:
+    def __init__(self, devices, player, library: Library) -> None:
         super().__init__()
         self.devices = devices
         self.player = player
@@ -36,7 +41,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Snake's SoundPad")
         self.setWindowIcon(QIcon(str(ICON_PATH)))
         self.setMenuWidget(snake_theme.HeaderBar(
-            "Snake's SoundPad", f"Plays through “{MIC_DESC}” so voice chat hears it", ICON_PATH))
+            "Snake's SoundPad", "Plays through a microphone voice chat can hear", ICON_PATH))
         self.resize(820, 560)
         self.setAcceptDrops(True)
 
@@ -168,24 +173,41 @@ class MainWindow(QMainWindow):
         refresh.clicked.connect(self.refresh_mics)
         g.addWidget(refresh, 2, 2)
 
+        if self.devices.mode == "cable":
+            # No virtual mic of our own here: sounds go into a virtual cable.
+            g.addWidget(QLabel("Send sounds to:"), 5, 0)
+            self.out_combo = QComboBox()
+            self.out_combo.currentIndexChanged.connect(self._on_output_changed)
+            g.addWidget(self.out_combo, 5, 1)
+            self.refresh_outputs()
+
         self.overlap_chk = QCheckBox("Allow overlapping sounds (don't stop the previous one)")
         self.overlap_chk.setChecked(self.s.overlap)
         self.overlap_chk.toggled.connect(lambda v: self._set("overlap", v))
         g.addWidget(self.overlap_chk, 3, 0, 1, 3)
 
-        self.default_chk = QCheckBox(f"Make {MIC_DESC} the system default microphone while running "
+        self.default_chk = QCheckBox(f"Make {self.devices.mic_label} the system default microphone while running "
                                      "(for games with no input device setting)")
         self.default_chk.setChecked(self.s.make_default_mic)
         self.default_chk.toggled.connect(self._on_default_toggle)
         g.addWidget(self.default_chk, 4, 0, 1, 3)
+        self.default_chk.setVisible(self.devices.supports_default)
 
-        hint = QLabel(f"In Discord / your game, set the input device to <b>{MIC_DESC}</b> "
-                      "(or leave it on <i>Default</i> with the option above). Restart the game if it "
-                      "was already running. Tip: disable Discord's noise suppression &amp; echo "
-                      "cancellation for sounds, or they may get filtered out.")
+        if self.devices.mode == "cable":
+            from .cable import CABLE_HELP
+            name, url = CABLE_HELP.get(_os_name(), CABLE_HELP["linux"])
+            hint = QLabel(f"Sounds and your mic go into a free virtual cable ({name}, <a href=\"{url}\">get it here</a>). "
+                          f"In Discord or your game, set the input device to {self.devices.mic_label}. Tip: turn off "
+                          "Discord's noise suppression for sounds, or they may get filtered out.")
+            hint.setOpenExternalLinks(True)
+        else:
+            hint = QLabel(f"In Discord / your game, set the input device to <b>{self.devices.mic_label}</b> "
+                          "(or leave it on <i>Default</i> with the option above). Restart the game if it "
+                          "was already running. Tip: disable Discord's noise suppression &amp; echo "
+                          "cancellation for sounds, or they may get filtered out.")
         hint.setWordWrap(True)
         hint.setObjectName("hint")
-        g.addWidget(hint, 5, 0, 1, 3)
+        g.addWidget(hint, 6, 0, 1, 3)
         root.addWidget(box)
 
         self._on_mic_vol(self.mic_vol.value())
@@ -421,20 +443,43 @@ class MainWindow(QMainWindow):
 
     def refresh_mics(self) -> None:
         try:
-            sources = list_input_sources()
+            sources = self.devices.list_inputs()
             # Once our mic is the default, the real one is whatever was default before
-            default = self.devices.original_default or default_source()
+            default = self.devices.original_default or self.devices.default_input()
         except AudioError as e:
             self.status.setText(str(e))
             return
         wanted = self.s.mic_source or default
         self._populating = True
         self.mic_combo.clear()
-        for src in sources:
-            self.mic_combo.addItem(src.description, src.name)
+        for name, description in sources:
+            self.mic_combo.addItem(description, name)
         idx = self.mic_combo.findData(wanted)
         self.mic_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._populating = False
+
+    def refresh_outputs(self) -> None:
+        """Virtual-cable mode: the playback devices, with the cable chosen."""
+        wanted = self.s.output_device or self.devices.target
+        self._populating = True
+        self.out_combo.clear()
+        # Never guess a real speaker: until a cable is chosen, sounds only play to you.
+        self.out_combo.addItem("Choose your virtual cable…", None)
+        for dev_id, desc in self.devices.outputs():
+            self.out_combo.addItem(desc, dev_id)
+        idx = self.out_combo.findData(wanted) if wanted else -1
+        self.out_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._populating = False
+        self.devices.set_target(self.out_combo.currentData())
+
+    def _on_output_changed(self, idx: int) -> None:
+        if self._populating or idx < 0:
+            return
+        self._set("output_device", self.out_combo.itemData(idx))
+        try:
+            self.devices.set_target(self.out_combo.itemData(idx))
+        except AudioError as e:
+            QMessageBox.warning(self, "Virtual cable", str(e))
 
     def apply_passthrough(self) -> None:
         src = self.mic_combo.currentData() if self.s.mic_passthrough else None

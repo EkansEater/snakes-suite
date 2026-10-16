@@ -88,6 +88,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_job();
         snake_theme::screenshot_hook(ui.ctx());
+        snake_theme::ergonomics(ui.ctx(), "compressor");
 
         let dropped: Vec<PathBuf> =
             ui.ctx().input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());

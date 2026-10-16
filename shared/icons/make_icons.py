@@ -91,11 +91,46 @@ GLYPHS = {
   <path d="M30 182 L30 212 L60 212" {S}/>
   <path d="M226 182 L226 212 L196 212" {S}/>
   <path d="M226 110 L226 140" {S}/>""",
+    # Snake's Word: lines of text on the left, a W on the right.
+    "word": "\n".join(f'  <path d="M26 {y} L{x} {y}" {S}/>' for y, x in ((92, 62), (120, 54), (148, 62), (176, 44)))
+    + f"""
+  <path d="M190 104 L200 160 L211 124 L222 160 L232 104" {S}/>""",
+    # Snake's Spreadsheets: a grid of cells on each side.
+    "sheets": "\n".join(
+        f'  <rect x="{x}" y="86" width="44" height="88" rx="6" {S}/>\n  <path d="M{x} 115 L{x + 44} 115 M{x} 145 L{x + 44} 145 M{x + 22} 86 L{x + 22} 174" {S}/>'
+        for x in (22, 190)),
+    # Snake's Slides: a stack of slides on the left, a play button on the right.
+    "slides": "\n".join(f'  <rect x="22" y="{y}" width="44" height="26" rx="6" {S}/>' for y in (78, 115, 152))
+    + f"""
+  <path d="M196 102 L230 128 L196 154 Z" {F}/>""",
+    # Snake's Paint: paint dots on the left, a pencil on the right.
+    "paint": f"""  <path d="M196 170 L230 112" {S}/>
+  <path d="M188 184 L196 170 L204 176 Z" {F}/>""",
+    # Snake's Photo: a framed mountain on the left, stacked layers on the right.
+    "photo": f"""  <rect x="20" y="92" width="50" height="72" rx="8" {S}/>
+  <path d="M28 150 L42 128 L52 140 L58 132 L64 150" {S}/>
+  <path d="M190 112 L212 100 L234 112 L212 124 Z" {S}/>
+  <path d="M190 140 L212 152 L234 140" {S}/>
+  <path d="M190 166 L212 178 L234 166" {S}/>""",
+    # Snake's Player: a disc on the left, play on the right.
+    "player": f"""  <circle cx="44" cy="128" r="24" {S}/>
+  <circle cx="44" cy="128" r="5" {F}/>
+  <path d="M194 98 L234 128 L194 158 Z" {F}/>""",
+    # Snake's Movie Maker: a film strip on the left, a clapper on the right.
+    "movie": f"""  <rect x="22" y="78" width="40" height="100" rx="6" {S}/>
+  <path d="M22 103 L62 103 M22 128 L62 128 M22 153 L62 153" {S}/>
+  <rect x="190" y="118" width="42" height="56" rx="6" {S}/>
+  <path d="M190 104 L232 92" {S}/>""",
+    # Snake's Studio: sparkles either side.
+    "studio": f"""  <path d="M44 92 Q48 120 72 124 Q48 128 44 156 Q40 128 16 124 Q40 120 44 92 Z" {F}/>
+  <path d="M212 112 Q215 132 232 135 Q215 138 212 158 Q209 138 192 135 Q209 132 212 112 Z" {F}/>""",
 }
 
 # A record light for the Screen Recorder, bottom left of the snake.
 EXTRA = {
     "screen": f'  <circle cx="58" cy="128" r="14" fill="{RED}"/>\n',
+    "paint": "".join(f'  <circle cx="{x}" cy="{y}" r="11" fill="{c}"/>\n' for x, y, c in
+                     ((36, 92, RED), (56, 122, "#e3b341"), (36, 152, "#58a6ff"), (56, 180, "#7ee787"))),
 }
 
 

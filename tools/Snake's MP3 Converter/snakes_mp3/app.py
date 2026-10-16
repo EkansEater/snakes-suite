@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QSpinBox, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from . import APP_NAME, snake_theme
+from . import APP_NAME, snake_ergo, snake_theme
 from .downloader import NAME_TEMPLATES, QUALITIES, DownloadJob, JobOptions, human_bytes, human_time
 
 HERE = Path(__file__).resolve().parent
@@ -780,6 +780,7 @@ def main():
     app = QApplication(sys.argv)
     snake_theme.apply(app, icon_path=ICON_PATH)
     win = MainWindow()
+    snake_ergo.install(win)
     win.show()
     cli_urls = [u for a in sys.argv[1:] for u in URL_RE.findall(a)]
     if cli_urls:

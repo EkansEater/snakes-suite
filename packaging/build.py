@@ -6,6 +6,10 @@
     python packaging/build.py hub                the one-file Snake's Suite app
     python packaging/build.py index release/     index.json for the hub, from every package in a folder
     python packaging/build.py android release/   the latest release's Android APKs, to publish again
+    python packaging/build.py keygen             a key pair for signing the index (once, by you)
+
+With SNAKE_INDEX_KEY set (the private key keygen printed, kept as a GitHub secret),
+`index` also writes index.json.sig, which the app checks against release.index_pubkey.
 
 With --reuse, a tool (or the hub) whose version is the same as in the latest
 release is downloaded from that release instead of built again, so a release
@@ -260,6 +264,54 @@ def build_electron(tool: dict, install: bool) -> Path:
     return archive(tool, unpacked, {"launch": exe, "cli": None})
 
 
+_studio_built: Path | None = None
+
+
+def build_studio(tool: dict, install: bool) -> Path:
+    """Snake's Studio holds seven apps: build it once, as one package they all share.
+
+    With SNAKE_FFMPEG_DIR pointing at a folder holding ffmpeg and ffprobe, those are
+    bundled (Player and Movie Maker then play and export everything out of the box).
+    Mind ffmpeg's licence for the build you choose (an LGPL build is the simplest to share).
+    """
+    global _studio_built
+    if _studio_built is not None:
+        return _studio_built
+    npm = shutil.which("npm") or "npm"
+    root = Path(tempfile.mkdtemp(prefix="snake-build-studio-")) / "snakes-studio"
+    shutil.copytree(tool["root"], root, ignore=shutil.ignore_patterns("node_modules", "release", "dist"))
+    run([npm, "ci" if (root / "package-lock.json").exists() else "install"], cwd=root)
+    run([npm, "run", "build"], cwd=root)
+    flag = {"linux": "--linux", "windows": "--win", "macos": "--mac"}[OS]
+    npx = shutil.which("npx") or "npx"
+    run([npx, "--yes", "electron-builder", flag, "dir", "--publish", "never"], cwd=root,
+        env={"CSC_IDENTITY_AUTO_DISCOVERY": "false"})
+    out_dir = root / "release"
+    unpacked = next(p for p in out_dir.iterdir() if p.is_dir() and ("unpacked" in p.name or p.name.startswith("mac")))
+    app = next(unpacked.glob("*.app"), None) if OS == "macos" else None
+    resources = (app / "Contents" / "Resources") if app else (unpacked / "resources")
+    ff = os.environ.get("SNAKE_FFMPEG_DIR")
+    if ff:
+        (resources / "ffmpeg").mkdir(parents=True, exist_ok=True)
+        for name in ("ffmpeg", "ffprobe"):
+            src = Path(ff) / (name + EXE)
+            if not src.exists():
+                raise OSError(f"{src} is missing")
+            shutil.copy2(src, resources / "ffmpeg" / src.name)
+        if app and shutil.which("codesign"):  # new files inside the bundle need a fresh signature
+            run(["codesign", "--force", "--deep", "--sign", "-", app])
+    _, tools = catalogue()
+    apps = [t for t in tools.values() if t.get("studio_app")]
+    shared = {"id": "studio", "name": "Snake's Studio", "version": max((t["version"] for t in apps), key=lambda v: [int(x) for x in v.split(".") if x.isdigit()])}
+    if app:
+        meta = {"app_bundle": app.name, "cli": None, "shared": "studio"}
+    else:
+        exe = "Snake's Studio.exe" if OS == "windows" else "snakes-studio"
+        meta = {"launch": exe, "cli": None, "shared": "studio"}
+    _studio_built = archive(shared, unpacked, meta)
+    return _studio_built
+
+
 def build_source(tool: dict, install: bool) -> Path:
     """Tools that build themselves on the user's machine ship their tracked source files."""
     work = Path(tempfile.mkdtemp(prefix=f"snake-build-{tool['id']}-"))
@@ -289,6 +341,8 @@ def build_tool(tool: dict, install: bool) -> Path | None:
     say(f"\n=== {tool['name']} ({PLATFORM}) ===")
     if tool["package"].get("source"):
         return build_source(tool, install)
+    if tool.get("studio_app"):
+        return build_studio(tool, install)
     return BUILDERS[tool["kind"]](tool, install)
 
 
@@ -345,10 +399,14 @@ def reuse(tool: dict) -> bool:
         if not pkg or entry.get("version") != tool["version"]:
             return False
         out = RELEASE / pkg["file"]
-        ok = fetch(old, pkg, out)
+        if pkg.get("shared") and out.exists() and sha256(out) == pkg["sha256"]:
+            ok = True  # another Studio app already brought the shared package
+        else:
+            ok = fetch(old, pkg, out)
         if ok:  # the side file that make_index() reads
-            meta = {"id": tool["id"], "name": tool["name"], "version": tool["version"], "platform": PLATFORM,
-                    **{k: pkg[k] for k in ("launch", "cli", "cwd", "app_bundle") if k in pkg}}
+            shared = pkg.get("shared")
+            meta = {"id": shared or tool["id"], "name": "Snake's Studio" if shared else tool["name"], "version": tool["version"], "platform": PLATFORM,
+                    **{k: pkg[k] for k in ("launch", "cli", "cwd", "app_bundle", "shared") if k in pkg}}
             Path(str(out) + ".json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if ok:
         say(f"{tool['name']} {tool['version']}: unchanged, reused from v{old['version']}")
@@ -400,7 +458,7 @@ def make_index(folder: Path) -> Path:
             continue
         package = {
             "file": pkg.name, "size": pkg.stat().st_size, "sha256": sha256(pkg),
-            **{k: meta[k] for k in ("launch", "cli", "cwd", "app_bundle") if k in meta},
+            **{k: meta[k] for k in ("launch", "cli", "cwd", "app_bundle", "shared") if k in meta},
         }
         if meta["platform"].startswith("android"):
             # Android APKs are built and signed elsewhere (Snake's Suite APK) and can lag the
@@ -409,6 +467,13 @@ def make_index(folder: Path) -> Path:
             if meta["id"] == "suite":
                 index["hub"][meta["platform"]] = package
                 continue
+        if meta["id"] == "studio":
+            # One Studio package, listed under each of its apps with the switch that starts it.
+            package["shared"] = "studio"
+            for app in (t for t in data["tools"] if t.get("studio_app")):
+                e = index["tools"].setdefault(app["id"], {"version": app.get("version", meta["version"]), "packages": {}})
+                e["packages"][meta["platform"]] = {**package, "args": [f"--app={app['studio_app']}"]}
+            continue
         entry = index["tools"].setdefault(meta["id"], {"version": meta["version"], "packages": {}})
         if not meta["platform"].startswith("android"):
             entry["version"] = meta["version"]  # the tool's version is its desktop build's
@@ -418,18 +483,39 @@ def make_index(folder: Path) -> Path:
         index["hub"][plat] = {"file": hub.name, "size": hub.stat().st_size, "sha256": sha256(hub)}
     out = folder / "index.json"
     out.write_text(json.dumps(index, indent=2), encoding="utf-8")
+    key = os.environ.get("SNAKE_INDEX_KEY", "").strip()
+    if key:
+        # Signed so the app can tell this list really comes from you (Ed25519).
+        import base64
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        signer = Ed25519PrivateKey.from_private_bytes(base64.b64decode(key))
+        (folder / "index.json.sig").write_text(base64.b64encode(signer.sign(out.read_bytes())).decode() + "\n", encoding="utf-8")
+        say("-> index.json.sig")
     say(f"-> {out}  ({len(index['tools'])} tools, {len(index['hub'])} hub builds)")
     return out
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("what", choices=["tool", "tools", "hub", "index", "android"])
+    parser.add_argument("what", choices=["tool", "tools", "hub", "index", "android", "keygen"])
     parser.add_argument("names", nargs="*", help="tool ids, or the folder for index")
     parser.add_argument("--install", action="store_true", help="pip install PyInstaller and each Python tool first")
     parser.add_argument("--reuse", action="store_true", help="download what has not changed from the latest release")
     args = parser.parse_args()
     _, tools = catalogue()
+    if args.what == "keygen":
+        import base64
+
+        from cryptography.hazmat.primitives import serialization as ser
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        k = Ed25519PrivateKey.generate()
+        raw = lambda b: base64.b64encode(b).decode()  # noqa: E731
+        say("Private key (add it as the GitHub secret SNAKE_INDEX_KEY; never put it in a file you commit):")
+        say("  " + raw(k.private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption())))
+        say("Public key (put it in suite.json as release.index_pubkey):")
+        say("  " + raw(k.public_key().public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)))
+        return 0
     if args.what == "android":
         carry_android(Path(args.names[0]) if args.names else RELEASE)
         return 0

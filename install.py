@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Install Snake's Suite tools from this source folder (for developing them).
+"""Install Snake's Master Suite tools from this source folder (for developing them).
 
-People who just want the apps download the one-file Snake's Suite app instead,
+People who just want the apps download the one-file Snake's Master Suite app instead,
 which installs ready-made packages. This script builds each tool from source:
 
     python install.py                  choose from a list
@@ -13,7 +13,7 @@ which installs ready-made packages. This script builds each tool from source:
 Add --desktop to also put a shortcut on the desktop.
 
 Installed tools become normal apps (menu entries, Start menu, ~/Applications)
-through hub/snakes_suite/integrate.py, the same code the Snake's Suite app uses.
+through hub/snakes_suite/integrate.py, the same code the Snake's Master Suite app uses.
 Needs Python 3.10+; Rust builds the Compressor and the DAW, Node.js Snake's Code.
 """
 
@@ -163,7 +163,9 @@ def build_electron(tool: dict) -> dict:
         run([npm, "install"], cwd=root)
     run([npm, "run", "build"], cwd=root)
     # From source, Snake's Code runs from its own folder: Electron needs node_modules beside it.
-    return {"launch": [str(electron_binary(root)), str(root)], "cwd": str(root), "cli": None}
+    # The Studio apps share one folder; each starts it as itself.
+    extra = [f"--app={tool['studio_app']}"] if tool.get("studio_app") else []
+    return {"launch": [str(electron_binary(root)), str(root), *extra], "cwd": str(root), "cli": None}
 
 
 def build_script(tool: dict) -> dict:
@@ -266,14 +268,14 @@ def ask_gui(question: str) -> bool:
         if OS == "windows":
             import ctypes
 
-            return ctypes.windll.user32.MessageBoxW(None, question, "Snake's Suite", 0x24) == 6  # Yes/No, ?, IDYES
+            return ctypes.windll.user32.MessageBoxW(None, question, "Snake's Master Suite", 0x24) == 6  # Yes/No, ?, IDYES
         if OS == "macos":
             script = f'display dialog {json.dumps(question)} buttons {{"Cancel", "Uninstall"}} default button 2'
             return subprocess.run(["osascript", "-e", script], capture_output=True).returncode == 0
         if shutil.which("kdialog"):
-            return subprocess.run(["kdialog", "--title", "Snake's Suite", "--yesno", question]).returncode == 0
+            return subprocess.run(["kdialog", "--title", "Snake's Master Suite", "--yesno", question]).returncode == 0
         if shutil.which("zenity"):
-            return subprocess.run(["zenity", "--question", "--title=Snake's Suite", f"--text={question}"]).returncode == 0
+            return subprocess.run(["zenity", "--question", "--title=Snake's Master Suite", f"--text={question}"]).returncode == 0
     except OSError:
         pass
     return sys.stdin is not None and sys.stdin.isatty() and input(f"{question} [y/N] ").strip().lower()[:1] == "y"
@@ -281,12 +283,12 @@ def ask_gui(question: str) -> bool:
 
 def tell_gui(text: str) -> None:
     if OS == "linux" and shutil.which("notify-send"):
-        subprocess.run(["notify-send", "-a", "Snake's Suite", "Snake's Suite", text], capture_output=True)
+        subprocess.run(["notify-send", "-a", "Snake's Master Suite", "Snake's Master Suite", text], capture_output=True)
 
 
 # --------------------------------------------------------------------------- command line
 def print_list(tools: dict) -> None:
-    say(f"Snake's Suite on {OS}   (installs into {ig.DATA})\n")
+    say(f"Snake's Master Suite on {OS}   (installs into {ig.DATA})\n")
     for i, tool in enumerate(tools.values(), 1):
         if OS not in tool.get("platforms", []):
             state = f"{'/'.join(tool['platforms'])} only"
@@ -320,9 +322,9 @@ def choose(tools: dict) -> list[str]:
 
 def main() -> int:
     if sys.version_info < (3, 10):
-        say("Snake's Suite needs Python 3.10 or newer.")
+        say("Snake's Master Suite needs Python 3.10 or newer.")
         return 1
-    parser = argparse.ArgumentParser(description="Install Snake's Suite tools from source.")
+    parser = argparse.ArgumentParser(description="Install Snake's Master Suite tools from source.")
     parser.add_argument("tools", nargs="*", help="tool ids (see --list)")
     parser.add_argument("--all", action="store_true", help="the whole kit")
     parser.add_argument("--list", action="store_true", help="show the tools and what is installed")

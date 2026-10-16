@@ -1,6 +1,6 @@
 """Make an installed tool a normal app of the system, and undo that again.
 
-Used both by the Snake's Suite app (installing downloaded packages) and by
+Used both by the Snake's Master Suite app (installing downloaded packages) and by
 install.py (installing from source), so it needs nothing beyond the standard
 library.
 
@@ -140,7 +140,7 @@ def _write_command(command: str, cli: list[str], files: list) -> Path | None:
     wrapper = bin_dir / command
     if wrapper.is_symlink() or wrapper.exists():
         wrapper.unlink()
-    wrapper.write_text("#!/bin/sh\n# Installed by Snake's Suite\nexec "
+    wrapper.write_text("#!/bin/sh\n# Installed by Snake's Master Suite\nexec "
                        + " ".join(shlex.quote(a) for a in cli) + ' "$@"\n', encoding="utf-8")
     wrapper.chmod(0o755)
     files.append(str(wrapper))
@@ -183,6 +183,9 @@ def _integrate_linux(meta: dict, launch: dict, icons: dict, desktop: bool, files
         f"StartupWMClass={app_id}",
         "X-Snakes-Suite=true",
     ]
+    if meta.get("mime"):
+        # Offered in "Open with" for these kinds of file (the person still picks the default).
+        lines.append("MimeType=" + "".join(f"{m};" for m in meta["mime"]))
     if launch.get("cwd"):
         lines.append(f"Path={launch['cwd']}")
     if uninstaller:
@@ -265,9 +268,10 @@ def _integrate_windows(meta: dict, launch: dict, icons: dict, desktop: bool, fil
     target, *args = launch["launch"]
     cwd = launch.get("cwd") or str(Path(target).parent)
     # A packaged .exe carries the icon itself; a tool run by Python points at the .ico.
-    packaged_exe = target.lower().endswith(".exe") and "python" not in Path(target).name.lower()
+    # (The Studio apps share one program, so each takes its own icon file instead.)
+    packaged_exe = target.lower().endswith(".exe") and "python" not in Path(target).name.lower() and not meta.get("studio_app")
     icon = target if packaged_exe else icons.get("ico")
-    menu = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Snake's Suite"
+    menu = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Snake's Master Suite"
     links = [menu / f"{meta['name']}.lnk"]
     if desktop:
         links.append(desktop_dir() / f"{meta['name']}.lnk")

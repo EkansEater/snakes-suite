@@ -1,26 +1,35 @@
-# Snake's Suite
+# Snake's Master Suite
 
-Every Snake tool in one place: a hub app that opens them, and an installer
+Every Snake app in one place: a hub app that opens them, and an installer
 that puts each one on your computer as a normal app, alone or as a whole kit.
 
-| Tool | What it is | Linux | Windows | macOS |
+| App | What it is | Linux | Windows | macOS |
 |---|---|:-:|:-:|:-:|
+| Snake's Word | Word processor (.docx, .odt, Markdown, PDF) | ✓ | ✓ | ✓ |
+| Snake's Spreadsheets | Spreadsheets (.xlsx, CSV; ~250 functions, charts) | ✓ | ✓ | ✓ |
+| Snake's Slides | Presentations (.pptx, presenter view, PDF) | ✓ | ✓ | ✓ |
+| Snake's Paint | Drawing and pixel art | ✓ | ✓ | ✓ |
+| Snake's Photo | Photo editor: layers, masks, filters (.psd, .ora) | ✓ | ✓ | ✓ |
+| Snake's Player | Video and music player | ✓ | ✓ | ✓ |
+| Snake's Movie Maker | Video editor with timeline and export | ✓ | ✓ | ✓ |
 | Snake's Code | Code editor (Electron, Monaco) | ✓ | ✓ | ✓ |
 | Snake's Compressor | Lossless `.snake` archiver | ✓ | ✓ | ✓ |
 | Snake's Converter | Audio, video, image, document converter | ✓ | ✓ | ✓ |
 | Snake's Recompiler | N64 recompiler | ✓ | – | – |
-| Snake's SoundPad | Soundboard through a virtual mic | ✓ | – | – |
+| Snake's SoundPad | Soundboard into voice chat | ✓ | ✓ | ✓ |
 | Snake's MP3 Converter | Video links to tagged MP3s (was Snake's Sounds) | ✓ | ✓ | ✓ |
 | Snake's DAW | Amp, effects, looper, recording | ✓ | ✓ | ✓ |
 | Snake's Screen Recorder | Screen to MP4 / GIF, audio to MP3 | ✓ | ✓ | ✓ |
 
-SoundPad depends on PipeWire and the Recompiler's launcher on Unix process
-handling, so both are Linux only for now. The hub shows them as "Linux only"
-elsewhere.
+The first seven are one program, Snake's Studio (tools/Snake's Studio), which
+also runs as a website from its `dist/` folder. SoundPad makes its own virtual
+microphone on Linux; on Windows and macOS it plays into a free virtual cable
+(VB-CABLE or BlackHole). The Recompiler's launcher relies on Unix process
+handling, so it is Linux only for now.
 
 ## Download
 
-Get **Snake's Suite** for your system from the
+Get **Snake's Master Suite** for your system from the
 [latest release](https://github.com/EkansEater/snakes-suite/releases/latest). It is one file:
 
 | System | File |
@@ -33,7 +42,7 @@ Open it and it offers to install itself, with its own icon in your app list and
 on the desktop. Then pick any tool, or the whole kit: each downloads ready to
 run (no Python, Rust or Node.js needed) and installs as a normal app with its
 own snake icon, in the application menu, the Start menu or ~/Applications, and
-optionally on the desktop. Come back to Snake's Suite to update or remove tools.
+optionally on the desktop. Come back to Snake's Master Suite to update or remove apps.
 
 The apps are not signed by Microsoft or Apple, so the first time: on Windows
 choose *More info → Run anyway* if SmartScreen warns; on macOS right-click the

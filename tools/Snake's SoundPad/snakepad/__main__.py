@@ -39,7 +39,7 @@ def run_gui() -> int:
     from .ipc import send_command
     from .library import Library
 
-    from . import snake_theme
+    from . import snake_ergo, snake_theme
     from .gui import ICON_PATH
 
     app = QApplication(sys.argv)
@@ -52,14 +52,23 @@ def run_gui() -> int:
     if send_command("show", timeout_ms=300) is not None:
         return 0
 
-    devices = VirtualDevices()
-    try:
-        player = Player()
+    # Linux with PipeWire: our own virtual microphone. Anywhere else (or if that
+    # fails): a virtual cable the person installed, through Qt's own audio.
+    devices = player = None
+    if sys.platform.startswith("linux"):
+        devices = VirtualDevices()
+        try:
+            player = Player()
+            devices.setup()
+        except AudioError as e:
+            devices.teardown()
+            devices = None
+            print(f"Virtual microphone unavailable ({e}); using virtual-cable mode.", file=sys.stderr)
+    if devices is None:
+        from .cable import CableDevices, QtPlayer
+        devices = CableDevices()
         devices.setup()
-    except AudioError as e:
-        QMessageBox.critical(None, "Snake's SoundPad", f"Audio setup failed:\n{e}")
-        devices.teardown()
-        return 1
+        player = QtPlayer(devices)
 
     # Always remove the virtual devices, however we exit.
     def _cleanup() -> None:
@@ -67,7 +76,7 @@ def run_gui() -> int:
         devices.teardown()
 
     app.aboutToQuit.connect(_cleanup)
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    for sig in [s for s in (getattr(signal, n, None) for n in ('SIGINT', 'SIGTERM', 'SIGHUP')) if s is not None]:
         signal.signal(sig, lambda *_: app.quit())
     # Let Python see signals while Qt's loop runs
     from PySide6.QtCore import QTimer
@@ -75,6 +84,7 @@ def run_gui() -> int:
     tick.start()
 
     win = MainWindow(devices, player, Library.load())
+    snake_ergo.install(win)
     win.show()
     try:
         return app.exec()

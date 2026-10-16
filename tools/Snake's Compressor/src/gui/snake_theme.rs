@@ -190,3 +190,57 @@ pub fn screenshot_hook(ctx: &egui::Context) {
     }
     ctx.request_repaint();
 }
+
+/// Ergonomics, called at the start of every frame: Ctrl+wheel (or a touchpad
+/// pinch) makes the whole interface bigger or smaller, like Ctrl + and Ctrl −
+/// already do; the size is remembered for next time; a small badge shows it.
+///
+///     snake_theme::ergonomics(ui.ctx(), "compressor");
+pub fn ergonomics(ctx: &egui::Context, app: &str) {
+    use std::sync::Once;
+    static LOAD: Once = Once::new();
+    let file = zoom_file(app);
+    LOAD.call_once(|| {
+        if let Some(z) = file.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).and_then(|s| s.trim().parse::<f32>().ok()) {
+            ctx.set_zoom_factor(z.clamp(0.5, 3.0));
+        }
+    });
+    let delta = ctx.input(|i| i.zoom_delta());
+    let badge = egui::Id::new("snake-zoom-badge");
+    if (delta - 1.0).abs() > 1e-4 {
+        let z = (ctx.zoom_factor() * delta).clamp(0.5, 3.0);
+        ctx.set_zoom_factor(z);
+        if let Some(f) = &file {
+            if let Some(dir) = f.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(f, format!("{z:.3}"));
+        }
+        let now = ctx.input(|i| i.time);
+        ctx.data_mut(|d| d.insert_temp(badge, now));
+    }
+    // Show the new size for a moment.
+    if let Some(at) = ctx.data(|d| d.get_temp::<f64>(badge)) {
+        let now = ctx.input(|i| i.time);
+        if now - at < 1.0 {
+            egui::Area::new(badge).anchor(egui::Align2::CENTER_TOP, [0.0, 48.0]).interactable(false).show(ctx, |ui| {
+                egui::Frame::new().fill(WIDGET).stroke(egui::Stroke::new(1.0, BORDER2)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
+                    ui.label(egui::RichText::new(format!("{}%", (ctx.zoom_factor() * 100.0).round())).color(FG));
+                });
+            });
+            ctx.request_repaint();
+        }
+    }
+}
+
+/// Where the interface size is kept: the system's settings folder for this app.
+fn zoom_file(app: &str) -> Option<std::path::PathBuf> {
+    let base = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(std::path::PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+    }?;
+    Some(base.join("snakes-master-suite").join(format!("{app}-zoom.txt")))
+}

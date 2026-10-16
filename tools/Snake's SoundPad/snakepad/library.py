@@ -36,6 +36,7 @@ class Settings:
     mic_source: str | None = None  # None = system default at startup
     make_default_mic: bool = True  # set our virtual mic as the system default input
     overlap: bool = False
+    output_device: str | None = None  # virtual-cable mode: where sounds go (the cable's input)
 
 
 @dataclass

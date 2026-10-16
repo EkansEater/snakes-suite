@@ -227,6 +227,7 @@ fn draw_wave(p: &Painter, rect: Rect, view: View, first: i64, peaks: &[(f32, f32
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        crate::snake_theme::ergonomics(ctx, "daw");
         self.tick();
         self.shortcuts(ctx);
         egui::TopBottomPanel::top("top").frame(theme::header_frame()).show(ctx, |ui| self.top_bar(ui));

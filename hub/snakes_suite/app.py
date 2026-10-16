@@ -1,4 +1,4 @@
-"""The Snake's Suite window: a grid of every Snake tool. Click one to open it, or to install it.
+"""The Snake's Master Suite window: a grid of every Snake tool. Click one to open it, or to install it.
 
 Run from the one-file download, it installs itself on first use and downloads
 ready-made tool packages from the release. Run from the source kit with no
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import APP_NAME, __version__, packages, snake_theme
+from . import APP_NAME, __version__, packages, signing, snake_ergo, snake_theme
 from . import integrate as ig
 from .registry import OS, Tool, installer_python, kit_root, load_tools, pid_alive, remove_legacy
 
@@ -291,7 +291,7 @@ class InstallDialog(QDialog):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(QLabel("Which tools would you like?", objectName="heading"))
         lay.addWidget(QLabel("Each one installs as a normal app with its own icon. You can add or remove "
-                             "tools later from Snake's Suite.", objectName="muted", wordWrap=True))
+                             "tools later from Snake's Master Suite.", objectName="muted", wordWrap=True))
         lay.addSpacing(6)
         self.checks: dict[str, QCheckBox] = {}
         box = QFrame(objectName="card")
@@ -360,7 +360,9 @@ class InstallDialog(QDialog):
 
     def _update_total(self):
         picked = [t for t in self.tools if self.checks[t.id].isChecked()]
-        size = sum(t.package["size"] for t in picked)
+        # A package several apps share (Snake's Studio) downloads once, or not at all if it is here already.
+        files = {t.package["file"]: t.package["size"] for t in picked if not packages.shared_ready(t.package)}
+        size = sum(files.values())
         self.total.setText(f"{len(picked)} selected · {human_size(size)} to download" if picked else "Nothing selected")
         self.go.setEnabled(bool(picked))
 
@@ -390,6 +392,9 @@ class InstallDialog(QDialog):
             return self._all_done()
         tool = self.queue.pop(0)
         row = self.rows[tool.id]
+        if packages.shared_ready(tool.package):
+            # Another Studio app already brought this package: just add this app's launcher.
+            return self._downloaded(tool, self.tmp / tool.package["file"], "")
         row.set("Downloading…", fraction=0)
         dest = self.tmp / tool.package["file"]
         self.current = Download(self.nam, tool.package["url"], dest)
@@ -522,7 +527,7 @@ class UninstallDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 16, 18, 14)
         lay.addWidget(QLabel("What would you like to remove?", objectName="heading"))
-        lay.addWidget(QLabel("Old versions were installed by a tool's own install script, before Snake's Suite; "
+        lay.addWidget(QLabel("Old versions were installed by a tool's own install script, before Snake's Master Suite; "
                              "they cannot be updated. Your own files (projects, recordings, settings) are kept.",
                              objectName="muted", wordWrap=True))
         lay.addSpacing(6)
@@ -551,7 +556,7 @@ class UninstallDialog(QDialog):
             rows.addWidget(QLabel("No Snake tools are installed.", objectName="muted"))
         lay.addWidget(box)
         lay.addStretch(1)
-        self.replace = QCheckBox("Install the Snake's Suite version of removed old versions")
+        self.replace = QCheckBox("Install the Snake's Master Suite version of removed old versions")
         self.replace.setChecked(not everything)
         self.replace.setVisible(any(t.legacy and t.installable and not t.installed for t in tools))
         lay.addWidget(self.replace)
@@ -589,7 +594,7 @@ class Hub(QMainWindow):
         self.index_state = "checking"
         self.nam = QNetworkAccessManager(self)
         self.updating = False  # an update (of this app or of tools) is under way
-        self.hub_update: dict | None = None  # a newer Snake's Suite, when there is one
+        self.hub_update: dict | None = None  # a newer Snake's Master Suite, when there is one
         self.just_updated = False  # started by an update of itself
 
         root = QWidget(objectName="root")
@@ -621,7 +626,7 @@ class Hub(QMainWindow):
         self.install_all_btn.clicked.connect(self.install_all)
         section.addWidget(self.install_all_btn)
         self.uninstall_all_btn = QPushButton("Uninstall all", objectName="danger",
-                                             toolTip="Remove every installed tool (Snake's Suite itself stays)")
+                                             toolTip="Remove every installed tool (Snake's Master Suite itself stays)")
         self.uninstall_all_btn.clicked.connect(self.uninstall_all)
         section.addWidget(self.uninstall_all_btn)
         self.page_lay.addLayout(section)
@@ -685,7 +690,7 @@ class Hub(QMainWindow):
         auto.setChecked(packages.settings()["auto_update"])
         auto.toggled.connect(self.set_auto_update)
         menu.addSeparator()
-        menu.addAction("Uninstall Snake's Suite…", self.uninstall_everything)
+        menu.addAction("Uninstall Snake's Master Suite…", self.uninstall_everything)
         more.setMenu(menu)
         lay.addWidget(more)
         return bar
@@ -713,7 +718,7 @@ class Hub(QMainWindow):
         lay.setSpacing(12)
         text = QVBoxLayout()
         text.setSpacing(2)
-        text.addWidget(QLabel("Install Snake's Suite on this computer", objectName="heading"))
+        text.addWidget(QLabel("Install Snake's Master Suite on this computer", objectName="heading"))
         text.addWidget(QLabel("It gets its own icon in your app list, so you can come back to add, update or "
                               "remove tools.", objectName="muted", wordWrap=True))
         lay.addLayout(text, 1)
@@ -727,7 +732,7 @@ class Hub(QMainWindow):
         return banner
 
     def _old_banner(self) -> QFrame:
-        """Shown when tools installed before Snake's Suite (by their own scripts) are still around."""
+        """Shown when tools installed before Snake's Master Suite (by their own scripts) are still around."""
         banner = QFrame(objectName="oldBanner")
         lay = QHBoxLayout(banner)
         lay.setContentsMargins(16, 12, 12, 12)
@@ -784,19 +789,43 @@ class Hub(QMainWindow):
         req.setTransferTimeout(15000)
         reply = self.nam.get(req)
 
-        def done():
+        pubkey = packages.catalogue().get("release", {}).get("index_pubkey", "")
+
+        def use(raw: bytes) -> None:
             try:
-                if reply.error() == QNetworkReply.NetworkError.NoError:
-                    self.index = json.loads(bytes(reply.readAll()).decode("utf-8"))
-                    self.index_state = "ok"
-                else:
-                    self.index_state = "offline"
+                self.index = json.loads(raw.decode("utf-8"))
+                self.index_state = "ok"
             except ValueError:
                 self.index_state = "offline"
-            reply.deleteLater()
             self.reload()
             if self.index_state == "ok":
                 self.auto_update()
+
+        def done():
+            raw = bytes(reply.readAll()) if reply.error() == QNetworkReply.NetworkError.NoError else None
+            reply.deleteLater()
+            if raw is None:
+                self.index_state = "offline"
+                return self.reload()
+            if not pubkey:
+                return use(raw)
+            # The list of downloads must carry your signature, or nothing is downloaded from it.
+            sig_req = QNetworkRequest(QUrl(url + ".sig"))
+            sig_req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
+                                 QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
+            sig_req.setTransferTimeout(15000)
+            sig_reply = self.nam.get(sig_req)
+
+            def checked():
+                sig = bytes(sig_reply.readAll()).decode("ascii", "replace") if sig_reply.error() == QNetworkReply.NetworkError.NoError else ""
+                sig_reply.deleteLater()
+                if sig and signing.verify_b64(pubkey, raw, sig):
+                    return use(raw)
+                self.index = None
+                self.index_state = "untrusted"
+                self.reload()
+
+            sig_reply.finished.connect(checked)
 
         reply.finished.connect(done)
 
@@ -826,7 +855,7 @@ class Hub(QMainWindow):
         dialog.open()
 
     def update_hub(self, pkg: dict | None) -> None:
-        """Download the new Snake's Suite, put it in place of this one, and start it."""
+        """Download the new Snake's Master Suite, put it in place of this one, and start it."""
         if not pkg or self.updating:
             return
         self.updating = True
@@ -836,25 +865,25 @@ class Hub(QMainWindow):
         self._hub_download = Download(self.nam, pkg["url"], download)
         size = pkg.get("size") or 1
         self._hub_download.progress.connect(lambda got, total: self.status.setText(
-            f"Updating Snake's Suite to v{pkg['version']}… {human_size(got)} of {human_size(total if total > 0 else size)}"))
+            f"Updating Snake's Master Suite to v{pkg['version']}… {human_size(got)} of {human_size(total if total > 0 else size)}"))
 
         def failed(msg: str):
             self.updating = False
             self.hub_update_btn.setEnabled(True)
             download.unlink(missing_ok=True)
-            self.status.setText(f"Snake's Suite could not be updated: {msg}")
+            self.status.setText(f"Snake's Master Suite could not be updated: {msg}")
 
         def restart(start: list):
             download.unlink(missing_ok=True)
             if QProcess.startDetached(start[0], [*start[1:], "--updated"])[0]:
                 QApplication.quit()
             else:
-                failed("the new version is in place but did not start; open Snake's Suite again")
+                failed("the new version is in place but did not start; open Snake's Master Suite again")
 
         def downloaded(error: str):
             if error:
                 return failed(error)
-            self.status.setText(f"Installing Snake's Suite v{pkg['version']}…")
+            self.status.setText(f"Installing Snake's Master Suite v{pkg['version']}…")
             job = Job(lambda: packages.replace_hub(pkg, download))
             job.ok.connect(restart)
             job.failed.connect(failed)
@@ -869,7 +898,7 @@ class Hub(QMainWindow):
         self.tools = load_tools(self.index)
         self.hub_update = packages.hub_package(self.index)
         if self.hub_update:
-            self.hub_update_btn.setText(f"Update Snake's Suite to v{self.hub_update['version']}  ")
+            self.hub_update_btn.setText(f"Update Snake's Master Suite to v{self.hub_update['version']}  ")
         self.hub_update_btn.setVisible(bool(self.hub_update))
         for tile in self.tiles:
             tile.deleteLater()
@@ -890,7 +919,7 @@ class Hub(QMainWindow):
         if old:
             self.old_title.setText("Older version found" if len(old) == 1 else f"{len(old)} older versions found")
             self.old_text.setText(", ".join(t.name for t in old) + (" was" if len(old) == 1 else " were")
-                                  + " installed before Snake's Suite and cannot be updated from here. "
+                                  + " installed before Snake's Master Suite and cannot be updated from here. "
                                   "Remove them, and install the new versions if you like.")
         self.old_banner.setVisible(bool(old) and not self.old_dismissed)
         self._layout_tiles()
@@ -907,7 +936,8 @@ class Hub(QMainWindow):
         if updates:
             text += f" · {updates} update{'s' if updates != 1 else ''} available"
         extra = {"checking": "checking for downloads…",
-                 "offline": "could not reach the download server; showing what is installed"}.get(self.index_state)
+                 "offline": "could not reach the download server; showing what is installed",
+                 "untrusted": "the download list's signature did not match, so nothing is downloaded from it"}.get(self.index_state)
         if self.just_updated:
             text = f"Updated to v{__version__} · " + text
         self.status.setText(text + (f" · {extra}" if extra else ""))
@@ -933,7 +963,7 @@ class Hub(QMainWindow):
             self.grid.addWidget(tile, i // columns, i % columns)
             tile.show()
         if not self.tools:
-            self.empty.setText("No tools are known to this copy of Snake's Suite.")
+            self.empty.setText("No tools are known to this copy of Snake's Master Suite.")
         elif not tiles:
             self.empty.setText(f"No tool matches “{self.search.text()}”.")
         self.empty.setVisible(not tiles)
@@ -1011,10 +1041,10 @@ class Hub(QMainWindow):
         try:
             notes = packages.self_install(desktop=self.banner_desktop.isChecked())
         except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, APP_NAME, f"Snake's Suite could not be installed:\n\n{e}")
+            QMessageBox.warning(self, APP_NAME, f"Snake's Master Suite could not be installed:\n\n{e}")
             return
         where = {"linux": "your application menu", "windows": "the Start menu", "macos": "your Applications folder"}[OS]
-        QMessageBox.information(self, APP_NAME, f"Snake's Suite is installed. You will find it in {where}.\n\n"
+        QMessageBox.information(self, APP_NAME, f"Snake's Master Suite is installed. You will find it in {where}.\n\n"
                                 "You can delete the file you downloaded." + ("\n\n" + "\n".join(notes) if notes else ""))
         self.reload()
 
@@ -1068,7 +1098,7 @@ class Hub(QMainWindow):
         if tool.icon:
             box.setIconPixmap(QIcon(str(tool.icon)).pixmap(QSize(56, 56)))
         box.setText(f"{tool.name} was installed by its old install script.")
-        box.setInformativeText("Snake's Suite cannot update or uninstall that copy. Replace it with the Snake's "
+        box.setInformativeText("Snake's Master Suite cannot update or uninstall that copy. Replace it with the Snake's "
                                "Suite version (which you can uninstall from here or by right-clicking it in your "
                                "app menu), or just remove it.")
         replace = box.addButton("Replace", QMessageBox.ButtonRole.AcceptRole) if tool.installable else None
@@ -1087,12 +1117,12 @@ class Hub(QMainWindow):
     def uninstall_everything(self) -> None:
         installed = [t for t in self.tools if t.installed]
         names = "\n".join(f"  • {t.name}" for t in installed)
-        text = "Remove Snake's Suite" + (f" and every tool installed with it?\n\n{names}" if installed else "?")
+        text = "Remove Snake's Master Suite" + (f" and every tool installed with it?\n\n{names}" if installed else "?")
         if QMessageBox.question(self, APP_NAME, text + "\n\nYour own files are kept.") != QMessageBox.StandardButton.Yes:
             return
         for tool_id in [t.id for t in installed] + ["suite"]:
             packages.uninstall(tool_id)
-        QMessageBox.information(self, APP_NAME, "Snake's Suite has been removed.")
+        QMessageBox.information(self, APP_NAME, "Snake's Master Suite has been removed.")
         QApplication.quit()
 
     def tool_menu(self, tool: Tool, pos) -> None:
@@ -1109,7 +1139,7 @@ class Hub(QMainWindow):
             menu.addAction("Uninstall…", lambda: self.uninstall(tool))
         elif tool.legacy:
             if tool.installable:
-                menu.addAction("Replace with the Snake's Suite version", lambda: self.install([tool]))
+                menu.addAction("Replace with the Snake's Master Suite version", lambda: self.install([tool]))
             menu.addAction("Remove old version", lambda: (remove_legacy(tool.legacy), self.reload()))
         elif tool.installable:
             menu.addAction("Install…", lambda: self.install([tool]))
@@ -1126,7 +1156,7 @@ def uninstall_from_command_line(tool_id: str, yes: bool) -> int:
     tools = {t["id"]: t for t in packages.catalogue().get("tools", [])}
     if tool_id == "suite":
         ids = [t for t in ig.installed_ids() if t != "suite"] + ["suite"]
-        what = "Snake's Suite and every tool installed with it"
+        what = "Snake's Master Suite and every tool installed with it"
     else:
         ids = [tool_id]
         what = tools.get(tool_id, {}).get("name", tool_id)
@@ -1162,5 +1192,6 @@ def main() -> int:
     hub = Hub()
     hub.just_updated = args.updated
     hub._update_status()
+    snake_ergo.install(hub)
     hub.show()
     return app.exec()

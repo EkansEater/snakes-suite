@@ -5,7 +5,7 @@
 Each tool must still build and run on its own, so instead of depending on this
 folder it gets its own copy of:
 
-  * the Qt theme (shared/qt/snake_theme.py) or the egui theme (shared/egui/snake_theme.rs),
+  * the Qt theme and ergonomics (shared/qt/snake_theme.py, snake_ergo.py) or the egui theme (shared/egui/snake_theme.rs),
   * its icon as icon.svg / icon.png / icon.ico (and a raw 64 px RGBA for egui and SDL),
   * for the Recompiler's SDL launcher, the palette as a C header.
 
@@ -24,6 +24,7 @@ SUITE = Path(__file__).resolve().parent.parent
 SHARED = SUITE / "shared"
 ICONS = SHARED / "icons"
 QT_THEME = SHARED / "qt" / "snake_theme.py"
+QT_ERGO = SHARED / "qt" / "snake_ergo.py"
 EGUI_THEME = SHARED / "egui" / "snake_theme.rs"
 
 
@@ -69,6 +70,8 @@ def sync_tool(tool: dict, root: Path) -> None:
     assets = tool.get("assets", {})
     if "qt_theme" in tool:
         write(root / tool["qt_theme"], QT_THEME.read_text())
+        # The ergonomics module sits next to the theme.
+        write((root / tool["qt_theme"]).with_name("snake_ergo.py"), QT_ERGO.read_text())
     if "egui_theme" in tool:
         write(root / tool["egui_theme"], EGUI_THEME.read_text())
     if "c_palette" in tool:
