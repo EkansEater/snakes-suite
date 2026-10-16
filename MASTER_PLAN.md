@@ -96,7 +96,7 @@ tools/Snake's Studio/
 - [x] Online mirror built: `.github/workflows/pages.yml` deploys Studio `dist/` to https://ekanseater.github.io/snakes-suite/ on pushes to main; per-app web manifests (installable), frame guard, desktop download link
 - [x] Fixes found while finishing: Studio children (ffmpeg, ffprobe, app launches) inherited ~90 Chromium descriptors on Linux (IPC sockets, shared memory, GPU device); they now start through `clean()` in src/main/media.js, which closes all but stdio. Player and the Studio home could not close (main waited for a close answer only guarded pages send); now only pages that register a guard are asked. Slides template thumbnails and table header colours (CSS custom properties set through Object.assign). Long window titles no longer cover the menus.
 - [x] v1.1.5 released (all four builds green, index signed and verified). Its macOS Studio packages have no ffmpeg: the link missed libiconv (fixed in build.sh with --extra-libs=-liconv). `.github/workflows/ffmpeg.yml` now builds and checks ffmpeg on all four systems when packaging/ffmpeg changes on main, and leaves it in a cache the release tags can use (caches saved under a tag are not shared with later tags)
-- [ ] v1.1.6: Studio apps 1.0.1 so the macOS packages get rebuilt with ffmpeg (needs the ffmpeg workflow green first)
+- [x] v1.1.6 released (2026-10-16): ffmpeg workflow green on all four systems first; every Studio package now carries ffmpeg (macOS arm64 and x86_64 checked in the published archives); index signed and verified; Studio apps 1.0.1
 - [ ] Follow-up: Snake's Code's children (rg, git, terminal shells) inherit the same descriptors
 - [x] Publish (2026-10-16): secret SNAKE_INDEX_KEY set by the owner; versions raised (release v1.1.5, hub 1.1.3, Studio apps 1.0.0, other tools 1.0.1); Pages on (Source: GitHub Actions); main fast-forwarded to `master-suite`; tag v1.1.5 pushed to start the Release workflow
 
@@ -114,6 +114,6 @@ tools/Snake's Studio/
 Everything is built and tested locally on the `master-suite` branch: the Studio and its seven
 apps, the overhaul of every tool, the hub, packaging with ffmpeg (a Linux Studio package was
 built and played an AC3 MKV through its own ffmpeg), the signed index and the web mirror
-workflow. All of it is on main and released as v1.1.5 (the first release built by the new
-workflow: check its run in the Actions tab, macOS and Windows were not built locally). Test helpers: `SNAKE_TEST_SAVEAS=<dir>` (Save As without a
+workflow. All of it is on main and released as v1.1.6. Not yet done by hand: running the
+packages on a real Windows PC or Mac (CI builds them, nobody has opened them there). Test helpers: `SNAKE_TEST_SAVEAS=<dir>` (Save As without a
 dialog), `SNAKE_TEST_PDF=<path>`. Next releases: `python ship.py`.
