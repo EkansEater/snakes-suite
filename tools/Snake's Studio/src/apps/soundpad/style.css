@@ -1,0 +1,36 @@
+@import "../../kit/kit.css";
+
+.pad-root { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.pad-bar { gap: 4px; flex-wrap: nowrap; }
+.pad-search { width: 200px; }
+.pad-vol { color: var(--fg2); display: grid; place-items: center; margin-left: 6px; }
+.pad-bar input[type="range"] { width: 110px; }
+
+/* The pads: --pad is their size (Ctrl+wheel or two fingers over them). */
+.pad-grid {
+  --pad: 132px; flex: 1; overflow: auto; padding: 16px; display: grid; gap: 12px; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(var(--pad), 1fr)); outline: none;
+}
+.pad {
+  --padc: var(--accent); position: relative; height: calc(var(--pad) * .72); min-height: 64px; border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--border2); background: linear-gradient(160deg, color-mix(in srgb, var(--padc) 22%, var(--side)), var(--side));
+  color: var(--fg); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 10px 10px 14px;
+  font-size: calc(var(--pad) * .105 + 2px); font-weight: 600; text-align: center; transition: transform .08s, border-color .12s;
+  border-left: 4px solid var(--padc); user-select: none;
+}
+.pad:hover { border-color: var(--padc); }
+.pad:active { transform: scale(.97); }
+.pad.on { border-color: var(--padc); box-shadow: 0 0 0 2px var(--padc) inset; }
+.pad-name { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
+.pad-key { position: absolute; top: 6px; right: 8px; font: 600 11px var(--mono); color: var(--fg2); border: 1px solid var(--border2); border-radius: 4px; padding: 0 4px; background: var(--input); }
+.pad-volnote { position: absolute; top: 6px; left: 8px; font-size: 11px; color: var(--fg2); font-weight: 400; }
+.pad-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: transparent; }
+.pad-progress > div { height: 100%; width: 0; background: var(--padc); }
+
+.pad-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 24px; color: var(--fg2); }
+.pad-empty h2 { color: var(--fg); margin: 6px 0 0; font-weight: 500; }
+.pad-empty p { max-width: 420px; margin: 0 0 8px; }
+
+.phone .pad-search { width: 120px; min-width: 80px; }
+.phone .pad-bar input[type="range"] { width: 70px; }
+.phone .pad-grid { padding: 10px; gap: 8px; }

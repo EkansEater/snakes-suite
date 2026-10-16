@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { APPS, HOME } = require('./src/main/apps.js');
+const { APPS, WEB_APPS, WEB_HOME } = require('./src/main/apps.js');
 
 const watch = process.argv.includes('--watch');
 const out = 'dist';
@@ -52,15 +52,15 @@ const page = (id, title, icon, script = 'app.js', css = 'style.css') => `<!docty
 
 const entries = {};
 const pages = [];
-const all = { ...APPS, home: HOME };
+const all = { ...APPS, ...WEB_APPS, home: WEB_HOME };
 for (const [id, meta] of Object.entries(all)) {
   const dir = path.join('src', id === 'home' ? 'home' : `apps/${id}`);
   if (!fs.existsSync(path.join(dir, 'main.js'))) continue;
   entries[`${id}/app`] = path.join(dir, 'main.js');
   entries[`${id}/style`] = path.join(dir, 'style.css');
-  pages.push([path.join(out, id, 'index.html'), page(id, meta.name, id === 'home' ? 'studio' : id)]);
+  pages.push([path.join(out, id, 'index.html'), page(id, meta.name, id === 'home' ? 'suite' : id)]);
   // On the website each app can be installed as its own window (Install app in Chrome/Edge).
-  const icon = id === 'home' ? 'studio' : id;
+  const icon = id === 'home' ? 'suite' : id;
   pages.push([path.join(out, id, 'manifest.webmanifest'), JSON.stringify({
     name: meta.name, short_name: meta.short, description: meta.tagline,
     start_url: './index.html', scope: './', display: 'standalone', background_color: '#1a1e1b', theme_color: '#111412',
@@ -86,8 +86,13 @@ function copyStatic() {
     fs.writeFileSync(file, html);
   }
   for (const f of fs.readdirSync('assets/icons')) fs.copyFileSync(path.join('assets/icons', f), path.join(out, 'icons', f));
+  // Every other Snake app's icon, for the suite's front page (shared/icons is their home).
+  const shared = path.join('..', '..', 'shared', 'icons');
+  for (const f of fs.readdirSync(shared).filter((n) => /\.(svg|png)$/.test(n))) {
+    if (!fs.existsSync(path.join(out, 'icons', f))) fs.copyFileSync(path.join(shared, f), path.join(out, 'icons', f));
+  }
   // The website's front door.
-  fs.writeFileSync(path.join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=home/index.html"><title>Snake's Studio</title><a href="home/index.html">Snake's Studio</a>\n`);
+  fs.writeFileSync(path.join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=home/index.html"><title>Snake's Master Suite</title><a href="home/index.html">Snake's Master Suite</a>\n`);
 }
 
 const opts = {

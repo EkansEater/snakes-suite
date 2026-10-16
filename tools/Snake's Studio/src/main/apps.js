@@ -44,6 +44,15 @@ const APPS = {
   },
 };
 
-const HOME = { name: "Snake's Studio", short: 'Studio', tagline: 'Office, creative and media apps' };
+// The other Snake apps, for the website and the phone apps: browser versions built on the
+// same kit. On the desktop and Android each has its own native app (installed by the hub),
+// so they are not Studio windows there.
+const WEB_APPS = {
+  soundpad: { name: "Snake's SoundPad", short: 'SoundPad', tagline: 'Soundboard', open: [{ name: 'Sounds', exts: audio }] },
+};
 
-module.exports = { APPS, HOME, VIDEO_EXTS: video, AUDIO_EXTS: audio, IMAGE_EXTS: images.exts };
+const HOME = { name: "Snake's Studio", short: 'Studio', tagline: 'Office, creative and media apps' };
+// The same page is the website's front door: there it is the whole suite.
+const WEB_HOME = { name: "Snake's Master Suite", short: 'Master Suite', tagline: 'Every Snake app in one place' };
+
+module.exports = { APPS, WEB_APPS, HOME, WEB_HOME, VIDEO_EXTS: video, AUDIO_EXTS: audio, IMAGE_EXTS: images.exts };
