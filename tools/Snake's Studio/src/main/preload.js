@@ -16,7 +16,9 @@ contextBridge.exposeInMainWorld('snakeHost', {
   kind: 'electron',
   init: invoke('app:init'),
   launch: invoke('app:launch'),
-  onBeforeClose: on('app:beforeClose'),
+  // A page that registers this answers every close itself (unsaved changes); other
+  // pages' windows simply close.
+  onBeforeClose: (cb) => { ipcRenderer.send('win:guardClose'); return on('app:beforeClose')(cb); },
 
   win: {
     minimize: send('win:minimize'),

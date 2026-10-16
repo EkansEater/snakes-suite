@@ -12,3 +12,5 @@
 .tile img { width: 64px; height: 64px; }
 .tile .name { font-weight: 600; font-size: 14px; }
 .tile .tag { color: var(--fg2); font-size: 12px; text-align: center; }
+.hero .web-note { margin-top: 8px; font-size: 13px; }
+.hero .web-note a { color: var(--accent); }

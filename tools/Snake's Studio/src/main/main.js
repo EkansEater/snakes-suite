@@ -221,7 +221,7 @@ function createWindow(files = [], opts = {}) {
     if (win.snakeMain && windows.size >= 1) {
       writeJson('window.json', { bounds: win.getNormalBounds(), maximized: win.isMaximized() });
     }
-    if (win.snakeForceClose || win.webContents.isCrashed() || !win.snakeMain) return;
+    if (win.snakeForceClose || win.webContents.isCrashed() || !win.snakeMain || !win.snakeGuarded) return;
     e.preventDefault();
     send('app:beforeClose');
     // A page that hangs must not keep its window open forever.
@@ -354,6 +354,7 @@ function registerIpc() {
   // ---- window ----
   listen('win:minimize', (win) => win.minimize());
   listen('win:toggleMaximize', (win) => (win.isMaximized() ? win.unmaximize() : win.maximize()));
+  listen('win:guardClose', (win) => { win.snakeGuarded = true; });
   listen('win:close', (win) => win.close());
   listen('win:forceClose', (win) => { win.snakeForceClose = true; win.close(); });
   listen('win:setTitle', (win, t) => win.setTitle(str(t, 300) || META.name));
@@ -385,7 +386,7 @@ function registerIpc() {
   handle('app:launch', (_e, _win, id) => {
     if (!APPS[id]) throw new Error('Unknown app');
     const args = app.isPackaged ? [`--app=${id}`] : [ROOT, `--app=${id}`];
-    spawn(process.execPath, args, { detached: true, stdio: 'ignore' }).unref();
+    spawn(...media.clean(process.execPath, args), { detached: true, stdio: 'ignore' }).unref();
     return true;
   });
 

@@ -27,6 +27,7 @@ const shell = await createShell({
 });
 shell.showStatus(true);
 shell.statusLeft.append(h('span.item', inElectron ? 'Sandboxed · files only open when you choose them' : 'Running in your browser'));
+const DOWNLOAD = 'https://github.com/EkansEater/snakes-suite/releases/latest';
 
 function launch(id) {
   if (inElectron) {
@@ -37,7 +38,10 @@ function launch(id) {
 const groups = ['Office', 'Create', 'Media'];
 const page = h('div.home',
   h('div.hero', h('img', { src: '../icons/studio.svg', alt: '' }),
-    h('div', h('h1', "Snake's Studio"), h('p', 'Office, creative and media apps. Part of Snake’s Master Suite.'))),
+    h('div', h('h1', "Snake's Studio"), h('p', 'Office, creative and media apps. Part of Snake’s Master Suite.'),
+      inElectron ? null : h('p.web-note', 'Your files stay on your computer: nothing you open here is uploaded. ',
+        h('a', { href: DOWNLOAD, target: '_blank', rel: 'noopener noreferrer' }, 'Get the desktop apps'),
+        ' for Windows, macOS and Linux (they also play and export many more video formats).'))),
   ...groups.map((g) => h('section',
     h('h2', g),
     h('div.grid', ...APPS.filter((a) => a[3] === g).map(([id, name, tag]) => {

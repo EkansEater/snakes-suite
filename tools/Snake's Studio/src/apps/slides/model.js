@@ -252,7 +252,9 @@ export function renderItem(item, theme, pres, opts = {}) {
       });
       table.append(tr);
     });
-    Object.assign(table.style, { fontFamily: theme.body, fontSize: `${st.size || 20}px`, color: themeColor(theme, st.color) || theme.text, '--head': head, '--line': st.line || 'rgba(128,128,128,.35)' });
+    Object.assign(table.style, { fontFamily: theme.body, fontSize: `${st.size || 20}px`, color: themeColor(theme, st.color) || theme.text });
+    table.style.setProperty('--head', head);
+    table.style.setProperty('--line', st.line || 'rgba(128,128,128,.35)');
     if (st.striped) table.classList.add('striped');
     el.append(table);
   }

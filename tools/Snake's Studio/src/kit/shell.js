@@ -174,6 +174,19 @@ export async function createShell({ id, name, menus = [], quick = [], about = ''
   titlebar.addEventListener('dblclick', (e) => {
     if (e.target === titlebar || e.target.classList.contains('spacer')) host.win.toggleMaximize();
   });
+  // The title sits in the middle of the window, unless that would cover the menus:
+  // then it starts after them and shortens with an ellipsis.
+  const placeTitle = () => {
+    Object.assign(titleEl.style, { left: '', transform: '', maxWidth: '' });
+    const box = titlebar.getBoundingClientRect();
+    const menusEnd = Math.max(bar.getBoundingClientRect().right, quickBar.getBoundingClientRect().right) - box.left;
+    const ctlStart = (winCtl.childElementCount ? winCtl.getBoundingClientRect().left : box.right) - box.left;
+    if (box.width / 2 - titleEl.scrollWidth / 2 < menusEnd + 12) {
+      Object.assign(titleEl.style, { left: `${menusEnd + 12}px`, transform: 'none', maxWidth: `${Math.max(0, ctlStart - menusEnd - 24)}px` });
+    }
+  };
+  new ResizeObserver(placeTitle).observe(titlebar);
+  new ResizeObserver(placeTitle).observe(quickBar);
   const ribbonHost = h('div.ribbon.hidden');
   const main = h('div.grow', { style: { display: 'flex', position: 'relative', minHeight: '0' } });
   const statusLeft = h('div.row', { style: { gap: '0', height: '100%' } });
@@ -188,6 +201,7 @@ export async function createShell({ id, name, menus = [], quick = [], about = ''
     settings: host.settings,
     setTitle(doc, dirty = false) {
       titleEl.replaceChildren(dirty ? '● ' : '', h('b', doc || 'Untitled'), ` — ${name}`);
+      placeTitle();
       host.win.setTitle(`${dirty ? '• ' : ''}${doc || 'Untitled'} — ${name}`);
     },
     setRibbon: (tabs) => buildRibbon(shell, tabs),

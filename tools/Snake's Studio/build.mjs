@@ -33,8 +33,10 @@ const page = (id, title, icon, script = 'app.js', css = 'style.css') => `<!docty
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#111412">
 <title>${title}</title>
 <link rel="icon" href="../icons/${icon}.svg">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="${css}">
 </head>
 <body>
@@ -52,6 +54,14 @@ for (const [id, meta] of Object.entries(all)) {
   entries[`${id}/app`] = path.join(dir, 'main.js');
   entries[`${id}/style`] = path.join(dir, 'style.css');
   pages.push([path.join(out, id, 'index.html'), page(id, meta.name, id === 'home' ? 'studio' : id)]);
+  // On the website each app can be installed as its own window (Install app in Chrome/Edge).
+  const icon = id === 'home' ? 'studio' : id;
+  pages.push([path.join(out, id, 'manifest.webmanifest'), JSON.stringify({
+    name: meta.name, short_name: meta.short, description: meta.tagline,
+    start_url: './index.html', scope: './', display: 'standalone', background_color: '#1a1e1b', theme_color: '#111412',
+    icons: [{ src: `../icons/${icon}.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: `../icons/${icon}.svg`, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+  }, null, 2)]);
   // Extra windows of an app: src/apps/<id>/pages/<name>.js (+ <name>.css) -> dist/<id>/<name>.html
   const extra = path.join(dir, 'pages');
   if (fs.existsSync(extra)) {

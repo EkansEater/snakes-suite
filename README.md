@@ -22,7 +22,12 @@ that puts each one on your computer as a normal app, alone or as a whole kit.
 | Snake's Screen Recorder | Screen to MP4 / GIF, audio to MP3 | ✓ | ✓ | ✓ |
 
 The first seven are one program, Snake's Studio (tools/Snake's Studio), which
-also runs as a website from its `dist/` folder. SoundPad makes its own virtual
+also runs as a website: the online mirror at
+[ekanseater.github.io/snakes-suite](https://ekanseater.github.io/snakes-suite/),
+where each app can also be installed from the browser. Files opened there stay
+on your computer. The desktop Studio carries its own ffmpeg (GPL v3, see
+`packaging/ffmpeg/`), so Player and Movie Maker play and export every format
+with nothing else to install. SoundPad makes its own virtual
 microphone on Linux; on Windows and macOS it plays into a free virtual cable
 (VB-CABLE or BlackHole). The Recompiler's launcher relies on Unix process
 handling, so it is Linux only for now.
@@ -68,7 +73,18 @@ itself changed, raise the hub's `version` and `__version__` in
 
 To build for this computer only: `python packaging/build.py tools`, `... hub`,
 then `... index release/`. Set `SNAKES_SUITE_INDEX` to another index URL to
-test the app against your own build.
+test the app against your own build. For Snake's Studio with its ffmpeg, first
+run `python packaging/build.py ffmpeg build/ffmpeg` and set
+`SNAKE_FFMPEG_DIR=build/ffmpeg`.
+
+**Signed releases.** The release's `index.json` is signed with your key
+(`~/.config/snakes-suite/index-signing-key`, made once by `packaging/build.py keygen`;
+keep a backup) and the app only downloads from an index whose signature matches
+`release.index_pubkey` in `suite.json`. GitHub signs with the copy of the key in
+the secret `SNAKE_INDEX_KEY`; without it the release stops before publishing.
+
+**The online mirror** (`.github/workflows/pages.yml`) rebuilds the website whenever
+Snake's Studio changes on `main`. It needs Settings → Pages → Source: *GitHub Actions*, once.
 
 ## Installing from source (for developing the tools)
 
@@ -86,7 +102,7 @@ for Snake's Code.
 
 ## The hub
 
-**Snake's Suite** opens with a grid of every tool. Click one to open it. A tool
+**Snake's Master Suite** opens with a grid of every tool. Click one to open it. A tool
 that is not installed yet shows "Click to install" and installs from the kit
 with its progress in a window. Right-click a tile to reinstall, add a desktop
 shortcut, or uninstall. `Ctrl+K` searches, and Enter opens the first match.

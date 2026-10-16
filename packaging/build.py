@@ -6,10 +6,14 @@
     python packaging/build.py hub                the one-file Snake's Suite app
     python packaging/build.py index release/     index.json for the hub, from every package in a folder
     python packaging/build.py android release/   the latest release's Android APKs, to publish again
-    python packaging/build.py keygen             a key pair for signing the index (once, by you)
+    python packaging/build.py keygen             a key pair for signing the index (once, by you):
+                                                 the private key goes to ~/.config/snakes-suite/index-signing-key
+    python packaging/build.py ffmpeg build/ffmpeg   ffmpeg and ffprobe for Snake's Studio on this system
 
-With SNAKE_INDEX_KEY set (the private key keygen printed, kept as a GitHub secret),
+With SNAKE_INDEX_KEY set (the private key keygen wrote, kept as a GitHub secret),
 `index` also writes index.json.sig, which the app checks against release.index_pubkey.
+Once suite.json has release.index_pubkey, `index` refuses to write an index without a
+matching signature: the app would not trust it.
 
 With --reuse, a tool (or the hub) whose version is the same as in the latest
 release is downloaded from that release instead of built again, so a release
@@ -45,6 +49,7 @@ from pathlib import Path
 SUITE = Path(__file__).resolve().parent.parent
 RELEASE = SUITE / "release"
 ICONS = SUITE / "shared" / "icons"
+FFMPEG = SUITE / "packaging" / "ffmpeg"
 sys.path.insert(0, str(SUITE / "hub"))
 
 from snakes_suite.integrate import OS, make_icns  # noqa: E402
@@ -270,9 +275,9 @@ _studio_built: Path | None = None
 def build_studio(tool: dict, install: bool) -> Path:
     """Snake's Studio holds seven apps: build it once, as one package they all share.
 
-    With SNAKE_FFMPEG_DIR pointing at a folder holding ffmpeg and ffprobe, those are
-    bundled (Player and Movie Maker then play and export everything out of the box).
-    Mind ffmpeg's licence for the build you choose (an LGPL build is the simplest to share).
+    With SNAKE_FFMPEG_DIR pointing at a folder made by `build.py ffmpeg`, ffmpeg and
+    ffprobe are bundled with their licence and source notes (Player and Movie Maker then
+    play and export everything out of the box).
     """
     global _studio_built
     if _studio_built is not None:
@@ -292,14 +297,21 @@ def build_studio(tool: dict, install: bool) -> Path:
     resources = (app / "Contents" / "Resources") if app else (unpacked / "resources")
     ff = os.environ.get("SNAKE_FFMPEG_DIR")
     if ff:
-        (resources / "ffmpeg").mkdir(parents=True, exist_ok=True)
-        for name in ("ffmpeg", "ffprobe"):
-            src = Path(ff) / (name + EXE)
+        dest = resources / "ffmpeg"
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in ("ffmpeg" + EXE, "ffprobe" + EXE, "LICENSE.txt", "README.txt"):
+            src = Path(ff) / name
             if not src.exists():
                 raise OSError(f"{src} is missing")
-            shutil.copy2(src, resources / "ffmpeg" / src.name)
-        if app and shutil.which("codesign"):  # new files inside the bundle need a fresh signature
+            shutil.copy2(src, dest / name)
+        if (Path(ff) / "BUILD-INFO.txt").exists():  # the Windows build's own notes
+            shutil.copy2(Path(ff) / "BUILD-INFO.txt", dest / "BUILD-INFO.txt")
+        if app and shutil.which("codesign"):  # new programs inside the bundle need a fresh signature
+            for name in ("ffmpeg", "ffprobe"):
+                run(["codesign", "--force", "--sign", "-", dest / name])
             run(["codesign", "--force", "--deep", "--sign", "-", app])
+    else:
+        say("(no SNAKE_FFMPEG_DIR: Player and Movie Maker will use an ffmpeg installed on the system)")
     _, tools = catalogue()
     apps = [t for t in tools.values() if t.get("studio_app")]
     shared = {"id": "studio", "name": "Snake's Studio", "version": max((t["version"] for t in apps), key=lambda v: [int(x) for x in v.split(".") if x.isdigit()])}
@@ -344,6 +356,49 @@ def build_tool(tool: dict, install: bool) -> Path | None:
     if tool.get("studio_app"):
         return build_studio(tool, install)
     return BUILDERS[tool["kind"]](tool, install)
+
+
+def ffmpeg_for_studio(out: Path) -> Path:
+    """ffmpeg and ffprobe for this system in `out`, with their licence and where their source is.
+
+    Linux and macOS build them from pinned sources (packaging/ffmpeg/build.sh, no network
+    protocols); Windows takes gyan.dev's GPL build pinned in packaging/ffmpeg/windows.json.
+    A folder that already holds them (a cache) is kept.
+    """
+    names = ["ffmpeg" + EXE, "ffprobe" + EXE, "LICENSE.txt", "README.txt"]
+    if all((out / n).exists() for n in names):
+        say(f"ffmpeg: already in {out}")
+        return out
+    out.mkdir(parents=True, exist_ok=True)
+    if OS != "windows":
+        run(["bash", FFMPEG / "build.sh", out])
+        return out
+    pin = json.loads((FFMPEG / "windows.json").read_text(encoding="utf-8"))
+    archive_path = Path(tempfile.mkdtemp(prefix="snake-ffmpeg-")) / "ffmpeg.zip"
+    say(f"Downloading {pin['url']}")
+    with urllib.request.urlopen(pin["url"], timeout=600) as r, open(archive_path, "wb") as fh:
+        shutil.copyfileobj(r, fh)
+    if sha256(archive_path) != pin["sha256"]:
+        raise OSError(f"{pin['url']} does not match its checksum")
+    # Only these files, written under names we choose: nothing in the archive picks a path.
+    wanted = {"bin/ffmpeg.exe": "ffmpeg.exe", "bin/ffprobe.exe": "ffprobe.exe", "LICENSE": "LICENSE.txt",
+              "README.txt": "BUILD-INFO.txt"}
+    with zipfile.ZipFile(archive_path) as z:
+        for info in z.infolist():
+            inner = info.filename.split("/", 1)[-1]
+            if inner in wanted:
+                with z.open(info) as src, open(out / wanted[inner], "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    missing = [n for n in wanted.values() if not (out / n).exists()]
+    if missing:
+        raise OSError(f"{pin['url']} has no {', '.join(missing)}")
+    (out / "README.txt").write_text(
+        f"ffmpeg.exe and ffprobe.exe in this folder are FFmpeg {pin['version']}, the essentials build\n"
+        f"by {pin['builder']} ({pin['url']}),\nshipped unchanged with Snake's Studio.\n\n"
+        "Licence: GNU General Public License version 3 (LICENSE.txt). You may copy, change and\n"
+        f"share these programs under its terms. Corresponding source: {pin['source']}\n"
+        "and the libraries and versions listed in BUILD-INFO.txt.\n", encoding="utf-8")
+    return out
 
 
 # --------------------------------------------------------------------------- reuse
@@ -484,22 +539,37 @@ def make_index(folder: Path) -> Path:
     out = folder / "index.json"
     out.write_text(json.dumps(index, indent=2), encoding="utf-8")
     key = os.environ.get("SNAKE_INDEX_KEY", "").strip()
+    pubkey = data.get("release", {}).get("index_pubkey", "")
+    sig_path = folder / "index.json.sig"
+    sig_path.unlink(missing_ok=True)
     if key:
         # Signed so the app can tell this list really comes from you (Ed25519).
         import base64
 
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         signer = Ed25519PrivateKey.from_private_bytes(base64.b64decode(key))
-        (folder / "index.json.sig").write_text(base64.b64encode(signer.sign(out.read_bytes())).decode() + "\n", encoding="utf-8")
+        sig_path.write_text(base64.b64encode(signer.sign(out.read_bytes())).decode() + "\n", encoding="utf-8")
         say("-> index.json.sig")
+    if pubkey:
+        # The app checks the index against this key: make sure it will pass, before anything is published.
+        from snakes_suite import signing
+        if not sig_path.exists():
+            out.unlink()
+            raise SystemExit("suite.json has release.index_pubkey but SNAKE_INDEX_KEY is not set: "
+                             "the app would refuse this index. Add the secret (see MASTER_PLAN.md).")
+        if not signing.verify_b64(pubkey, out.read_bytes(), sig_path.read_text(encoding="utf-8")):
+            out.unlink()
+            sig_path.unlink()
+            raise SystemExit("SNAKE_INDEX_KEY does not match release.index_pubkey in suite.json.")
+        say("   signature checks out against release.index_pubkey")
     say(f"-> {out}  ({len(index['tools'])} tools, {len(index['hub'])} hub builds)")
     return out
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("what", choices=["tool", "tools", "hub", "index", "android", "keygen"])
-    parser.add_argument("names", nargs="*", help="tool ids, or the folder for index")
+    parser.add_argument("what", choices=["tool", "tools", "hub", "index", "android", "keygen", "ffmpeg"])
+    parser.add_argument("names", nargs="*", help="tool ids, the folder for index, or where keygen keeps the private key")
     parser.add_argument("--install", action="store_true", help="pip install PyInstaller and each Python tool first")
     parser.add_argument("--reuse", action="store_true", help="download what has not changed from the latest release")
     args = parser.parse_args()
@@ -509,12 +579,26 @@ def main() -> int:
 
         from cryptography.hazmat.primitives import serialization as ser
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        # The private key goes straight into a file only you can read, never onto the screen
+        # (where it could end up in a log); the GitHub secret is filled from that file.
+        keyfile = Path(args.names[0]) if args.names else Path.home() / ".config" / "snakes-suite" / "index-signing-key"
+        if keyfile.exists():
+            raise SystemExit(f"{keyfile} already exists: a new key would lock out every app that knows the old one.")
         k = Ed25519PrivateKey.generate()
         raw = lambda b: base64.b64encode(b).decode()  # noqa: E731
-        say("Private key (add it as the GitHub secret SNAKE_INDEX_KEY; never put it in a file you commit):")
-        say("  " + raw(k.private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption())))
-        say("Public key (put it in suite.json as release.index_pubkey):")
+        keyfile.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(keyfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="ascii") as fh:
+            fh.write(raw(k.private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption())) + "\n")
+        say(f"Private key written to {keyfile} (readable only by you). Keep a backup copy somewhere safe:")
+        say("if it is lost, apps that know this key can no longer update.")
+        say("Make it the GitHub secret SNAKE_INDEX_KEY with:")
+        say(f"  gh secret set SNAKE_INDEX_KEY --repo {catalogue()[0]['release']['repo']} < \"{keyfile}\"")
+        say("Public key (suite.json: release.index_pubkey):")
         say("  " + raw(k.public_key().public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)))
+        return 0
+    if args.what == "ffmpeg":
+        ffmpeg_for_studio(Path(args.names[0]).resolve() if args.names else SUITE / "build" / "ffmpeg")
         return 0
     if args.what == "android":
         carry_android(Path(args.names[0]) if args.names else RELEASE)

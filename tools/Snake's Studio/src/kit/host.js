@@ -7,6 +7,18 @@ import { h, extOf, download } from './dom.js';
 import { toast } from './dialogs.js';
 
 const E = window.snakeHost || null;
+
+// On the website, refuse to run inside another site's frame (so no page can dress the
+// apps up and trick clicks or typing into them). A <meta> policy cannot say this.
+if (!E && window.top !== window.self) {
+  const a = document.createElement('a');
+  a.href = location.href;
+  a.target = '_top';
+  a.rel = 'noopener';
+  a.textContent = "Open Snake's Studio in its own tab";
+  document.body.replaceChildren(a);
+  throw new Error("Snake's Studio does not run inside other pages");
+}
 const appId = (document.documentElement.dataset.app || location.pathname.split('/').filter(Boolean).slice(-2)[0] || 'studio');
 
 // ---------------------------------------------------------------------------

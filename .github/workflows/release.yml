@@ -62,9 +62,42 @@ jobs:
             python -m pip install "PyGObject<3.51"
           fi
 
+      # ffmpeg for Player and Movie Maker: built from pinned sources on Linux and macOS
+      # (about ten minutes), downloaded and checked on Windows. Kept in the cache until
+      # packaging/ffmpeg/ changes. If it fails, Snake's Studio ships without it.
+      - name: ffmpeg from the cache
+        id: ffcache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packaging/ffmpeg/**') }}
+
+      - name: ffmpeg for Snake's Studio
+        id: ffbuild
+        if: steps.ffcache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          case "$RUNNER_OS" in
+            Linux) sudo apt-get install -y nasm meson ninja-build ;;
+            macOS) brew install nasm meson ninja pkgconf ;;
+          esac
+          python packaging/build.py ffmpeg build/ffmpeg
+
+      - name: Keep ffmpeg in the cache
+        if: steps.ffbuild.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ffmpeg
+          key: ${{ steps.ffcache.outputs.cache-primary-key }}
+
       - name: Build the tools
         shell: bash
-        run: python packaging/build.py tools ${{ inputs.full && ' ' || '--reuse' }}
+        run: |
+          if [ -f build/ffmpeg/README.txt ]; then export SNAKE_FFMPEG_DIR="$PWD/build/ffmpeg"; fi
+          python packaging/build.py tools ${{ inputs.full && ' ' || '--reuse' }}
 
       - name: Build Snake's Suite (one file)
         if: always()

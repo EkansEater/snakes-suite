@@ -91,7 +91,12 @@ tools/Snake's Studio/
 - [x] Player (direct play, or on-the-fly remux/transcode via ffmpeg for MKV/AVI/WMV/AC3/HEVC…; playlists M3U/PLS resolved safely in the main process; SRT/VTT/ASS + embedded subtitles with delay/size; audio tracks; 10-band EQ, boost, balance, night mode; visualiser + cover art; speed, A-B loop, frame step, chapters, resume, sleep timer, snapshots, PiP, mini player, media keys, convert)
 - [x] Movie Maker (timeline: tracks, move/trim/split/ripple/snap, fades, speed, titles with animations, cross-fade/black/slide transitions, looks, Ken Burns, picture-in-picture, detach audio, voice-over, editing copies for MKV/AVI…, projects with safe media relinking; export through one ffmpeg graph (src/main/movie-export.js) that matches the preview frame for frame; MP4/WebM/GIF/MP3/M4A/WAV; browser fallback records the preview)
 - [x] Catalogue, icons, packaging, signed index (Studio built once per platform as a shared package listed under each app; optional bundled ffmpeg via SNAKE_FFMPEG_DIR; sha256 now mandatory; Ed25519-signed index.json, verified by the hub when suite.json has release.index_pubkey: run `python packaging/build.py keygen`, add the secret SNAKE_INDEX_KEY, put the public key in suite.json)
-- [ ] Online mirror (GitHub Pages of Studio `dist/`), only when asked to publish
+- [x] ffmpeg inside the Studio packages: Linux and macOS build it from pinned, checksum-checked sources (`packaging/ffmpeg/build.sh`: x264, libvpx, Opus, LAME, dav1d; GPL v3; no network protocols, only file and pipe); Windows uses gyan.dev's GPL essentials build pinned in `packaging/ffmpeg/windows.json`. The release workflow caches it. (Martin Riedl's builds were ruled out: built with --enable-nonfree, not redistributable.)
+- [x] Index signing key made (`~/.config/snakes-suite/index-signing-key`, 0600); public key in suite.json; `build.py index` refuses to write an index the app would reject
+- [x] Online mirror built: `.github/workflows/pages.yml` deploys Studio `dist/` to https://ekanseater.github.io/snakes-suite/ on pushes to main; per-app web manifests (installable), frame guard, desktop download link
+- [x] Fixes found while finishing: Studio children (ffmpeg, ffprobe, app launches) inherited ~90 Chromium descriptors on Linux (IPC sockets, shared memory, GPU device); they now start through `clean()` in src/main/media.js, which closes all but stdio. Player and the Studio home could not close (main waited for a close answer only guarded pages send); now only pages that register a guard are asked. Slides template thumbnails and table header colours (CSS custom properties set through Object.assign). Long window titles no longer cover the menus.
+- [ ] Follow-up: Snake's Code's children (rg, git, terminal shells) inherit the same descriptors
+- [x] Publish (2026-10-16): secret SNAKE_INDEX_KEY set by the owner; versions raised (release v1.1.5, hub 1.1.3, Studio apps 1.0.0, other tools 1.0.1); Pages on (Source: GitHub Actions); main fast-forwarded to `master-suite`; tag v1.1.5 pushed to start the Release workflow
 
 ## Testing the Studio apps
 
@@ -104,9 +109,9 @@ tools/Snake's Studio/
 
 ## Where work stopped (2026-10-16)
 
-All six steps are done and tested locally: Studio runtime + kit and its seven apps; the
-overhaul of Code, the Qt tools (snake_ergo), the egui tools, SoundPad (cross-platform), the hub
-(Snake's Master Suite, with the Studio apps); packaging for the shared Studio; signed index.
-Test helpers: `SNAKE_TEST_SAVEAS=<dir>` (Save As without a dialog), `SNAKE_TEST_PDF=<path>`.
-Waiting on decisions: which ffmpeg build to bundle (licence), creating the signing key and
-secret, publishing the web mirror. Nothing is committed or pushed yet.
+Everything is built and tested locally on the `master-suite` branch: the Studio and its seven
+apps, the overhaul of every tool, the hub, packaging with ffmpeg (a Linux Studio package was
+built and played an AC3 MKV through its own ffmpeg), the signed index and the web mirror
+workflow. All of it is on main and released as v1.1.5 (the first release built by the new
+workflow: check its run in the Actions tab, macOS and Windows were not built locally). Test helpers: `SNAKE_TEST_SAVEAS=<dir>` (Save As without a
+dialog), `SNAKE_TEST_PDF=<path>`. Next releases: `python ship.py`.

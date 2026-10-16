@@ -3,7 +3,7 @@
 // them through ffmpeg on the fly, probing, thumbnails, waveforms and exports.
 //
 // ffmpeg always gets an argument list (never a shell), and only ever paths of
-// files the user granted.
+// files the user granted. On Linux it starts with nothing of ours open (see clean()).
 'use strict';
 
 const fs = require('fs');
@@ -14,6 +14,23 @@ const { Readable } = require('stream');
 const os = require('os');
 const crypto = require('crypto');
 const { VIDEO_EXTS, AUDIO_EXTS, IMAGE_EXTS } = require('./apps');
+
+// Chromium keeps most of its descriptors open across exec (its IPC sockets, shared
+// memory, the GPU device), and on Linux Node hands every one of them to the programs
+// it starts. So ffmpeg, which parses untrusted media, would hold the browser's own
+// channels, and they would stay open if this app ended first. Programs therefore start
+// through a fixed bash line that closes everything but stdin, stdout and stderr, then
+// runs the program with its arguments untouched ("$@": nothing is ever parsed by the
+// shell). macOS starts children with close-on-exec by default; Windows passes only
+// the standard handles.
+const CLOSE_FDS = 'for f in /dev/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] 2>/dev/null && eval "exec $n>&-"; done; exec "$@"';
+const BASH = process.platform === 'linux'
+  ? ['/bin/bash', '/usr/bin/bash'].find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } })
+  : null;
+/** [command, args] that start `exe` with `args` and no inherited descriptors. */
+function clean(exe, args) {
+  return BASH ? [BASH, ['-c', CLOSE_FDS, 'snake-exec', exe, ...args]] : [exe, args];
+}
 
 // Only the Studio's own pages may read media across origins (for the equaliser and snapshots).
 const CORS = { 'Access-Control-Allow-Origin': 'snake://studio', 'Cross-Origin-Resource-Policy': 'cross-origin', Vary: 'Origin' };
@@ -127,7 +144,7 @@ function liveStream(file, params) {
     args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2');
   }
   args.push('-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1');
-  const proc = spawn(ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const proc = spawn(...clean(ffmpeg, args), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   return processStream(proc, mode === 'audio' ? 'audio/mp4' : 'video/mp4');
 }
 
@@ -150,7 +167,7 @@ async function serve(request, grants) {
 // ---------------------------------------------------------------------------
 function run(exe, args, { maxBuffer = 64 * 1024 * 1024, encoding = 'buffer', timeout = 120000 } = {}) {
   return new Promise((resolve, reject) => {
-    execFile(exe, args, { maxBuffer, encoding, timeout, windowsHide: true }, (err, stdout, stderr) => {
+    execFile(...clean(exe, args), { maxBuffer, encoding, timeout, windowsHide: true }, (err, stdout, stderr) => {
       if (err) reject(new Error(String(stderr || err.message).slice(-600)));
       else resolve(stdout);
     });
@@ -231,7 +248,7 @@ async function extractSubtitle(file, stream) {
 function startJob(win, id, args, duration, onClose = null) {
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) throw new Error('ffmpeg is not installed');
-  const proc = spawn(ffmpeg, ['-hide_banner', '-nostdin', '-y', '-progress', 'pipe:1', '-nostats', ...args],
+  const proc = spawn(...clean(ffmpeg, ['-hide_banner', '-nostdin', '-y', '-progress', 'pipe:1', '-nostats', ...args]),
     { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   jobs.set(id, { proc, win: win.id });
   let tail = '';
@@ -422,4 +439,4 @@ function parsePlaylist(text, ext) {
   return out;
 }
 
-module.exports = { register, serve, ffmpegPath, ffprobePath, stopFor, stopAll, probe, parsePlaylist };
+module.exports = { register, serve, ffmpegPath, ffprobePath, stopFor, stopAll, probe, parsePlaylist, clean };
