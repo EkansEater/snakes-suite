@@ -12,8 +12,8 @@ format, press Convert. It also works from the command line.
 | Images | PNG, JPG, WebP, BMP, TIFF, GIF, ICO, AVIF, SVG, TGA, PSD, HEIC* | PNG, JPG, WebP, PDF, GIF, BMP, TIFF, ICO, AVIF |
 | Documents | DOCX, RTF, TXT, Markdown, HTML (DOC, ODT with LibreOffice) | PDF, DOCX, ODT, TXT, HTML, Markdown (RTF with LibreOffice) |
 | PDF | PDF | DOCX (text only), TXT, PNG, JPG (one image per page) |
-| Spreadsheets | XLSX, CSV, TSV, JSON (XLS, ODS with LibreOffice) | XLSX, CSV, TSV, JSON (PDF, ODS with LibreOffice) |
-| Presentations | PPTX, PPT, ODP (LibreOffice required) | PDF, PPTX, ODP |
+| Spreadsheets | XLSX, CSV, TSV, JSON (XLS, ODS with LibreOffice) | XLSX, CSV, TSV, JSON, PDF (ODS with LibreOffice) |
+| Presentations | PPTX (PPT, ODP with LibreOffice) | PDF (PPTX, ODP with LibreOffice) |
 
 \* HEIC needs the optional extra: `pip install ".[heic]"`.
 
@@ -24,10 +24,18 @@ Everything in the table works out of the box except the entries marked
 Snake's Converter finds it automatically and uses it for Word, spreadsheet and
 presentation files, which gives output that matches the original layout.
 
-Without it, a built-in engine converts DOCX to PDF and the other document
-formats. That engine keeps headings, lists, bold/italic, tables and images but
-not page layout details such as headers, footers, columns or exact fonts. For
-documents where the layout matters, install LibreOffice.
+Without it, built-in engines do the common jobs:
+
+- Word to PDF (and ODT, HTML, text, Markdown) keeps the document's own styles,
+  fonts, colours, headings, lists, tables with their borders and shading, pictures,
+  links, page breaks, footnotes, the page size and margins, and the header and
+  footer with page numbers. Columns and text boxes are not laid out.
+- Spreadsheets to PDF print each sheet with its number formats, bold, colours,
+  fills, column widths and merged cells, landscape when wide.
+- PowerPoint to PDF draws every slide: the theme, master and layout styles, text
+  with bullet levels, shapes, pictures, tables, charts and backgrounds.
+
+For the closest match to Office on complicated layouts, install LibreOffice.
 
 ffmpeg is bundled, so audio and video need nothing extra. A system ffmpeg is
 used instead when one is on the PATH.

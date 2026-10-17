@@ -64,7 +64,8 @@ def targets_for(path: Path) -> list[str]:
     elif category == "spreadsheet":
         out = sheet.targets(ext)
     elif category == "presentation":
-        out = office.PRESENTATION_OUT if office.available() else []
+        # PDF is built in for PowerPoint files; LibreOffice adds the rest (and draws PDFs itself).
+        out = office.PRESENTATION_OUT if office.available() else (["pdf"] if ext in ("pptx", "ppsx") else [])
     elif category == "pdf":
         out = pdf.PDF_OUT
     else:
@@ -121,7 +122,18 @@ def convert_file(src: Path, target: str, outdir: Path | None = None,
     elif category == "spreadsheet":
         outputs = sheet.convert(src, dst, target, opts, progress, cancel)
     elif category == "presentation":
-        outputs = office.convert(src, dst, target, progress, cancel)
+        if target == "pdf" and not office.available():
+            from ..core import ensure_qt
+            from .slides_pdf import render
+
+            ensure_qt()
+            try:
+                render(src, dst, src.stem)
+            except Exception as exc:
+                raise ConversionError(f"The presentation could not be drawn: {exc}") from None
+            outputs = [dst]
+        else:
+            outputs = office.convert(src, dst, target, progress, cancel)
     else:
         outputs = pdf.convert(src, dst, target, opts, progress, cancel)
     progress(1.0)

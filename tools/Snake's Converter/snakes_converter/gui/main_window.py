@@ -482,8 +482,8 @@ class MainWindow(QMainWindow):
         if not find_ffmpeg():
             return "ffmpeg was not found, so audio and video conversion is unavailable."
         if not find_libreoffice():
-            return ("Ready. Tip: install LibreOffice for higher-fidelity Word conversions "
-                    "and PowerPoint / ODT / XLS support.")
+            return ("Ready. Tip: installing LibreOffice adds old Office files (DOC, XLS, PPT), "
+                    "ODT and ODS, and PowerPoint to PPTX or ODP.")
         return "Ready."
 
     def closeEvent(self, event) -> None:

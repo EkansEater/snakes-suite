@@ -65,7 +65,8 @@ def _rtf_to_text(src: Path) -> str:
 
 
 def _load(src: Path, ext: str):
-    """Load the source into a QTextDocument. Also returns clean HTML if we have it."""
+    """Load the source into a QTextDocument. Also returns clean HTML if we have it,
+    and the page setup when the source has one (Word files)."""
     ensure_qt()
     from PySide6.QtCore import QUrl
     from PySide6.QtGui import QFont, QTextDocument
@@ -73,9 +74,22 @@ def _load(src: Path, ext: str):
     doc = QTextDocument()
     doc.setDefaultFont(QFont("Helvetica", 11))
     doc.setBaseUrl(QUrl.fromLocalFile(str(src.parent) + "/"))
+    doc.setDocumentMargin(0)
     source_html = None
+    doc.page = None
     if ext == "docx":
-        source_html = _docx_to_html(src)
+        try:
+            from .docx_html import read_docx
+
+            source_html, page = read_docx(src)
+            doc.page = page
+            if page.font:
+                doc.setDefaultFont(QFont(page.font, round(page.size) or 11))
+            else:
+                doc.setDefaultFont(QFont("Helvetica", round(page.size) or 11))
+            doc.setDefaultStyleSheet("p { margin-top: 0; margin-bottom: 6pt; } li { margin-bottom: 2pt; }")
+        except Exception:  # an unusual file: the simpler reader still gets the words across
+            source_html = _docx_to_html(src)
         doc.setHtml(source_html)
     elif ext in ("html", "htm"):
         doc.setHtml(read_text(src))
@@ -89,15 +103,54 @@ def _load(src: Path, ext: str):
 
 
 def _write_pdf(doc, dst: Path) -> None:
-    from PySide6.QtCore import QLocale, QMarginsF
-    from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter
+    """The document as PDF pages: the source's own page size and margins when it has
+    them, with its header and footer (and page numbers) on every page."""
+    from PySide6.QtCore import QLocale, QMarginsF, QPointF, QRectF, QSizeF, Qt
+    from PySide6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter
 
+    page = getattr(doc, "page", None)
     writer = QPdfWriter(str(dst))
-    imperial = QLocale().measurementSystem() != QLocale.MeasurementSystem.MetricSystem
-    writer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter if imperial else QPageSize.PageSizeId.A4))
-    writer.setPageMargins(QMarginsF(20, 20, 20, 20), QPageLayout.Unit.Millimeter)
-    writer.setTitle(dst.stem)
-    doc.print_(writer)
+    writer.setResolution(300)
+    if page is not None:
+        size = QPageSize(QSizeF(page.width_mm, page.height_mm), QPageSize.Unit.Millimeter, "", QPageSize.SizeMatchPolicy.FuzzyMatch)
+        top, right, bottom, left = page.margins_mm
+    else:
+        imperial = QLocale().measurementSystem() != QLocale.MeasurementSystem.MetricSystem
+        size = QPageSize(QPageSize.PageSizeId.Letter if imperial else QPageSize.PageSizeId.A4)
+        top = right = bottom = left = 20
+    writer.setPageLayout(QPageLayout(size, QPageLayout.Orientation.Portrait, QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter))
+    writer.setTitle((page.title if page is not None and page.title else "") or dst.stem)
+    dpmm = writer.resolution() / 25.4
+    full = writer.pageLayout().fullRectPixels(writer.resolution())
+    body = QRectF(left * dpmm, top * dpmm, full.width() - (left + right) * dpmm, full.height() - (top + bottom) * dpmm)
+    doc.documentLayout().setPaintDevice(writer)
+    doc.setPageSize(body.size())
+    pages = max(1, doc.pageCount())
+    painter = QPainter(writer)
+    try:
+        hf_font = QFont(doc.defaultFont())
+        hf_font.setPointSizeF(9)
+        for i in range(pages):
+            if i:
+                writer.newPage()
+            painter.save()
+            painter.translate(body.left(), body.top() - i * body.height())
+            # (Two device pixels short: the next page's first line must not bleed onto this one.)
+            doc.drawContents(painter, QRectF(0, i * body.height(), body.width(), body.height() - 2))
+            painter.restore()
+            if page is None or (page.first_different and i == 0):
+                continue
+            painter.setFont(hf_font)
+            painter.setPen(QColor("#555555"))
+            flags = (Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignHCenter, Qt.AlignmentFlag.AlignRight)
+            for zones, y in ((page.header, top * dpmm / 2), (page.footer, full.height() - bottom * dpmm / 2)):
+                for text, flag in zip(zones, flags):
+                    if text:
+                        t = text.replace("{page}", str(i + 1)).replace("{pages}", str(pages))
+                        painter.drawText(QRectF(body.left(), y - 40, body.width(), 80), int(flag | Qt.AlignmentFlag.AlignVCenter), t)
+        _ = QPointF
+    finally:
+        painter.end()
 
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")

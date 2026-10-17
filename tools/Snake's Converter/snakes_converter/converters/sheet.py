@@ -17,7 +17,7 @@ SHEET_IN = {"xlsx", "xlsm", "xls", "ods", "csv", "tsv", "json"}
 
 _ORDER = ["xlsx", "csv", "pdf", "ods", "tsv", "json"]
 _BUILTIN_IN = {"xlsx", "xlsm", "csv", "tsv", "json"}
-_BUILTIN_OUT = {"xlsx", "csv", "tsv", "json"}
+_BUILTIN_OUT = {"xlsx", "csv", "tsv", "json", "pdf"}
 _OFFICE_IN = {"xlsx", "xlsm", "xls", "ods", "csv"}
 _OFFICE_OUT = {"xlsx", "csv", "pdf", "ods"}
 
@@ -45,6 +45,13 @@ def convert(src: Path, dst: Path, target: str, opts: Options,
         except Exception as exc:
             raise ConversionError(f"The file could not be read: {exc}") from None
         check_cancel(cancel)
+        if target == "pdf":
+            from ..core import ensure_qt
+            from .sheet_pdf import sheets_html, write_pdf
+
+            ensure_qt()
+            write_pdf(sheets_html(src, ext, sheets), dst, src.stem)
+            return [dst]
         return _write(sheets, dst, target, opts)
     return office.convert(src, dst, target, progress, cancel)
 
