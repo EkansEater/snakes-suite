@@ -37,6 +37,7 @@ function menus() {
       c('workbench.action.files.openFolder', 'Open Folder...'),
       { label: 'Open Recent', submenu: recentSubmenu },
       sep,
+      ...(window.snake.web ? [c('workbench.action.files.upload', 'Upload Files...'), c('workbench.action.files.download', 'Download'), sep] : []),
       c('workbench.action.files.save', 'Save'),
       c('workbench.action.files.saveAs', 'Save As...'),
       c('workbench.action.files.saveAll', 'Save All'),

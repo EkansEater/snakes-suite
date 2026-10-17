@@ -12,7 +12,7 @@ name: iOS
 on:
   push:
     branches: [main]
-    paths: ["ios/**", "tools/Snake's Studio/**", ".github/workflows/ios.yml"]
+    paths: ["ios/**", "tools/Snake's Studio/**", "tools/Snake's Code/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Build Snake's Code (its web version goes into the app)
+        working-directory: tools/Snake's Code
+        run: |
+          npm ci --ignore-scripts   # no Electron download, no native terminal module
+          node build.mjs
       - name: The Studio's pages
         working-directory: tools/Snake's Studio
         run: |

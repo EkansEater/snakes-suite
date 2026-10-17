@@ -19,7 +19,7 @@ const SUITE = [
   { id: 'paint', name: "Snake's Paint", tag: 'Quick drawings and pixel art', group: 'Create', kind: 'studio' },
   { id: 'photo', name: "Snake's Photo", tag: 'Layers, selections and adjustments', group: 'Create', kind: 'studio' },
   { id: 'movie', name: "Snake's Movie Maker", tag: 'Cut, title and export videos', group: 'Create', kind: 'studio' },
-  { id: 'code', name: "Snake's Code", tag: 'Code editor', group: 'Create', kind: 'native', where: EVERYWHERE },
+  { id: 'code', name: "Snake's Code", tag: 'Code editor', group: 'Create', kind: 'web', where: EVERYWHERE },
   { id: 'player', name: "Snake's Player", tag: 'Plays almost any video or song', group: 'Media', kind: 'studio' },
   { id: 'soundpad', name: "Snake's SoundPad", tag: 'A soundboard: one tap per sound', group: 'Media', kind: 'web', where: EVERYWHERE },
   { id: 'screen', name: "Snake's Screen Recorder", tag: 'Screen to video or GIF, sound to audio', group: 'Media', kind: 'web', where: EVERYWHERE },

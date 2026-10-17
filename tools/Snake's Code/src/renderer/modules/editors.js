@@ -169,13 +169,25 @@ export function dirtyDocuments() {
   return allDocuments().filter((d) => d.dirty);
 }
 
+// Opens of the same file that overlap (a click and a double-click, a restored session and
+// a file to open) share one load: a second TextDocument would dispose the first one's model.
+const loading = new Map();
+
 async function loadDocument(path, opts = {}) {
   const existing = docs.get(path);
   if (existing) return existing;
-  const res = await window.snake.fs.readFile(path, { force: opts.force });
-  if (res.binary || res.tooLarge) return res;
-  const doc = new TextDocument({ path, content: res.content, bom: res.bom, mtime: res.mtime });
-  return doc;
+  if (loading.has(path)) return loading.get(path);
+  const load = (async () => {
+    const res = await window.snake.fs.readFile(path, { force: opts.force });
+    if (res.binary || res.tooLarge) return res;
+    return docs.get(path) || new TextDocument({ path, content: res.content, bom: res.bom, mtime: res.mtime });
+  })();
+  loading.set(path, load);
+  try {
+    return await load;
+  } finally {
+    loading.delete(path);
+  }
 }
 
 export function newUntitled(content = '', language) {

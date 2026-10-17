@@ -120,7 +120,7 @@ function serviceWorker() {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const f = path.join(dir, e.name);
       if (e.isDirectory()) walk(f);
-      else if (!f.endsWith('.map') && e.name !== 'sw.js') files.push(path.relative(out, f).split(path.sep).join('/'));
+      else if (!f.endsWith('.map') && e.name !== 'sw.js' && !path.relative(out, f).startsWith(`code${path.sep}`)) files.push(path.relative(out, f).split(path.sep).join('/'));
     }
   };
   walk(out);
@@ -145,10 +145,38 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(caches.open(CACHE).then(async (c) => {
     const hit = await c.match(req, { ignoreSearch: true }) || (url.pathname.endsWith('/') && await c.match(new URL('index.html', url)));
-    return hit || fetch(req);
+    if (hit) return hit;
+    const res = await fetch(req);
+    // Snake's Code is kept once it has been opened (it is too big to fetch for everyone).
+    if (res.ok && url.pathname.includes('/code/')) c.put(req, res.clone());
+    return res;
   }));
 });
 `);
+}
+
+/**
+ * Snake's Code, for the website and the iPhone app: its own renderer (tools/Snake's Code/dist,
+ * made by its `node build.mjs`) with the browser bridge (src/web) in dist/code. Skipped when
+ * Code has not been built.
+ */
+function codeForTheWeb() {
+  const code = path.join('..', "Snake's Code");
+  const built = path.join(code, 'dist');
+  if (!fs.existsSync(path.join(built, 'index.html'))) { console.warn("(Snake's Code is not built: no web version of it)"); return; }
+  const dest = path.join(out, 'code');
+  fs.cpSync(built, dest, { recursive: true });
+  for (const f of ['web-bridge.js', 'web.css']) fs.copyFileSync(path.join(code, 'src', 'web', f), path.join(dest, f));
+  let html = fs.readFileSync(path.join(dest, 'index.html'), 'utf8');
+  html = html.replace('<link rel="stylesheet" href="app.css" />', '<link rel="stylesheet" href="app.css" />\n    <link rel="stylesheet" href="web.css" />\n    <link rel="manifest" href="manifest.webmanifest" />\n    <link rel="apple-touch-icon" href="../icons/code.png" />')
+    .replace('<script type="module" src="app.js"></script>', '<script src="web-bridge.js"></script>\n    <script type="module" src="app.js"></script>')
+    .replace('<meta charset="utf-8" />', '<meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
+  if (!html.includes('web-bridge.js')) throw new Error("Snake's Code's index.html changed: cannot add the web bridge");
+  fs.writeFileSync(path.join(dest, 'index.html'), html);
+  fs.writeFileSync(path.join(dest, 'manifest.webmanifest'), JSON.stringify({
+    name: "Snake's Code", short_name: 'Code', description: 'Code editor', start_url: './index.html', scope: './', display: 'standalone',
+    background_color: '#1a1e1b', theme_color: '#111412', icons: [{ src: '../icons/code.png', sizes: '512x512', type: 'image/png' }, { src: '../icons/code.svg', sizes: 'any', type: 'image/svg+xml' }],
+  }, null, 2));
 }
 
 copyStatic();
@@ -157,5 +185,6 @@ if (watch) {
   await ctx.watch();
 } else {
   await esbuild.build(opts);
+  codeForTheWeb();
   serviceWorker();
 }

@@ -408,12 +408,15 @@ function rowMenu(path) {
   return [
     { label: 'New File...', run: () => startNew('new-file', path) },
     { label: 'New Folder...', run: () => startNew('new-folder', path) },
-    { label: 'Reveal in File Manager', key: 'ctrl+alt+r', run: () => window.snake.shell.showItemInFolder(path || workspace.root) },
-    { label: 'Open in Integrated Terminal', run: () => executeCommand('workbench.action.terminal.newInDir', dir) },
+    { label: 'Reveal in File Manager', key: 'ctrl+alt+r', hidden: !!window.snake.web, run: () => window.snake.shell.showItemInFolder(path || workspace.root) },
+    { label: 'Open in Integrated Terminal', hidden: !!window.snake.web, run: () => executeCommand('workbench.action.terminal.newInDir', dir) },
+    // In a browser: files in and out of its storage.
+    { label: 'Upload Files Here...', hidden: !window.snake.web, run: () => window.snake.web.upload(dir) },
+    { label: isDir ? 'Download as ZIP' : 'Download', hidden: !window.snake.web || multi, run: () => window.snake.web.download(path || workspace.root) },
     { separator: true },
     { label: 'Open to the Side', hidden: isDir || multi, key: 'ctrl+enter', run: () => openFile(path, { sideBySide: true, pinned: true }) },
     { label: 'Open in New Window', hidden: !isDir || multi, run: () => window.snake.win.newWindow(path) },
-    { label: 'Open with System Default', hidden: multi || !path, run: () => window.snake.shell.openPath(path) },
+    { label: 'Open with System Default', hidden: multi || !path || !!window.snake.web, run: () => window.snake.shell.openPath(path) },
     { label: 'Find in Folder...', hidden: !isDir, key: 'shift+alt+f', run: () => executeCommand('workbench.action.findInFiles', { include: relative(workspace.root, path || workspace.root) ? relative(workspace.root, path) + '/**' : '' }) },
     { separator: true },
     { label: 'Select for Compare', hidden: isDir || multi || !path, run: () => { compareSource = path; } },

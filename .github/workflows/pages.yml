@@ -10,7 +10,7 @@ name: Web mirror
 on:
   push:
     branches: [main]
-    paths: ["tools/Snake's Studio/**", ".github/workflows/pages.yml"]
+    paths: ["tools/Snake's Studio/**", "tools/Snake's Code/**", "shared/icons/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Build Snake's Code (its web version goes into the site)
+        working-directory: tools/Snake's Code
+        run: |
+          npm ci --ignore-scripts   # no Electron download, no native terminal module
+          node build.mjs
       - name: Build the web apps
         working-directory: tools/Snake's Studio
         run: |

@@ -575,6 +575,17 @@ function registerAllCommands() {
     { id: 'workbench.action.files.openFile', title: 'Open File...', category: 'File', key: 'ctrl+o', run: async () => { for (const p of await window.snake.dialog.openFiles()) await editors.openFile(p, { pinned: true }); } },
     { id: 'workbench.action.files.openFolder', title: 'Open Folder...', category: 'File', key: 'ctrl+k ctrl+o', run: () => openFolder() },
     { id: 'workbench.action.files.openPath', title: 'Open Path', category: 'File', hidden: true, run: (p) => p && openPath(p) },
+    // In a browser (the website, the iPhone app): files in and out of the browser's storage.
+    { id: 'workbench.action.files.upload', title: 'Upload Files...', category: 'File', hidden: !window.snake.web, run: async () => {
+      const paths = await window.snake.web.upload(workspace.root || env.homeDir);
+      for (const p of paths.slice(0, 10)) await editors.openFile(p, { pinned: true });
+    } },
+    { id: 'workbench.action.files.download', title: 'Download', category: 'File', hidden: !window.snake.web, run: async () => {
+      const d = editors.activeDoc();
+      if (!d || !d.path) return;
+      if (editors.dirtyDocuments().includes(d)) await editors.saveDocument(d);
+      window.snake.web.download(d.path);
+    } },
     { id: 'workbench.action.openRecent', title: 'Open Recent...', category: 'File', key: 'ctrl+r', inTerminal: false, run: () => openRecent() },
     { id: 'workbench.action.clearRecentFiles', title: 'Clear Recently Opened...', category: 'File', run: async () => { if ((await confirm('Do you want to clear all recently opened files and folders?', { buttons: ['Clear', 'Cancel'], cancelId: 1 })) === 0) clearRecent(); } },
     { id: 'workbench.action.closeFolder', title: 'Close Folder', category: 'Workspaces', key: 'ctrl+k f', run: () => closeFolder() },
