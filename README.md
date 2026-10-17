@@ -13,6 +13,7 @@ that puts each one on your computer as a normal app, alone or as a whole kit.
 | Snake's Player | Video and music player | ✓ | ✓ | ✓ |
 | Snake's Movie Maker | Video editor with timeline and export | ✓ | ✓ | ✓ |
 | Snake's Code | Code editor (Electron, Monaco) | ✓ | ✓ | ✓ |
+| Snake's Terminal | Terminal like iTerm2: tabs, splits, profiles, and SSH between your devices | ✓ | ✓ | ✓ |
 | Snake's Compressor | Lossless `.snake` archiver | ✓ | ✓ | ✓ |
 | Snake's Converter | Audio, video, image, document converter | ✓ | ✓ | ✓ |
 | Snake's Recompiler | N64 recompiler | ✓ | – | – |
@@ -58,7 +59,7 @@ app and choose *Open*.
 - **Android:** install `snakes-suite-android.apk` from the latest release (allow your
   browser to install apps when Android asks). It is Snake's Master Suite for Android
   and installs the rest: the seven Studio apps (one app with seven icons), Code,
-  Compressor, Converter, SoundPad, MP3 Converter, DAW and Screen Recorder. Built from
+  Terminal, Compressor, Converter, SoundPad, MP3 Converter, DAW and Screen Recorder. Built from
   `android/`.
 - **iPhone and iPad:** open the [website](https://ekanseater.github.io/snakes-suite/)
   in Safari and use *Share → Add to Home Screen* on any app; it then works offline too.
@@ -111,7 +112,7 @@ python install.py --uninstall daw   # remove one
 ```
 
 Building needs Python 3.10+, Rust for the Compressor and the DAW, and Node.js
-for Snake's Code.
+for Snake's Code and Snake's Terminal.
 
 ## The hub
 
