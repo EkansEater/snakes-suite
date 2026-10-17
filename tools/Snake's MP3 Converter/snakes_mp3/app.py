@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_NAME, snake_ergo, snake_theme
-from .downloader import NAME_TEMPLATES, QUALITIES, DownloadJob, JobOptions, human_bytes, human_time
+from .downloader import FORMATS, LOSSLESS, NAME_TEMPLATES, QUALITIES, DownloadJob, JobOptions, human_bytes, human_time
 
 HERE = Path(__file__).resolve().parent
 ICON_PATH = HERE / "assets" / "icon.svg"
@@ -225,7 +225,7 @@ class JobWidget(QFrame):
         self.bar.setVisible(self.state in ("queued", "running"))
         self.setCursor(Qt.OpenHandCursor if self.state == "done" else Qt.ArrowCursor)
         if self.state == "done":
-            self.setToolTip("Drag this card into another app to drop the MP3 file there")
+            self.setToolTip("Drag this card into another app to drop the file there")
         else:
             self.setToolTip("")
 
@@ -419,7 +419,7 @@ class SettingsDialog(QDialog):
         for c in (self.subfolder, self.thumb, self.meta, self.skip, self.notify):
             form.addRow("", c)
 
-        about = QLabel(f"yt-dlp {yt_dlp.version.__version__}  ·  ffmpeg handles the MP3 encoding")
+        about = QLabel(f"yt-dlp {yt_dlp.version.__version__}  ·  ffmpeg handles the encoding")
         about.setObjectName("muted")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -483,7 +483,8 @@ class MainWindow(QMainWindow):
         self.url_edit.setAcceptDrops(False)
         self.url_edit.setClearButtonEnabled(True)
         self.url_edit.returnPressed.connect(self.add_from_field)
-        convert = QPushButton("Convert to MP3")
+        convert = QPushButton("Convert")
+        self.convert_btn = convert
         convert.setObjectName("primary")
         convert.setCursor(Qt.PointingHandCursor)
         convert.clicked.connect(self.add_from_field)
@@ -501,18 +502,30 @@ class MainWindow(QMainWindow):
         self.playlist.setToolTip("If the link is part of a playlist, convert every track in it")
         self.playlist.setChecked(self.settings.value("whole_playlist", False, type=bool))
         self.playlist.toggled.connect(lambda v: self.settings.setValue("whole_playlist", v))
+        self.format = QComboBox()
+        self.format.addItems(FORMATS.keys())
+        self.format.setToolTip("MP3 plays everywhere; M4A and Opus are smaller at the same quality; FLAC and WAV keep everything")
+        self.format.setCurrentText(self.settings.value("format", "MP3"))
+        self.format.currentTextChanged.connect(self._format_changed)
+        self.chapters = QCheckBox("Split by chapters")
+        self.chapters.setToolTip("A video with chapters (an album, a mix, a podcast) becomes one track per chapter,\n"
+                                 "numbered and tagged as an album, in a folder named after the video")
+        self.chapters.setChecked(self.settings.value("split_chapters", False, type=bool))
+        self.chapters.toggled.connect(lambda v: self.settings.setValue("split_chapters", v))
         self.folder_btn = QPushButton()
-        self.folder_btn.setToolTip("Choose where MP3s are saved")
+        self.folder_btn.setToolTip("Choose where the files are saved")
         self.folder_btn.clicked.connect(self.choose_folder)
         open_folder = QPushButton("Open folder")
         open_folder.clicked.connect(self.open_output_folder)
         opts = QHBoxLayout()
-        q_label = QLabel("Quality")
+        q_label = QLabel("Save as")
         q_label.setObjectName("muted")
         opts.addWidget(q_label)
+        opts.addWidget(self.format)
         opts.addWidget(self.quality)
         opts.addSpacing(10)
         opts.addWidget(self.playlist)
+        opts.addWidget(self.chapters)
         opts.addStretch()
         save_label = QLabel("Save to")
         save_label.setObjectName("muted")
@@ -521,6 +534,7 @@ class MainWindow(QMainWindow):
         opts.addWidget(open_folder)
         lay.addLayout(opts)
         self._update_folder_btn()
+        self._format_changed(self.format.currentText())
 
         # queue
         self.list_host = QWidget()
@@ -567,6 +581,13 @@ class MainWindow(QMainWindow):
         self.update_summary()
 
     # ---------------------------------------------------------------- options
+    def _format_changed(self, name: str):
+        self.settings.setValue("format", name)
+        fmt = FORMATS.get(name, "mp3")
+        self.quality.setEnabled(fmt not in LOSSLESS)
+        self.quality.setToolTip("Lossless: there is no bitrate to choose" if fmt in LOSSLESS else "")
+        self.convert_btn.setText(f"Convert to {name.split()[0]}")
+
     def output_dir(self) -> str:
         return self.settings.value("output_dir", DEFAULT_DIR)
 
@@ -578,7 +599,7 @@ class MainWindow(QMainWindow):
         self.folder_btn.setToolTip(f"Saving to {path}\nClick to change")
 
     def choose_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "Save MP3s to…", self.output_dir())
+        d = QFileDialog.getExistingDirectory(self, "Save files to…", self.output_dir())
         if d:
             self.settings.setValue("output_dir", d)
             self._update_folder_btn()
@@ -596,6 +617,8 @@ class MainWindow(QMainWindow):
         return JobOptions(
             output_dir=self.output_dir(),
             quality=QUALITIES[self.quality.currentText()],
+            audio_format=FORMATS.get(self.format.currentText(), "mp3"),
+            split_chapters=self.chapters.isChecked(),
             name_template=NAME_TEMPLATES.get(s.value("template", "Title"), "%(title)s"),
             whole_playlist=self.playlist.isChecked(),
             playlist_subfolder=s.value("playlist_subfolder", True, type=bool),
@@ -710,7 +733,7 @@ class MainWindow(QMainWindow):
             return
         QApplication.alert(self)
         if self.tray and not self.isActiveWindow():
-            msg = f"{counts['done']} MP3{'s' if counts['done'] != 1 else ''} ready"
+            msg = f"{counts['done']} conversion{'s' if counts['done'] != 1 else ''} done"
             if counts["failed"]:
                 msg += f", {counts['failed']} failed"
             self.tray.show()

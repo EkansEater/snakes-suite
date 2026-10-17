@@ -1,10 +1,13 @@
-"""Background worker that turns a video URL into MP3 file(s) using yt-dlp + ffmpeg."""
+"""Background worker that turns a video URL into MP3 (or other audio) file(s) using yt-dlp + ffmpeg."""
 
 from __future__ import annotations
 
 import glob
 import os
+import re
 import shutil
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -21,6 +24,17 @@ QUALITIES = {
     "VBR V0 (~245 kbps)": "0",
 }
 
+# Name shown -> yt-dlp's --audio-format
+FORMATS = {
+    "MP3": "mp3",
+    "M4A (AAC)": "m4a",
+    "Opus": "opus",
+    "FLAC (lossless)": "flac",
+    "WAV (lossless)": "wav",
+}
+LOSSLESS = {"flac", "wav"}  # no bitrate to choose
+COVER_ART = {"mp3", "m4a", "opus", "flac"}  # formats that can carry the thumbnail
+
 NAME_TEMPLATES = {
     "Title": "%(title)s",
     "Artist - Title": "%(artist,creator,uploader|Unknown)s - %(title)s",
@@ -29,11 +43,27 @@ NAME_TEMPLATES = {
 }
 
 PP_STAGES = {
-    "FFmpegExtractAudio": "Converting to MP3…",
+    "FFmpegExtractAudio": "Converting to {format}…",
     "FFmpegThumbnailsConvertor": "Preparing cover art…",
     "EmbedThumbnail": "Embedding cover art…",
     "FFmpegMetadata": "Writing tags…",
 }
+
+
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
+
+
+def _file_name(text: str) -> str:
+    """A chapter title made safe as a file name on every system."""
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", text).strip(" .")
+    return text[:120] or "Track"
+
+
+def _remove(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def find_ffmpeg() -> str | None:
@@ -59,6 +89,8 @@ class JobOptions:
     embed_metadata: bool = True
     skip_existing: bool = True
     cookies_browser: str = ""
+    audio_format: str = "mp3"
+    split_chapters: bool = False  # one file per chapter, in a folder named after the video
 
 
 class Cancelled(Exception):
@@ -155,6 +187,8 @@ class DownloadJob(QThread):
         self._started = time.time()
         self._index = 1
         self._count = 1
+        self._infos: dict[str, dict] = {}  # output file -> its video's info (for chapters)
+        self._made: list[str] = []  # chapter tracks written so far
 
     def cancel(self):
         self._cancel.set()
@@ -166,7 +200,8 @@ class DownloadJob(QThread):
         if o.whole_playlist and o.playlist_subfolder:
             template = "%(playlist_title|.)s/%(playlist_index&{:03d} - |)s" + template
         argv = [
-            "--extract-audio", "--audio-format", "mp3", "--audio-quality", o.quality,
+            "--extract-audio", "--audio-format", o.audio_format,
+            *([] if o.audio_format in LOSSLESS else ["--audio-quality", o.quality]),
             "--paths", o.output_dir,
             "--output", template + ".%(ext)s",
             "--yes-playlist" if o.whole_playlist else "--no-playlist",
@@ -176,7 +211,7 @@ class DownloadJob(QThread):
         ]
         if o.embed_metadata:
             argv += ["--embed-metadata"]
-        if o.embed_thumbnail:
+        if o.embed_thumbnail and o.audio_format in COVER_ART:
             argv += ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
         if o.skip_existing:
             argv += ["--no-overwrites", "--no-post-overwrites"]
@@ -237,17 +272,71 @@ class DownloadJob(QThread):
         if d.get("status") == "started":
             text = PP_STAGES.get(d.get("postprocessor"))
             if text:
-                self.stage.emit(text)
+                self.stage.emit(text.format(format=self.options.audio_format.upper()))
         elif d.get("status") == "finished" and info.get("filepath"):
             self._paths[info.get("id") or info["filepath"]] = info["filepath"]
+            self._infos[info["filepath"]] = info
 
     def _overall(self, pct: float) -> float:
         if pct < 0 or self._count <= 1:
             return pct
         return ((self._index - 1) + pct / 100) / self._count * 100
 
+    # ---------------------------------------------------------------- chapters
+    def _split_all(self, paths: list[str]) -> list[str]:
+        out = []
+        for path in paths:
+            info = self._infos.get(path) or {}
+            chapters = [c for c in info.get("chapters") or [] if c.get("end_time", 0) > c.get("start_time", 0)]
+            out += self._split(path, info, chapters) if len(chapters) >= 2 else [path]
+        return out
+
+    def _split(self, path: str, info: dict, chapters: list[dict]) -> list[str]:
+        """One file per chapter, tagged as an album, in a folder named after the video; the long file goes."""
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            return [path]
+        stem, ext = os.path.splitext(path)
+        os.makedirs(stem, exist_ok=True)
+        album = info.get("title") or os.path.basename(stem)
+        artist = info.get("artist") or info.get("creator") or info.get("uploader") or info.get("channel") or ""
+        n = len(chapters)
+        tracks = []
+        for i, ch in enumerate(chapters, 1):
+            if self._cancel.is_set():
+                raise Cancelled()
+            self.stage.emit(f"Splitting into chapters: track {i} of {n}…")
+            self.progress.emit((i - 1) / n * 100, "")
+            title = (ch.get("title") or "").strip() or f"Part {i}"
+            dest = os.path.join(stem, f"{i:02d} - {_file_name(title)}{ext}")
+            start, end = float(ch["start_time"]), float(ch["end_time"])
+            cmd = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-ss", f"{start:.3f}", "-i", path,
+                   "-t", f"{end - start:.3f}", "-map", "0", "-c", "copy", "-map_metadata", "0", "-map_metadata:s:a", "0:s:a"]
+            if ext.lower() == ".flac":
+                cmd += ["-c:a", "flac"]  # copied FLAC keeps the whole file's length in its header; encoding again is lossless
+            tags = {"title": title, "album": album, "track": f"{i}/{n}"}
+            if artist:
+                tags.update(artist=artist, album_artist=artist)
+            for key, value in tags.items():
+                # File-wide tags for most formats; Ogg (Opus) keeps them on the audio stream.
+                cmd += ["-metadata", f"{key}={value}", "-metadata:s:a:0", f"{key}={value}"]
+            if ext.lower() == ".m4a":
+                cmd += ["-movflags", "+faststart"]
+            self._made.append(dest)
+            result = subprocess.run(cmd + [dest], stdin=subprocess.DEVNULL, capture_output=True, **_NO_WINDOW)
+            if result.returncode != 0 or not os.path.exists(dest):
+                for t in tracks + [dest]:
+                    _remove(t)
+                err = result.stderr.decode("utf-8", "replace").strip().splitlines()
+                raise RuntimeError("Splitting into chapters failed" + (f": {err[-1]}" if err else "."))
+            tracks.append(dest)
+        _remove(path)
+        return tracks
+
     def _cleanup_partials(self):
-        """Delete leftovers (partial media, thumbnails, half-written MP3s) this job created."""
+        """Delete leftovers (partial media, thumbnails, half-written files) this job created."""
+        for t in self._made:
+            _remove(t)
         for stem in self._stems:
             for f in glob.glob(glob.escape(stem) + ".*"):
                 try:
@@ -276,7 +365,10 @@ class DownloadJob(QThread):
                             paths.append(p)
             if not paths:
                 raise RuntimeError(logger.errors[-1] if logger.errors else "No audio was produced for this link.")
-            self.succeeded.emit(sorted(set(paths)))
+            paths = sorted(set(paths))
+            if self.options.split_chapters:
+                paths = self._split_all(paths)
+            self.succeeded.emit(paths)
         except Exception as exc:  # noqa: BLE001 - every failure goes to the UI
             if self._cancel.is_set() or isinstance(exc, Cancelled):
                 self._cleanup_partials()

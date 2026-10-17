@@ -11,6 +11,8 @@ requires-python = ">=3.10"
 dependencies = [
     "PySide6-Essentials>=6.6",
     "yt-dlp",
+    # cover art and tags in Opus, FLAC and M4A files
+    "mutagen",
     # ships an ffmpeg binary, used when no system ffmpeg is installed
     "imageio-ffmpeg>=0.5",
 ]

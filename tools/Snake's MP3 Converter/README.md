@@ -22,6 +22,8 @@ You can also pass links on the command line: `./snakes-mp3 https://youtu.be/...`
 - Paste with **Ctrl+V**, click the drop zone to grab the clipboard, or type a link and press Enter
 - Works with YouTube, SoundCloud, Bandcamp, Vimeo, TikTok and [1000+ other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
 - Quality: 320 / 256 / 192 / 128 kbps CBR, or VBR V0
+- **Formats**: MP3 (plays everywhere), M4A (AAC) and Opus (smaller at the same quality), FLAC and WAV (lossless)
+- **Split by chapters**: a video with chapters (an album, a DJ mix, a podcast) becomes one track per chapter, numbered and tagged as an album (title, album, artist, track number, cover art) in a folder named after the video
 - Embeds the video thumbnail as **album art** and writes title / artist / date tags
 - **Playlists**: tick "Whole playlist" to grab every track, saved into a numbered subfolder
 - Queue with live progress, speed and ETA; several downloads at once (configurable)
