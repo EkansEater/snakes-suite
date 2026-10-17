@@ -26,7 +26,7 @@ const SUITE = [
   { id: 'daw', name: "Snake's DAW", tag: 'Amp, effects, looper and recording', group: 'Media', kind: 'native', where: EVERYWHERE },
   { id: 'mp3', name: "Snake's MP3 Converter", tag: 'Video links to tagged MP3s', group: 'Media', kind: 'native', where: EVERYWHERE,
     why: 'It downloads from video sites, which a web page is not allowed to do.' },
-  { id: 'converter', name: "Snake's Converter", tag: 'Audio, video, pictures, documents', group: 'Tools', kind: 'native', where: EVERYWHERE },
+  { id: 'converter', name: "Snake's Converter", tag: 'Audio, video, pictures, documents', group: 'Tools', kind: 'web', where: EVERYWHERE },
   { id: 'compressor', name: "Snake's Compressor", tag: 'Lossless .snake archives', group: 'Tools', kind: 'native', where: EVERYWHERE },
   { id: 'recompiler', name: "Snake's Recompiler", tag: 'Your N64 games as native programs', group: 'Tools', kind: 'native', where: 'Linux',
     why: 'It builds programs on your computer.' },

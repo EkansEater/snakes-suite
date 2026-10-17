@@ -10,6 +10,7 @@ import { createShell, tb, select, refresh } from '../../kit/shell.js';
 import { contextMenu, closeMenus } from '../../kit/menu.js';
 import { toast, errorToast, confirmBox, modal, promptBox } from '../../kit/dialogs.js';
 import { GifEncoder } from '../../kit/gif.js';
+import { withDuration } from '../../kit/webm.js';
 
 const settings = host.settings;
 const canScreen = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
@@ -369,7 +370,10 @@ async function stop() {
     ext = 'gif';
   } else {
     await new Promise((res) => { r.recorder.addEventListener('stop', res, { once: true }); r.recorder.stop(); });
-    blob = new Blob(r.chunks, { type: r.type[0].split(';')[0] });
+    const type = r.type[0].split(';')[0];
+    blob = new Blob(r.chunks, { type });
+    // A browser's WebM does not say how long it is: write that in, so players can seek.
+    if (type.endsWith('/webm')) blob = new Blob([withDuration(new Uint8Array(await blob.arrayBuffer()), duration * 1000)], { type });
     ext = r.type[1];
   }
   stopStreams(r.streams);
