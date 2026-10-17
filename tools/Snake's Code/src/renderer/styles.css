@@ -471,6 +471,7 @@ input[type='checkbox'] { accent-color: var(--accent); }
 .sb-item { display: flex; align-items: center; gap: 2px; padding: 0 7px; white-space: nowrap; }
 .sb-item .codicon { font-size: 14px; }
 .sb-item.clickable { cursor: pointer; }
+.sb-item.sb-dim { opacity: 0.7; }
 .sb-item.clickable:hover { background: var(--statusbar-hover); }
 .sb-item[data-id='remote'] { background: var(--accent); color: var(--accent-fg); padding: 0 10px; }
 .sb-item[data-id='remote']:hover { filter: brightness(1.15); background: var(--accent); }

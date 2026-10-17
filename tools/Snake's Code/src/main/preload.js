@@ -63,6 +63,16 @@ contextBridge.exposeInMainWorld('snake', {
   },
 
   git: { run: invoke('git:run') },
+
+  lsp: {
+    which: invoke('lsp:which'),
+    start: invoke('lsp:start'),
+    send: send('lsp:send'),
+    stop: send('lsp:stop'),
+    onMessage: on('lsp:message'),
+    onExit: on('lsp:exit'),
+    onStderr: on('lsp:stderr'),
+  },
   exec: invoke('proc:exec'),
 
   dialog: {

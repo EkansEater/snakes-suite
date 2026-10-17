@@ -6,6 +6,7 @@ import { workspace, listWorkspaceFiles, getState } from './workspace.js';
 import { openFile, activeCodeEditor, getGroups, runEditorAction, setActiveGroup } from './editors.js';
 import { fileIcon } from './icons.js';
 import * as settings from './settings.js';
+import { workspaceSymbols, hasWorkspaceSymbols } from './lsp.js';
 
 const recentCommands = [];
 bus.on('command:executed', (id) => {
@@ -20,7 +21,7 @@ const PREFIXES = [
   { prefix: '>', label: 'Show and Run Commands', key: 'workbench.action.showCommands' },
   { prefix: ':', label: 'Go to Line/Column', key: 'workbench.action.gotoLine' },
   { prefix: '@', label: 'Go to Symbol in Editor', key: 'workbench.action.gotoSymbol' },
-  { prefix: '#', label: 'Search for Text in Files', key: 'workbench.action.findInFiles' },
+  { prefix: '#', label: 'Go to Symbol in Workspace (or search for text in files)', key: 'workbench.action.showAllSymbols' },
   { prefix: 'term ', label: 'Show All Opened Terminals', key: null },
   { prefix: 'edt ', label: 'Show All Opened Editors', key: 'workbench.action.showAllEditors' },
   { prefix: '?', label: 'Help', key: null },
@@ -45,10 +46,8 @@ export function openQuickOpen(initial = '') {
         qi.close(false);
         runEditorAction('editor.action.quickOutline');
       } else if (m === 'help') helpMode(qi);
-      else if (m === 'search') {
-        qi.setItems([{ label: `Search for '${value.slice(1)}' in files`, icon: 'search', run: () => executeCommand('workbench.action.findInFiles', { query: value.slice(1) }) }]);
-        qi.setPlaceholder('');
-      } else if (m === 'editors') editorsMode(value.slice(4), qi);
+      else if (m === 'search') symbolsMode(value.slice(1), qi, ++fileItemsToken, () => fileItemsToken);
+      else if (m === 'editors') editorsMode(value.slice(4), qi);
       else if (m === 'term') {
         qi.setItems([{ label: 'Create New Terminal', icon: 'add', run: () => executeCommand('workbench.action.terminal.new') }, { label: 'Toggle Terminal', icon: 'terminal', run: () => executeCommand('workbench.action.terminal.toggleTerminal') }]);
       } else filesMode(value, qi, ++fileItemsToken, () => fileItemsToken);
@@ -136,6 +135,43 @@ function highlightHtml(text, positions) {
   }
   if (open) out += '</span>';
   return out;
+}
+
+// ---- symbols in the project (from the language servers) ----
+const SYMBOL_ICONS = ['file', 'module', 'namespace', 'package', 'class', 'method', 'property', 'field', 'constructor', 'enum', 'interface', 'function', 'variable',
+  'constant', 'string', 'number', 'boolean', 'array', 'object', 'key', 'null', 'enum-member', 'struct', 'event', 'operator', 'type-parameter'];
+
+async function symbolsMode(q, qi, token, currentToken) {
+  const query = q.trim();
+  const search = { label: query ? `Search for '${query}' in files` : 'Search for text in files', icon: 'search', run: () => executeCommand('workbench.action.findInFiles', { query }) };
+  qi.setItems([search]);
+  if (!hasWorkspaceSymbols()) {
+    qi.setPlaceholder('Open a file a language server understands to find symbols, or press Enter to search for text.');
+    return;
+  }
+  qi.setPlaceholder('Type the name of a function, class or variable to go to it.');
+  if (!query) return;
+  await new Promise((r) => setTimeout(r, 150)); // wait for a pause in typing
+  if (currentToken() !== token) return;
+  const list = await workspaceSymbols(query);
+  if (currentToken() !== token) return;
+  const root = workspace.root;
+  const lower = query.toLowerCase();
+  const items = list.map((x) => {
+    const m = fuzzyMatch(query, x.name);
+    // The project's own symbols first, then names that start with what was typed.
+    const own = root && isInside(root, x.path) ? 1000 : 0;
+    const prefix = x.name.toLowerCase().startsWith(lower) ? 100 : 0;
+    return {
+      label: x.name,
+      labelHtml: highlightHtml(x.name, m ? m.positions : []),
+      description: [x.container, root && isInside(root, x.path) ? relative(root, x.path) : x.path].filter(Boolean).join(' · '),
+      icon: `symbol-${SYMBOL_ICONS[x.kind] || 'misc'}`,
+      score: own + prefix + (m ? m.score : 0),
+      run: () => openFile(x.path, { pinned: true, selection: x.range || undefined }),
+    };
+  }).sort((a, b) => b.score - a.score).slice(0, 300);
+  qi.setItems([...items, search]);
 }
 
 // ---- go to line ----

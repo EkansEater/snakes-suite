@@ -13,7 +13,8 @@ import * as explorer from './modules/explorer.js';
 import { focusSearch } from './modules/search.js';
 import * as gitMod from './modules/git.js';
 import * as panel from './modules/panel.js';
-import { initStatusbar, setStatusbarVisible } from './modules/statusbar.js';
+import { initStatusbar, setStatusbarVisible, addStatusItem } from './modules/statusbar.js';
+import { initLsp, lspCommands, runningServers } from './modules/lsp.js';
 import { openQuickOpen, showEditorsMRU } from './modules/palette.js';
 import { openSettings, openKeybindings, openWelcome, showAbout } from './modules/pages.js';
 import { initTitlebar } from './modules/titlebar.js';
@@ -551,6 +552,7 @@ function registerAllCommands() {
     { id: 'workbench.action.quickOpen', title: 'Go to File...', category: 'File', key: ['ctrl+p', 'ctrl+e'], inTerminal: true, run: () => openQuickOpen('') },
     { id: 'workbench.action.gotoLine', title: 'Go to Line/Column...', category: 'Go', displayKey: 'ctrl+g', run: () => (editors.activeCodeEditor() ? openQuickOpen(':') : null) },
     { id: 'workbench.action.gotoSymbol', title: 'Go to Symbol in Editor...', category: 'Go', displayKey: 'ctrl+shift+o', run: () => editors.runEditorAction('editor.action.quickOutline') },
+    { id: 'workbench.action.showAllSymbols', title: 'Go to Symbol in Workspace...', category: 'Go', key: 'ctrl+t', inTerminal: true, run: () => openQuickOpen('#') },
     { id: 'workbench.action.showAllEditors', title: 'Show All Editors By Appearance', category: 'View', key: 'ctrl+k ctrl+p', run: () => openQuickOpen('edt ') },
     { id: 'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup', title: 'Quick Open Previous Recently Used Editor in Group', category: 'View', key: 'ctrl+tab', inTerminal: true, run: () => showEditorsMRU(true) },
     { id: 'workbench.action.navigateBack', title: 'Go Back', category: 'Go', key: ['alt+left', 'ctrl+alt+-'], run: () => editors.goBack() },
@@ -646,6 +648,12 @@ function registerAllCommands() {
     E('editor.action.jumpToBracket', 'Go to Bracket', 'ctrl+shift+\\', 'Go'),
     E('editor.action.revealDefinition', 'Go to Definition', 'f12', 'Go'),
     E('editor.action.goToReferences', 'Go to References', 'shift+f12', 'Go'),
+    E('editor.action.peekDefinition', 'Peek Definition', 'alt+f12', 'Go'),
+    E('editor.action.goToImplementation', 'Go to Implementations', 'ctrl+f12', 'Go'),
+    E('editor.action.goToTypeDefinition', 'Go to Type Definition', null, 'Go'),
+    E('editor.action.quickFix', 'Quick Fix...', 'ctrl+.', 'Edit'),
+    E('editor.action.triggerParameterHints', 'Trigger Parameter Hints', 'ctrl+shift+space', 'Edit'),
+    ...lspCommands(),
     E('editor.action.rename', 'Rename Symbol', 'f2', 'Edit'),
     E('editor.action.marker.nextInFiles', 'Go to Next Problem', 'f8', 'Go'),
     E('editor.action.marker.prevInFiles', 'Go to Previous Problem', 'shift+f8', 'Go'),
@@ -788,6 +796,7 @@ async function boot() {
   editors.initEditors();
   panel.initPanel();
   initStatusbar();
+  initLsp(addStatusItem('lsp'));
   initLayout();
   gitMod.initGit();
   registerAllCommands();
@@ -903,4 +912,4 @@ boot().catch((err) => {
 });
 
 // handy for debugging from DevTools
-window.snakeApp = { editors, settings, monaco, executeCommand, getCommand, workspace, isInside, errors: recentErrors };
+window.snakeApp = { editors, settings, monaco, executeCommand, getCommand, workspace, isInside, errors: recentErrors, languageServers: runningServers };

@@ -24,6 +24,7 @@ Other scripts:
 
 **Editor**
 - Monaco editor: IntelliSense for JS/TS/JSON/CSS/HTML, syntax highlighting for ~80 languages, multi-cursor, find/replace, folding, minimap, sticky scroll, bracket-pair colorization, go to definition, rename symbol, and format document.
+- Language servers: for C/C++, Python, Rust, Go, Java, C#, PHP, Ruby, Lua, Swift, Kotlin, Dart, Zig, shell scripts, YAML, TOML and more, Snake's Code uses the server program you already have installed (clangd, pyright or pylsp, rust-analyzer, gopls...). You get completions, hover, parameter hints, inlay hints, errors and warnings in Problems, go to definition / implementation / references, rename across files, formatting, quick fixes and Go to Symbol in Workspace (`Ctrl+T`). The status bar shows which server is running (click it to restart it or see its log), or how to install one. `languageServers.custom` picks a different program or adds a file type: `python=pylsp; .nim=nimlangserver`.
 - Tabs with preview mode (italic), dirty indicators, drag to reorder, drag between groups, middle-click to close, and a context menu.
 - Split editors: side-by-side groups with resizable sashes; drop a tab on the right edge to split.
 - Breadcrumbs: click a segment to browse sibling files.
@@ -62,7 +63,8 @@ src/main/main.js        Electron main process: windows, fs, search (ripgrep), pt
 src/main/preload.js     The narrow IPC bridge exposed as window.snake
 src/renderer/app.js     Boot, layout, session restore, and every command registration
 src/renderer/modules/   editors, explorer, search, git, panel (terminal/problems/output),
-                        palette, settings, themes, keybindings, titlebar, statusbar, pages
+                        palette, settings, themes, keybindings, titlebar, statusbar, pages,
+                        lsp (language servers: started by the main process, spoken to here)
 build.mjs               esbuild bundling (app + Monaco web workers) into dist/
 ```
 

@@ -143,6 +143,13 @@ function showNotificationCenter(e) {
   );
 }
 
+/** A status bar item for another module (right side, before the language). */
+export function addStatusItem(id, opts = {}) {
+  const node = item(id, { priority: -1, ...opts });
+  items.language.before(node);
+  return node;
+}
+
 export function setStatusbarVisible(v) {
   document.getElementById('workbench').classList.toggle('statusbar-hidden', !v);
 }

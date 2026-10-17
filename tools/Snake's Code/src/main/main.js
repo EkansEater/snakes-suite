@@ -133,6 +133,7 @@ function createWindow(openPath) {
   win.snakeForceClose = false;
   win.snakePtys = new Map();
   win.snakeWatchers = new Map();
+  win.snakeServers = new Map();
   windows.add(win);
 
   if (state.windowMaximized && win.snakeIsFirst) win.maximize();
@@ -157,6 +158,9 @@ function createWindow(openPath) {
       try { p.kill(); } catch {}
     }
     for (const w of win.snakeWatchers.values()) w.close();
+    for (const ls of win.snakeServers.values()) {
+      try { ls.proc.kill(); } catch {}
+    }
     windows.delete(win);
   });
 
@@ -542,6 +546,95 @@ ipcMain.handle('pty:cwd', async (e, id) => {
   const p = winOf(e)?.snakePtys.get(id);
   if (!p || process.platform !== 'linux') return null;
   try { return await fsp.readlink(`/proc/${p.pid}/cwd`); } catch { return null; }
+});
+
+// ---------------------------------------------------------------------------
+// Language servers (LSP): JSON-RPC over the server's stdin and stdout
+// ---------------------------------------------------------------------------
+let lspCounter = 0;
+
+/** The full path of a program on the PATH (with Windows' .exe/.cmd endings), or null. */
+function findExecutable(name) {
+  if (path.isAbsolute(name)) return fs.existsSync(name) ? name : null;
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((x) => x.toLowerCase()).concat(['']) : [''];
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  // Places language servers are often installed that a desktop session may not have on its PATH.
+  const home = os.homedir();
+  dirs.push(path.join(home, '.local', 'bin'), path.join(home, '.cargo', 'bin'), path.join(home, 'go', 'bin'), path.join(home, '.npm-global', 'bin'));
+  if (process.platform === 'darwin') dirs.push('/opt/homebrew/bin', '/usr/local/bin');
+  for (const d of dirs) {
+    for (const ext of exts) {
+      const full = path.join(d, name + ext);
+      try {
+        const st = fs.statSync(full);
+        if (st.isFile()) return full;
+      } catch {}
+    }
+  }
+  return null;
+}
+
+ipcMain.handle('lsp:which', (_e, names) => {
+  const out = {};
+  for (const n of names || []) out[n] = findExecutable(n);
+  return out;
+});
+
+ipcMain.handle('lsp:start', (e, { command, args = [], cwd }) => {
+  const win = winOf(e);
+  const exe = findExecutable(command);
+  if (!exe) return { ok: false, error: `${command} is not installed` };
+  const id = ++lspCounter;
+  let proc;
+  try {
+    proc = spawn(...clean(exe, args), { cwd: cwd && fs.existsSync(cwd) ? cwd : os.homedir(), env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  const entry = { proc, buf: Buffer.alloc(0), stderr: '' };
+  win.snakeServers.set(id, entry);
+  proc.stdout.on('data', (chunk) => {
+    entry.buf = Buffer.concat([entry.buf, chunk]);
+    // Messages are "Content-Length: n\r\n...\r\n\r\n" followed by n bytes of JSON.
+    for (;;) {
+      const head = entry.buf.indexOf('\r\n\r\n');
+      if (head < 0) break;
+      const m = /Content-Length:\s*(\d+)/i.exec(entry.buf.subarray(0, head).toString('ascii'));
+      if (!m) { entry.buf = entry.buf.subarray(head + 4); continue; }
+      const len = Number(m[1]);
+      if (entry.buf.length < head + 4 + len) break;
+      const body = entry.buf.subarray(head + 4, head + 4 + len).toString('utf8');
+      entry.buf = entry.buf.subarray(head + 4 + len);
+      let msg;
+      try { msg = JSON.parse(body); } catch { continue; }
+      if (!win.isDestroyed()) win.webContents.send('lsp:message', id, msg);
+    }
+  });
+  proc.stderr.on('data', (chunk) => {
+    const text = chunk.toString('utf8');
+    entry.stderr = (entry.stderr + text).slice(-4000);
+    if (!win.isDestroyed()) win.webContents.send('lsp:stderr', id, text);
+  });
+  proc.on('error', (err) => { entry.stderr += `\n${err.message}`; });
+  proc.on('exit', (code) => {
+    win.snakeServers.delete(id);
+    if (!win.isDestroyed()) win.webContents.send('lsp:exit', id, code, entry.stderr.trim().split('\n').slice(-6).join('\n'));
+  });
+  proc.stdin.on('error', () => {});
+  return { ok: true, id, path: exe };
+});
+
+ipcMain.on('lsp:send', (e, id, msg) => {
+  const entry = winOf(e)?.snakeServers.get(id);
+  if (!entry || !entry.proc.stdin.writable) return;
+  const body = Buffer.from(JSON.stringify(msg), 'utf8');
+  entry.proc.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
+  entry.proc.stdin.write(body);
+});
+
+ipcMain.on('lsp:stop', (e, id) => {
+  const entry = winOf(e)?.snakeServers.get(id);
+  if (entry) { try { entry.proc.kill(); } catch {} }
 });
 
 // ---------------------------------------------------------------------------

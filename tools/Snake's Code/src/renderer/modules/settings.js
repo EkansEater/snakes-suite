@@ -102,6 +102,10 @@ const SCHEMA = [
   ['terminal.integrated.scrollback', 5000, 'Lines of scrollback.', { type: 'number' }],
   ['terminal.integrated.copyOnSelection', false, 'Copy selected terminal text automatically.', { type: 'boolean' }],
 
+  // ---- Language servers ----
+  ['languageServers.enabled', true, 'Use the language servers installed on this computer (clangd, pyright, rust-analyzer, gopls...) for completions, problems, go to definition, rename and formatting.', { type: 'boolean' }],
+  ['languageServers.custom', '', 'Your own choices, separated by semicolons: "python=pylsp" picks the program for a language; ".nim=nimlangserver" adds one for a file type.', { type: 'string' }],
+
   // ---- Git ----
   ['git.enabled', true, 'Enable git integration.', { type: 'boolean' }],
   ['git.autoRefresh', true, 'Refresh git status when files change.', { type: 'boolean' }],

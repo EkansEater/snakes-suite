@@ -173,7 +173,7 @@ export function dirtyDocuments() {
 // a file to open) share one load: a second TextDocument would dispose the first one's model.
 const loading = new Map();
 
-async function loadDocument(path, opts = {}) {
+export async function loadDocument(path, opts = {}) {
   const existing = docs.get(path);
   if (existing) return existing;
   if (loading.has(path)) return loading.get(path);
@@ -1302,6 +1302,11 @@ export function activeCodeEditor() {
   if (a?.kind === 'text') return activeGroup.textEditor;
   if (a?.kind === 'diff') return activeGroup.diffEditor?.getModifiedEditor();
   return null;
+}
+
+/** Whether a document has a tab in any group (it may be loaded without one). */
+export function isDocumentOpen(doc) {
+  return groups.some((g) => g.tabs.some((t) => t.doc === doc));
 }
 
 function editorShowing(doc) {
