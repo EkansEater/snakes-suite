@@ -1,6 +1,6 @@
 # Made by the build: the Studio's pages (copied from tools/Snake's Studio/dist),
 # the Xcode project (xcodegen generate) and build output.
 /studio/
-/SnakesStudio.xcodeproj/
+/SnakesMasterSuite.xcodeproj/
 /build/
 *.ipa

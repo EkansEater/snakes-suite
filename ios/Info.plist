@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Snake's Studio</string>
+	<string>Master Suite</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -44,8 +44,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Movie Maker records a voice-over only while you press its microphone button.</string>
-	<!-- Opening files where they are (Files app), and "Open in Snake's Studio" from other apps. -->
+	<string>Snake's DAW, Movie Maker, SoundPad and Screen Recorder use the microphone only while you record or switch it on.</string>
+	<!-- Opening files where they are (Files app), and "Open in Master Suite" from other apps. -->
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>
@@ -106,6 +106,18 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Snake archive</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.snake.suite.archive</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Video or music</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -115,6 +127,28 @@
 			<array>
 				<string>public.audiovisual-content</string>
 			</array>
+		</dict>
+	</array>
+	<!-- .snake archives (Snake's Compressor), so the Files app opens them here. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.snake.suite.archive</string>
+			<key>UTTypeDescription</key>
+			<string>Snake archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>snake</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

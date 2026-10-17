@@ -2,16 +2,16 @@ import UIKit
 import UniformTypeIdentifiers
 import WebKit
 
-/// Snake's Studio on iPhone and iPad: the desktop Studio's own pages in a web view, served
-/// from the app (SchemeHandler). It opens on the Studio's home page, which lists the seven
-/// apps. The pages reach the phone only through window.SnakeIOS (the script below and
+/// Snake's Master Suite on iPhone and iPad: the suite's own pages (the same as the website) in
+/// a web view, served from the app (SchemeHandler). It opens on the home page, which lists
+/// every Snake app. The pages reach the phone only through window.SnakeIOS (the script below and
 /// `handle`): the document picker, the files picked, printing, and switching apps.
 final class StudioViewController: UIViewController, WKNavigationDelegate, WKUIDelegate,
     WKScriptMessageHandlerWithReply, UIDocumentPickerDelegate {
 
     private var web: WKWebView!
     private let files = Files()
-    /// A file another app opened with Snake's Studio, waiting for its page to start.
+    /// A file another app opened with Master Suite, waiting for its page to start.
     private var waiting: URL?
     private var pickerDone: (([URL]) -> Void)?
     private var hideStatusBar = false
@@ -75,18 +75,19 @@ final class StudioViewController: UIViewController, WKNavigationDelegate, WKUIDe
         web.load(URLRequest(url: URL(string: "\(Files.origin)/\(app)/index.html")!))
     }
 
-    /// The Studio app that opens a file, by its extension.
+    /// The app that opens a file, by its extension.
     private static func app(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "docx", "odt", "md", "markdown", "rtf", "txt", "html", "htm": return "word"
         case "xlsx", "csv", "tsv", "ods": return "sheets"
         case "pptx": return "slides"
+        case "snake": return "compressor"
         case "png", "jpg", "jpeg", "webp", "gif", "bmp", "avif", "psd", "ora", "heic": return "photo"
         default: return "player"
         }
     }
 
-    /// Another app (Files, Mail...) opened a file with Snake's Studio.
+    /// Another app (Files, Mail...) opened a file with Master Suite.
     func open(_ url: URL) {
         let app = Self.app(for: url)
         if web.url?.path == "/\(app)/index.html" {
@@ -170,7 +171,7 @@ final class StudioViewController: UIViewController, WKNavigationDelegate, WKUIDe
             done(.success(files.forgetRecent(app, key: str(0))))
         case "print":
             let info = UIPrintInfo(dictionary: nil)
-            info.jobName = str(0) ?? "Snake's Studio"
+            info.jobName = str(0) ?? "Snake's Master Suite"
             info.outputType = .general
             let printer = UIPrintInteractionController.shared
             printer.printInfo = info

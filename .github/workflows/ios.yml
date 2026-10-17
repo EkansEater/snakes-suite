@@ -1,9 +1,9 @@
-# Snake's Studio for iPhone and iPad, built on GitHub's Macs (this repository is public,
-# so they cost nothing). Runs when the iOS app or the Studio changes on main, or by hand.
+# Snake's Master Suite for iPhone and iPad, built on GitHub's Macs (this repository is public,
+# so they cost nothing). Runs when the iOS app, the Studio or Snake's Code changes on main, or by hand.
 #
 # Without an Apple Developer account the app cannot be signed here, so this makes:
 #   - a check that the code builds (for the simulator), and
-#   - snakes-studio-ios-unsigned.ipa (an artifact of the run): an app you can put on your
+#   - snakes-master-suite-ios-unsigned.ipa (an artifact of the run): an app you can put on your
 #     own iPhone with a sideloading tool that signs it with your Apple ID (AltStore,
 #     Sideloadly). Apple limits such apps to 7 days before they need signing again.
 # With a paid account ($99/year) the same project can go to TestFlight or the App Store.
@@ -42,30 +42,30 @@ jobs:
           brew install xcodegen
           rm -rf studio && cp -R "../tools/Snake's Studio/dist" studio
           rm -f studio/sw.js   # the website's offline copy; the app has its files already
-          # The app's version: the newest of the seven Studio apps' (as on Android and the desktop).
-          echo "STUDIO_VERSION=$(python3 -c "import json; v=[t['version'] for t in json.load(open('../suite.json'))['tools'] if t.get('studio_app')]; print(max(v, key=lambda s: [int(x) for x in s.split('.')]))")" >> "$GITHUB_ENV"
-          echo "STUDIO_BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
+          # The app's version is the suite's (suite.json), as for the hub on the desktop and Android.
+          echo "SUITE_VERSION=$(python3 -c "import json; print(json.load(open('../suite.json'))['version'])")" >> "$GITHUB_ENV"
+          echo "SUITE_BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
       - name: Generate
         working-directory: ios
         run: xcodegen generate
       - name: Build for the simulator (checks the code)
         working-directory: ios
         run: |
-          xcodebuild -project SnakesStudio.xcodeproj -scheme SnakesStudio -configuration Release \
+          xcodebuild -project SnakesMasterSuite.xcodeproj -scheme SnakesMasterSuite -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO build | tail -n 30
           test "${PIPESTATUS[0]}" -eq 0
       - name: Unsigned app for iPhone
         working-directory: ios
         run: |
-          xcodebuild -project SnakesStudio.xcodeproj -scheme SnakesStudio -configuration Release \
+          xcodebuild -project SnakesMasterSuite.xcodeproj -scheme SnakesMasterSuite -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -n 30
           test "${PIPESTATUS[0]}" -eq 0
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/SnakesStudio.app Payload/
-          zip -qry snakes-studio-ios-unsigned.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/SnakesMasterSuite.app Payload/
+          zip -qry snakes-master-suite-ios-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: snakes-studio-ios-unsigned
-          path: ios/snakes-studio-ios-unsigned.ipa
+          name: snakes-master-suite-ios-unsigned
+          path: ios/snakes-master-suite-ios-unsigned.ipa

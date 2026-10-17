@@ -11,7 +11,7 @@ struct StudioError: LocalizedError {
 /// The files the person picked, as the page knows them: id, name, ext, size, mtime, writable.
 /// The page reads one at snake-studio://app/file/<id>/<name> (SchemeHandler, with byte ranges
 /// so video can seek) and writes it in pieces. An id exists only for a file the person chose,
-/// or opened Snake's Studio with; nothing else on the phone is reachable.
+/// or opened Master Suite with; nothing else on the phone is reachable.
 final class Files {
     static let scheme = "snake-studio"
     static let origin = "\(scheme)://app"

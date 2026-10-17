@@ -1,6 +1,6 @@
 import WebKit
 
-/// Serves the Studio's pages from the app at snake-studio://app/ (the same files as the
+/// Serves the suite's pages from the app at snake-studio://app/ (the same files as the
 /// website, copied into the app as "studio"), and the files the person picked at
 /// snake-studio://app/file/<id>/<name>, with byte ranges so video can seek.
 final class SchemeHandler: NSObject, WKURLSchemeHandler {
@@ -48,7 +48,7 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
         if FileManager.default.fileExists(atPath: file.path, isDirectory: &isDir), isDir.boolValue {
             file = file.appendingPathComponent("index.html")
         }
-        // Only files inside the Studio's own folder.
+        // Only files inside the app's own pages.
         guard file.path.hasPrefix(root.path + "/"), let data = try? Data(contentsOf: file) else { return notFound() }
         return (200, ["Content-Type": Files.mime(for: file.lastPathComponent), "Content-Length": String(data.count),
                       "Cache-Control": "no-cache"], data)

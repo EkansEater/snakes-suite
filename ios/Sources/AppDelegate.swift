@@ -13,7 +13,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    /// A file opened with Snake's Studio from another app (Files, Mail, Safari...).
+    /// A file opened with Master Suite from another app (Files, Mail, Safari...).
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         guard url.isFileURL, let studio = window?.rootViewController as? StudioViewController else { return false }
         studio.open(url)

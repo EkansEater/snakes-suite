@@ -33,7 +33,7 @@ const SUITE = [
 ];
 
 // On the desktop this is the Studio's window; everywhere else, the whole suite.
-const asSuite = !inElectron;
+const asSuite = !inElectron && platform !== 'android'; // Android has each app on its own
 const runsHere = (a) => a.kind === 'studio' || (asSuite && a.kind === 'web');
 const shown = asSuite ? SUITE : SUITE.filter((a) => a.kind === 'studio');
 const title = asSuite ? "Snake's Master Suite" : "Snake's Studio";

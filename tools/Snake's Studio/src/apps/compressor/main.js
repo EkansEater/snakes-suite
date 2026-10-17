@@ -380,6 +380,19 @@ window.addEventListener('drop', async (e) => {
   addFiles(real);
 });
 
+// A .snake file opened with the app (the iPhone's Files app, "Open in…").
+async function openGiven(files) {
+  const f = files.find((x) => /\.snake$/i.test(x.name));
+  if (!f || busy) return;
+  try {
+    openArchive(f instanceof Blob ? f : new File([await host.read(f)], f.name));
+  } catch (err) {
+    errorToast(err.message || String(err));
+  }
+}
+host.onOpen(openGiven);
+
 paint();
+openGiven((shell.info && shell.info.files) || []);
 window.snakeApp = { commands, addFiles, openArchive, get items() { return items; }, get opened() { return opened; }, pack, read };
 closeMenus();
