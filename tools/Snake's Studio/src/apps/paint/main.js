@@ -15,7 +15,7 @@ import {
   makeCanvas, cloneCanvas, rgba, floodMask, fillMask, rotated, flipped, resized, cropped, canvasBytes, decodeImage, IMAGE_TYPES,
 } from '../../kit/raster.js';
 
-const OPEN_FILTERS = [{ name: 'Pictures', exts: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'avif', 'svg', 'ico'] }];
+const OPEN_FILTERS = [{ name: 'Pictures', exts: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'avif', 'tif', 'tiff', 'heic', 'heif', 'svg', 'ico'] }];
 const SAVE_TYPES = {
   png: { name: 'PNG picture', exts: ['png'], mime: 'image/png' },
   jpg: { name: 'JPEG picture', exts: ['jpg'], mime: 'image/jpeg' },

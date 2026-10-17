@@ -25,7 +25,7 @@ import { readOra, writeOra } from './ora.js';
 import { buildPanels } from './panels.js';
 import * as D from './dialogs.js';
 
-const OPEN_FILTERS = [{ name: 'Pictures and projects', exts: ['ora', 'psd', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'svg', 'ico'] }];
+const OPEN_FILTERS = [{ name: 'Pictures and projects', exts: ['ora', 'psd', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'tif', 'tiff', 'heic', 'heif', 'svg', 'ico'] }];
 const FORMATS = {
   ora: { name: "Snake's Photo project (OpenRaster)", exts: ['ora'], layered: true },
   psd: { name: 'Photoshop document', exts: ['psd'], layered: true },

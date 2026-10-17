@@ -34,7 +34,7 @@ const AVIF = canWrite('image/avif');
 const KINDS = {
   image: {
     label: 'Pictures', icon: 'image',
-    exts: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'ico', 'avif', 'svg', 'psd', 'ora', 'heic', 'heif'],
+    exts: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'ico', 'avif', 'svg', 'psd', 'ora', 'tif', 'tiff', 'heic', 'heif'],
     outs: ['png', 'jpg', 'webp', ...(AVIF ? ['avif'] : []), 'bmp', 'gif', 'ico', 'pdf'],
   },
   audio: {

@@ -1,6 +1,8 @@
 // Pixel work shared by Paint and Photo: flood fill, magic wand masks, image
 // transforms, and file encoders (PNG/JPEG/WebP through the browser, BMP our own).
 
+import { isTiff, readTiff } from './tiff.js';
+
 export function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w));
@@ -245,8 +247,21 @@ export function encodeBMP(canvas) {
   return out;
 }
 
-/** Decode any picture file the browser understands into a canvas. */
+/** Decode any picture file the browser understands (and TIFF, read here) into a canvas. */
 export async function decodeImage(bytes, type = '') {
+  if (isTiff(bytes)) {
+    const t = await readTiff(bytes);
+    const c = makeCanvas(t.width, t.height);
+    c.getContext('2d').putImageData(new ImageData(t.data, t.width, t.height), 0, 0);
+    return c;
+  }
+  const heif = bytes.length > 12 && /^ftyp(heic|heix|hevc|hevx|heim|heis|mif1|msf1)/.test(String.fromCharCode(...bytes.slice(4, 12)));
+  if (heif) {
+    // HEIC (iPhone photos): the system decodes it where it can (iPhone, iPad, Mac Safari).
+    try { return await decodeWithBrowser(new Blob([bytes], { type: 'image/heic' })); } catch {
+      throw new Error('This HEIC photo cannot be decoded here. On an iPhone or Mac it opens directly; elsewhere, export it from Photos as JPEG (or set the iPhone camera to "Most Compatible").');
+    }
+  }
   const blob = new Blob([bytes], { type });
   if (type === 'image/svg+xml' || (!type && new TextDecoder().decode(bytes.slice(0, 200)).includes('<svg'))) {
     // SVG is drawn as a picture (no scripts run in <img>), at its own size.
@@ -260,6 +275,10 @@ export async function decodeImage(bytes, type = '') {
       return c;
     } finally { URL.revokeObjectURL(url); }
   }
+  return decodeWithBrowser(blob);
+}
+
+async function decodeWithBrowser(blob) {
   const bmp = await createImageBitmap(blob);
   const c = makeCanvas(bmp.width, bmp.height);
   c.getContext('2d').drawImage(bmp, 0, 0);
@@ -269,6 +288,7 @@ export async function decodeImage(bytes, type = '') {
 
 export const IMAGE_TYPES = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif', avif: 'image/avif', svg: 'image/svg+xml', ico: 'image/x-icon',
+  tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic', heif: 'image/heif',
 };
 
 /** A checkerboard pattern for transparent areas. */
