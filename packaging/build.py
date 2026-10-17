@@ -42,6 +42,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -82,6 +83,40 @@ def catalogue() -> tuple[dict, dict]:
         t.setdefault("icon", t["id"])
         t.setdefault("version", data.get("version", "1.0.0"))
     return data, tools
+
+
+def vkey(version: str) -> list[int]:
+    return [int(x) for x in version.split(".") if x.isdigit()]
+
+
+def own_version(tool: dict) -> str | None:
+    """The version a tool's own files give (what its About box and --version show), if they give one."""
+    root = tool["root"]
+    if (root / "package.json").exists():
+        return json.loads((root / "package.json").read_text(encoding="utf-8")).get("version")
+    for name, table in (("Cargo.toml", "package"), ("pyproject.toml", "project")):
+        if (root / name).exists():
+            return tomllib.loads((root / name).read_text(encoding="utf-8")).get(table, {}).get("version")
+    return None
+
+
+def check_versions(tools: dict, wanted: list[str]) -> None:
+    """Stop before building anything when a tool's own version is not the one in suite.json.
+
+    suite.json decides what a release ships (--reuse keeps a tool whose version did not
+    change), so a tool that changed needs a new version there, and the app should then say
+    the same version as the package it comes in.
+    """
+    studio = max((t["version"] for t in tools.values() if t.get("studio_app")), key=vkey, default=None)
+    wrong = []
+    for tool_id in wanted:
+        tool = tools[tool_id]
+        expected = studio if tool.get("studio_app") else tool["version"]
+        found = own_version(tool)
+        if found and found != expected:
+            wrong.append(f"  {tool['name']}: suite.json says {expected}, {tool['folder']} says {found}")
+    if wrong:
+        raise SystemExit("Versions disagree; make them the same before building:\n" + "\n".join(wrong))
 
 
 def display_exe(tool: dict) -> str:
@@ -314,7 +349,7 @@ def build_studio(tool: dict, install: bool) -> Path:
         say("(no SNAKE_FFMPEG_DIR: Player and Movie Maker will use an ffmpeg installed on the system)")
     _, tools = catalogue()
     apps = [t for t in tools.values() if t.get("studio_app")]
-    shared = {"id": "studio", "name": "Snake's Studio", "version": max((t["version"] for t in apps), key=lambda v: [int(x) for x in v.split(".") if x.isdigit()])}
+    shared = {"id": "studio", "name": "Snake's Studio", "version": max((t["version"] for t in apps), key=vkey)}
     if app:
         meta = {"app_bundle": app.name, "cli": None, "shared": "studio"}
     else:
@@ -616,10 +651,12 @@ def main() -> int:
         make_index(Path(args.names[0]) if args.names else RELEASE)
         return 0
     if args.what == "hub":
+        check_versions(tools, ["suite"])
         if not (args.reuse and reuse(tools["suite"])):
             build_tool(tools["suite"], args.install)
         return 0
     wanted = args.names if args.what == "tool" else [t for t in tools if t != "suite"]
+    check_versions(tools, wanted)
     failed = []
     for tool_id in wanted:
         try:

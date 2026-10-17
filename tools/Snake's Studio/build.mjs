@@ -89,8 +89,10 @@ function copyStatic() {
   }
   for (const f of fs.readdirSync('assets/icons')) fs.copyFileSync(path.join('assets/icons', f), path.join(out, 'icons', f));
   // Every other Snake app's icon, for the suite's front page (shared/icons is their home).
+  // (The desktop package is built from a copy of this folder alone: it does not need them.)
   const shared = path.join('..', '..', 'shared', 'icons');
-  for (const f of fs.readdirSync(shared).filter((n) => /\.(svg|png)$/.test(n))) {
+  const suiteIcons = fs.existsSync(shared) ? fs.readdirSync(shared).filter((n) => /\.(svg|png)$/.test(n)) : [];
+  for (const f of suiteIcons) {
     if (!fs.existsSync(path.join(out, 'icons', f))) fs.copyFileSync(path.join(shared, f), path.join(out, 'icons', f));
   }
   // The website's front door.

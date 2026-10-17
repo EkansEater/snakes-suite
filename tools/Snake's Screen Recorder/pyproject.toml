@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snakescreen"
-version = "1.0.0"
+version = "1.1.0"
 description = "Simple screen and audio recorder: MP4, GIF and MP3, with region capture."
 readme = "README.md"
 requires-python = ">=3.10"

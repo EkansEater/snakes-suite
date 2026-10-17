@@ -38,6 +38,19 @@ impl eframe::App for ErrorApp {
 }
 
 fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("Snake's DAW {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("Snake's DAW {}: record, loop and mix.\n", env!("CARGO_PKG_VERSION"));
+        println!("Usage: snakedaw            open the DAW");
+        #[cfg(feature = "jack-backend")]
+        println!("       snakedaw --ports    list the audio inputs and outputs it can see");
+        println!("       snakedaw --version  print the version");
+        return Ok(());
+    }
     let cfg = project::Config::load();
     #[cfg(feature = "jack-backend")]
     if std::env::args().any(|a| a == "--ports") {

@@ -227,6 +227,7 @@ fn draw_wave(p: &Painter, rect: Rect, view: View, first: i64, peaks: &[(f32, f32
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        crate::snake_theme::screenshot_hook(ctx);
         crate::snake_theme::ergonomics(ctx, "daw");
         self.tick();
         self.shortcuts(ctx);
@@ -234,7 +235,7 @@ impl eframe::App for App {
         egui::TopBottomPanel::bottom("status").frame(theme::status_frame()).show(ctx, |ui| self.status_bar(ui));
         egui::TopBottomPanel::bottom("fx")
             .frame(egui::Frame::new().fill(theme::SIDE).inner_margin(8.0).stroke(Stroke::new(1.0_f32, theme::BORDER)))
-            .resizable(true).default_height(250.0).min_height(120.0).show(ctx, |ui| self.fx_panel(ui));
+            .resizable(true).default_height(328.0).min_height(120.0).show(ctx, |ui| self.fx_panel(ui));
         egui::CentralPanel::default().show(ctx, |ui| self.timeline(ui));
         self.windows(ctx);
         self.dev_screenshot(ctx);
@@ -1094,7 +1095,9 @@ impl App {
                                         }
                                     });
                                 });
-                                ScrollArea::vertical().id_salt("params").show(ui, |ui| {
+                                // The knobs scroll inside the card when the panel is too short for them all.
+                                let room = (height - ui.min_rect().height() - ui.spacing().item_spacing.y).max(40.0);
+                                ScrollArea::vertical().id_salt("params").max_height(room).show(ui, |ui| {
                                     ui.spacing_mut().slider_width = 120.0;
                                     ui.add_enabled_ui(!f.bypass, |ui| {
                                         for (info, value) in h.infos.iter().zip(f.params.iter_mut()) {

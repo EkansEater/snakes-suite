@@ -224,7 +224,7 @@ pub fn ergonomics(ctx: &egui::Context, app: &str) {
         let now = ctx.input(|i| i.time);
         if now - at < 1.0 {
             egui::Area::new(badge).anchor(egui::Align2::CENTER_TOP, [0.0, 48.0]).interactable(false).show(ctx, |ui| {
-                egui::Frame::new().fill(WIDGET).stroke(egui::Stroke::new(1.0, BORDER2)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
+                egui::Frame::new().fill(WIDGET).stroke(egui::Stroke::new(1.0_f32, BORDER2)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                     ui.label(egui::RichText::new(format!("{}%", (ctx.zoom_factor() * 100.0).round())).color(FG));
                 });
             });

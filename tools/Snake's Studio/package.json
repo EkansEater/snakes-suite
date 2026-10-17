@@ -1,6 +1,6 @@
 {
   "name": "snakes-studio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Snake's Studio: one hardened runtime for Snake's Word, Spreadsheets, Slides, Paint, Photo, Player and Movie Maker",
   "main": "src/main/main.js",
   "type": "commonjs",
