@@ -1018,6 +1018,11 @@ export function lspCommands() {
 }
 
 export function initLsp(status) {
+  // The browser and phone versions cannot run programs: no language servers there.
+  if (!window.snake.lsp) {
+    status.style.display = 'none';
+    return;
+  }
   statusNode = status;
   statusNode.classList.add('clickable');
   statusNode.addEventListener('click', statusMenu);
