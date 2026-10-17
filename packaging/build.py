@@ -283,8 +283,9 @@ def build_cargo(tool: dict, install: bool) -> Path:
 def build_electron(tool: dict, install: bool) -> Path:
     npm = shutil.which("npm") or "npm"
     # Build from a copy at a plain path: electron-builder (macOS) and node-gyp (Windows) refuse
-    # or mangle paths with an apostrophe, like "tools/Snake's Code".
-    root = Path(tempfile.mkdtemp(prefix="snake-build-code-")) / "snakes-code"
+    # or mangle paths with an apostrophe, like "tools/Snake's Code" (Snake's Code, Snake's Terminal).
+    command = tool.get("command") or f"snakes-{tool['id']}"
+    root = Path(tempfile.mkdtemp(prefix=f"snake-build-{tool['id']}-")) / command
     shutil.copytree(tool["root"], root, ignore=shutil.ignore_patterns("node_modules", "release", "dist"))
     run([npm, "ci" if (root / "package-lock.json").exists() else "install"], cwd=root)
     run([npm, "run", "build"], cwd=root)
@@ -299,7 +300,7 @@ def build_electron(tool: dict, install: bool) -> Path:
         app = next(unpacked.glob("*.app"))
         meta = {"app_bundle": app.name, "cli": None}
         return archive(tool, unpacked, meta)
-    exe = f"{tool['name']}.exe" if OS == "windows" else "snakes-code"
+    exe = f"{tool['name']}.exe" if OS == "windows" else command
     icons_into(unpacked, tool)
     return archive(tool, unpacked, {"launch": exe, "cli": None})
 

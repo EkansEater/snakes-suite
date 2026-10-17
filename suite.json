@@ -277,6 +277,32 @@
       "version": "1.1.0"
     },
     {
+      "id": "terminal",
+      "name": "Snake's Terminal",
+      "tagline": "Terminal and SSH",
+      "description": "Tabs, split panes, profiles and colour schemes, and SSH between your devices: it finds them, connects, and sets up key login.",
+      "folder": "tools/Snake's Terminal",
+      "kind": "electron",
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Node.js 20+ (npm)"
+      ],
+      "assets": {
+        "dir": "assets"
+      },
+      "wm_class": "snakes-terminal",
+      "command": "snakes-terminal",
+      "categories": "System;TerminalEmulator;",
+      "package": {
+        "electron": true
+      },
+      "version": "1.0.0"
+    },
+    {
       "id": "compressor",
       "name": "Snake's Compressor",
       "tagline": "Lossless archiver",
