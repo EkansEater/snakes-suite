@@ -2,5 +2,6 @@
 //! the `snake-gui` desktop app.
 
 pub mod format;
+pub mod other;
 pub mod pack;
 pub mod unpack;

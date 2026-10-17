@@ -15,6 +15,8 @@ pub struct Options {
     pub threads: u32,
     pub force: bool,
     pub verbose: bool,
+    /// Make a ZIP archive (opens anywhere) instead of a .snake one.
+    pub zip: bool,
 }
 
 pub struct Summary {
@@ -33,24 +35,33 @@ struct Stats {
     bytes: u64,
 }
 
-/// Where the archive goes when no output is given: `<first input>.snake`.
+/// Where the archive goes when no output is given: `<first input>.snake` (or `.zip`).
 pub fn default_output(input: &Path) -> Result<PathBuf> {
     Ok(PathBuf::from(format!("{}.snake", root_name(input)?)))
 }
 
+pub fn default_output_as(input: &Path, zip: bool) -> Result<PathBuf> {
+    Ok(PathBuf::from(format!("{}.{}", root_name(input)?, if zip { "zip" } else { "snake" })))
+}
+
 /// Packs `opts.inputs` into an archive. `progress` is called with the number
-/// of input bytes read so far.
-pub fn run(opts: &Options, progress: &mut dyn FnMut(u64)) -> Result<Summary> {
+/// of input bytes read so far, and returns false to stop.
+pub fn run(opts: &Options, progress: &mut dyn FnMut(u64) -> bool) -> Result<Summary> {
     let output = match &opts.output {
         Some(p) => p.clone(),
-        None => default_output(&opts.inputs[0])?,
+        None => default_output_as(&opts.inputs[0], opts.zip)?,
     };
     if output.exists() && !opts.force {
         bail!("{} already exists (use --force to overwrite)", output.display());
     }
 
     let started = Instant::now();
-    let stats = match write_archive(opts, &output, progress) {
+    let written = if opts.zip {
+        crate::other::pack_zip(opts, &output, progress).map(|(files, bytes)| Stats { files, bytes })
+    } else {
+        write_archive(opts, &output, progress)
+    };
+    let stats = match written {
         Ok(stats) => stats,
         Err(e) => {
             let _ = fs::remove_file(&output);
@@ -75,7 +86,7 @@ fn utf8(p: &Path) -> Result<&str> {
     p.to_str().with_context(|| format!("{} is not valid UTF-8", p.display()))
 }
 
-fn write_archive(opts: &Options, output: &Path, progress: &mut dyn FnMut(u64)) -> Result<Stats> {
+fn write_archive(opts: &Options, output: &Path, progress: &mut dyn FnMut(u64) -> bool) -> Result<Stats> {
     let file = File::create(output).with_context(|| format!("cannot create {}", output.display()))?;
     let out_canon = fs::canonicalize(output)?;
     let mut raw = BufWriter::new(file);
@@ -156,7 +167,9 @@ fn write_archive(opts: &Options, output: &Path, progress: &mut dyn FnMut(u64)) -
                         hasher.update(&buf[..n]);
                         size += n as u64;
                         stats.bytes += n as u64;
-                        progress(stats.bytes);
+                        if !progress(stats.bytes) {
+                            bail!("cancelled");
+                        }
                     }
                     write_u32(&mut enc, 0)?;
                     write_u64(&mut enc, size)?;

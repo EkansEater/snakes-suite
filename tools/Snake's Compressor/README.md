@@ -8,7 +8,11 @@ Works on Linux, Windows and macOS.
 ## Desktop app
 
 Run `snake-gui`. Drop files or folders on the window (or use the Add buttons)
-and press Compress; drop a `.snake` archive to unpack or verify it.
+and press Compress, as a `.snake` archive (smallest, every file checked) or a ZIP
+(opens on any computer). Drop an archive to see what is inside, unpack or verify it:
+`.snake`, ZIP, 7z, tar, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, and single
+`.gz`, `.bz2`, `.xz` and `.zst` files. Encrypted ZIP and 7z archives ask for their
+password. Long jobs can be cancelled, and leave nothing half-written behind.
 
 ## Command line
 
@@ -20,6 +24,9 @@ snake unpack my-folder.snake         # restores into the current folder
 snake unpack my-folder.snake -o dest # restores into dest/
 snake list my-folder.snake           # show contents
 snake test my-folder.snake           # verify integrity without unpacking
+snake pack my-folder --zip           # a ZIP instead, for people without Snake
+snake unpack photos.zip -o photos    # ZIP, 7z, tar.* and .gz/.xz/... unpack too
+snake unpack secret.7z -p "password" # encrypted ZIP and 7z
 ```
 
 `--level 1` to `--level 22` trades speed for size (default 9). `snake pack --help`
@@ -57,7 +64,8 @@ Each operating system needs its own build. The simplest way is to run the same
   compressed stream. Damage in transfer is reported, never silently accepted.
 - **Preserved:** file contents, folder structure, empty folders, modification
   times, Unix permissions, symlinks (symlinks are skipped when unpacking on Windows).
-- **Safe unpacking:** archives cannot write outside the destination folder.
+- **Safe unpacking:** archives cannot write outside the destination folder (other
+  programs' archives included).
 
 The format is described at the top of [src/format.rs](src/format.rs).
 

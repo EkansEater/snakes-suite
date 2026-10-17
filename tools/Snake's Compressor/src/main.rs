@@ -17,7 +17,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Compress files and folders into a .snake archive
+    /// Compress files and folders into a .snake archive (or a ZIP with --zip)
     Pack {
         /// Files and folders to compress
         #[arg(required = true)]
@@ -40,10 +40,16 @@ enum Cmd {
         /// Print each path as it is packed
         #[arg(short, long)]
         verbose: bool,
+        /// Make a ZIP archive instead, for people without Snake's Compressor
+        #[arg(long)]
+        zip: bool,
     },
-    /// Restore the contents of a .snake archive
+    /// Restore the contents of an archive (.snake, ZIP, 7z, tar, .tar.gz/.bz2/.xz/.zst, .gz...)
     Unpack {
         archive: PathBuf,
+        /// Password of an encrypted ZIP or 7z archive
+        #[arg(short, long)]
+        password: Option<String>,
         /// Folder to unpack into
         #[arg(short, long, default_value = ".")]
         output: PathBuf,
@@ -55,9 +61,17 @@ enum Cmd {
         verbose: bool,
     },
     /// Show what is inside an archive
-    List { archive: PathBuf },
+    List {
+        archive: PathBuf,
+        #[arg(short, long)]
+        password: Option<String>,
+    },
     /// Check an archive for damage without unpacking it
-    Test { archive: PathBuf },
+    Test {
+        archive: PathBuf,
+        #[arg(short, long)]
+        password: Option<String>,
+    },
 }
 
 /// A throttled one-line progress readout on stderr, shown only in a terminal.
@@ -88,7 +102,12 @@ impl Progress {
 fn pack(opts: &pack::Options) -> Result<()> {
     let mut progress = Progress::new();
     // Verbose output already shows activity, and the two would garble each other.
-    let result = pack::run(opts, &mut |bytes| if !opts.verbose { progress.tick(bytes) });
+    let result = pack::run(opts, &mut |bytes| {
+        if !opts.verbose {
+            progress.tick(bytes)
+        }
+        true
+    });
     progress.clear();
     let s = result?;
     let percent = if s.bytes > 0 { s.packed as f64 * 100.0 / s.bytes as f64 } else { 100.0 };
@@ -103,19 +122,24 @@ fn pack(opts: &pack::Options) -> Result<()> {
     Ok(())
 }
 
-fn unpack(archive: &Path, mode: unpack::Mode, verbose: bool) -> Result<()> {
+fn unpack(archive: &Path, mode: unpack::Mode, password: Option<&str>, verbose: bool) -> Result<()> {
     let label = match &mode {
         unpack::Mode::Extract { dest, .. } => Some(dest.display().to_string()),
         _ => None,
     };
     let (list, quiet) = (matches!(mode, unpack::Mode::List), verbose || matches!(mode, unpack::Mode::List));
     let mut progress = Progress::new();
-    let result = unpack::run(archive, mode, verbose, &mut |bytes| if !quiet { progress.tick(bytes) });
+    let result = unpack::run_any(archive, mode, password, verbose, &mut |bytes| {
+        if !quiet {
+            progress.tick(bytes)
+        }
+        true
+    });
     progress.clear();
     let s = result?;
     match label {
         Some(dest) => {
-            println!("unpacked {} files ({}) into {dest} in {:.1}s, all checksums OK", s.files, human(s.bytes), s.secs)
+            println!("unpacked {} files ({}) into {dest} in {:.1}s, all checks passed", s.files, human(s.bytes), s.secs)
         }
         None if list => println!("{} files, {}", s.files, human(s.bytes)),
         None => println!("OK: {} files ({}) verified in {:.1}s", s.files, human(s.bytes), s.secs),
@@ -125,18 +149,18 @@ fn unpack(archive: &Path, mode: unpack::Mode, verbose: bool) -> Result<()> {
 
 fn main() -> ExitCode {
     let result = match Cli::parse().cmd {
-        Cmd::Pack { inputs, output, level, max, threads, force, verbose } => {
+        Cmd::Pack { inputs, output, level, max, threads, force, verbose, zip } => {
             let cores = std::thread::available_parallelism().map_or(1, |n| n.get() as u32);
             // Each worker needs hundreds of MB at high levels, so --max uses fewer.
             let threads = threads.unwrap_or(if max { cores.min(4) } else { cores });
             let level = if max { 19 } else { level };
-            pack(&pack::Options { inputs, output, level, threads, force, verbose })
+            pack(&pack::Options { inputs, output, level, threads, force, verbose, zip })
         }
-        Cmd::Unpack { archive, output, force, verbose } => {
-            unpack(&archive, unpack::Mode::Extract { dest: output, force }, verbose)
+        Cmd::Unpack { archive, output, force, verbose, password } => {
+            unpack(&archive, unpack::Mode::Extract { dest: output, force }, password.as_deref(), verbose)
         }
-        Cmd::List { archive } => unpack(&archive, unpack::Mode::List, false),
-        Cmd::Test { archive } => unpack(&archive, unpack::Mode::Test, false),
+        Cmd::List { archive, password } => unpack(&archive, unpack::Mode::List, password.as_deref(), false),
+        Cmd::Test { archive, password } => unpack(&archive, unpack::Mode::Test, password.as_deref(), false),
     };
 
     match result {

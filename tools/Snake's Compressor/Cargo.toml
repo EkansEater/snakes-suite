@@ -25,6 +25,12 @@ rfd = { version = "0.17", optional = true }
 clap = { version = "4", features = ["derive"] }
 walkdir = "2"
 zstd = { version = "0.13", features = ["zstdmt"] }
+zip = { version = "2", default-features = false, features = ["deflate", "bzip2", "zstd", "aes-crypto", "lzma", "time"] }
+tar = "0.4"
+flate2 = "1"
+sevenz-rust2 = { version = "0.24.0", features = ["aes256"] }
+bzip2 = "0.6"
+lzma-rust2 = "0.22"
 
 [profile.release]
 opt-level = 3
