@@ -11,6 +11,7 @@ import { sanitizeHtml } from '../../kit/sanitize.js';
 import { hoverZoom, keepAnchor } from '../../kit/zoom.js';
 import { showMenu, closeMenus } from '../../kit/menu.js';
 import { icon } from '../../kit/icons.js';
+import { fontStack } from '../../kit/fonts.js';
 
 export const PX_PER_IN = 96;
 export const PAGE_SIZES = {
@@ -23,11 +24,23 @@ export const PAGE_SIZES = {
   tabloid: { name: 'Tabloid', w: 11, h: 17 },
 };
 const GAP = 28;
+const FN_SEP = 14; // the short line above a page's footnotes
+
+/** A note's text as safe HTML: plain formatting only. */
+function noteHtml(html) {
+  const box = document.createElement('div');
+  box.innerHTML = String(html || '');
+  for (const el of [...box.querySelectorAll('*')]) {
+    if (!['B', 'I', 'U', 'S', 'EM', 'STRONG', 'SUB', 'SUP', 'BR', 'A', 'SPAN'].includes(el.tagName)) { el.replaceWith(...el.childNodes); continue; }
+    for (const a of [...el.attributes]) if (!(el.tagName === 'A' && a.name === 'href' && /^(https?:|mailto:)/i.test(a.value)) && a.name !== 'style') el.removeAttribute(a.name);
+  }
+  return box.innerHTML;
+}
 const BLOCKS = 'P,H1,H2,H3,H4,H5,H6,LI,PRE,BLOCKQUOTE,TD,TH,DIV,FIGCAPTION,DT,DD';
 const BLOCK_SET = new Set(BLOCKS.split(','));
 export const DOC_CLASSES = ['title', 'subtitle', 'quote', 'caption', 'checklist', 'page-break', 'toc', 'cols', 'col',
   'img-left', 'img-right', 'img-center', 'img-border', 'img-shadow', 'tbl-plain', 'tbl-grid', 'tbl-rows', 'tbl-green',
-  'tbl-grey', 'tbl-dark', 'note', 'highlight-box'];
+  'tbl-grey', 'tbl-dark', 'note', 'highlight-box', 'cmt', 'fn-ref'];
 
 export function defaultMeta() {
   return {
@@ -61,7 +74,10 @@ export class WordEditor {
     this.doc = h('div.doc', { contenteditable: 'true', spellcheck: settings.get('spellcheck', true), role: 'textbox', 'aria-multiline': 'true' });
     this.sheets = h('div.sheets');
     this.overlay = h('div.overlay-layer'); // picture handles, table tools
-    this.stack = h('div.stack', this.sheets, this.doc, this.overlay);
+    this.notesLayer = h('div.notes-layer'); // footnotes, at the bottom of their pages
+    this.noteMeasure = h('div.fn-measure');
+    this.noteHeights = new Map();
+    this.stack = h('div.stack', this.sheets, this.doc, this.notesLayer, this.overlay, this.noteMeasure);
     this.scroller = h('div.ws', this.stack);
     this.ruler = h('div.ruler');
     this.el = h('div.word', this.ruler, this.scroller);
@@ -101,7 +117,7 @@ export class WordEditor {
   /** The document as clean HTML (no editor-only marks). */
   html() {
     const clone = this.doc.cloneNode(true);
-    for (const el of clone.querySelectorAll('.cell-sel')) el.classList.remove('cell-sel');
+    for (const el of clone.querySelectorAll('.cell-sel, .cmt-on, .cmt-done')) el.classList.remove('cell-sel', 'cmt-on', 'cmt-done');
     for (const el of clone.querySelectorAll('[class=""]')) el.removeAttribute('class');
     return clone.innerHTML;
   }
@@ -113,7 +129,7 @@ export class WordEditor {
   restore(s) {
     this.doc.innerHTML = s.html;
     const meta = JSON.parse(s.meta);
-    const pageChanged = JSON.stringify(meta.page) !== JSON.stringify(this.meta.page) || meta.pageColor !== this.meta.pageColor || meta.font !== this.meta.font;
+    const pageChanged = JSON.stringify(meta.page) !== JSON.stringify(this.meta.page) || meta.pageColor !== this.meta.pageColor || meta.font !== this.meta.font || JSON.stringify(meta.styles) !== JSON.stringify(this.meta.styles);
     this.meta = meta;
     if (pageChanged) this.applyPage();
     this.restoreSelection(s.sel);
@@ -626,18 +642,28 @@ export class WordEditor {
 
   applyPage() {
     const g = this.pageSize();
-    const font = this.meta.font ? `"${this.meta.font}", ` : '';
+    const font = this.meta.font ? `${fontStack(this.meta.font, 'var(--doc-font)')}` : 'var(--doc-font)';
     this.pageStyle.textContent = `
       .word .stack { width: ${g.w}px; }
       .word .doc { width: ${g.w - g.ml - g.mr}px; margin: ${g.mt}px 0 0 ${g.ml}px; min-height: ${g.h - g.mt - g.mb}px;
-        font-family: ${font}var(--doc-font); font-size: ${this.meta.fontSize}pt; line-height: ${this.meta.lineHeight}; }
+        font-family: ${font}; font-size: ${this.meta.fontSize}pt; line-height: ${this.meta.lineHeight}; }
       .word .sheet { width: ${g.w}px; height: ${g.h}px; background: ${this.meta.pageColor}; }
+      .word .notes-layer, .word .fn-measure, .word .doc .fn-print { font-family: ${font}; }
       @page { size: ${g.inW}in ${g.inH}in; background: ${this.meta.pageColor || '#fff'}; margin: ${this.meta.page.margins.top}in ${this.meta.page.margins.right}in ${this.meta.page.margins.bottom}in ${this.meta.page.margins.left}in;
         ${this.printZones()} }
+      ${this.styleCss('.word .doc')}
       ${this.meta.firstPageDifferent ? '@page :first { @top-left { content: none } @top-center { content: none } @top-right { content: none } @bottom-left { content: none } @bottom-center { content: none } @bottom-right { content: none } }' : ''}
     `;
     this.layoutSoon();
     this.drawRuler();
+  }
+
+  /** The document's own heading, title and subtitle looks (from a file it was opened from). */
+  styleCss(scope) {
+    return Object.entries(this.meta.styles || {}).map(([k, v]) => {
+      const sel = k === 'title' || k === 'subtitle' ? `${scope} p.${k}` : `${scope} ${k}`;
+      return `${sel} { ${v.color ? `color: #${v.color};` : ''} ${v.size ? `font-size: ${v.size}pt;` : ''} ${v.font ? `font-family: ${fontStack(v.font, 'var(--doc-font)')};` : ''} font-weight: ${v.bold ? 700 : 400}; font-style: ${v.italic ? 'italic' : 'normal'}; }`;
+    }).join('\n');
   }
 
   /** Header and footer for printing, as @page margin boxes. */
@@ -676,7 +702,19 @@ export class WordEditor {
     const kids = [...this.doc.children];
     const tops = kids.map((k) => k.offsetTop);
     const heights = kids.map((k) => k.offsetHeight);
+    // Footnotes: each block's notes need room at the bottom of the page it lands on.
+    const refs = [...this.doc.querySelectorAll('sup.fn-ref')];
+    const refsOf = new Map();
+    for (const r of refs) {
+      let top = r;
+      while (top.parentNode && top.parentNode !== this.doc) top = top.parentNode;
+      if (!refsOf.has(top)) refsOf.set(top, []);
+      refsOf.get(top).push(r);
+    }
+    const reserve = [];
+    const pageNotes = [];
     const rules = [];
+    this.pageStarts = [0];
     let shift = 0;
     let forceNext = false;
     let bottom = 0;
@@ -684,16 +722,19 @@ export class WordEditor {
       const el = kids[i];
       const top = tops[i] + shift;
       const hgt = heights[i];
+      const mine = refsOf.get(el) || [];
+      const notesH = mine.reduce((a, r) => a + this.noteHeight(r, g.w - g.ml - g.mr), 0);
+      const room = (page) => content - (reserve[page] || 0) - (notesH ? notesH + (reserve[page] ? 0 : FN_SEP) : 0);
       const k = Math.floor(top / stride);
       const within = top - k * stride;
       let target = null;
       if (forceNext && within > 0.5) target = (k + 1) * stride;
-      else if (within >= content - 0.5) target = (k + 1) * stride;
-      else if (within + hgt > content + 0.5 && hgt <= content && within > 0.5) target = (k + 1) * stride;
+      else if (within >= room(k) - 0.5 && within > 0.5) target = (k + 1) * stride;
+      else if (within + hgt > room(k) + 0.5 && hgt <= content && within > 0.5) target = (k + 1) * stride;
       else if (/^H[1-6]$/.test(el.tagName) && i + 1 < kids.length) {
         // Keep a heading with the start of what follows it.
         const nextH = Math.min(heights[i + 1], 48);
-        if (within + hgt + nextH > content && within > 0.5 && hgt + nextH < content) target = (k + 1) * stride;
+        if (within + hgt + nextH > room(k) && within > 0.5 && hgt + nextH < content) target = (k + 1) * stride;
       }
       forceNext = el.classList.contains('page-break');
       if (target !== null) {
@@ -702,19 +743,182 @@ export class WordEditor {
         rules.push(`.word .doc > :nth-child(${i + 1}) { margin-top: ${Math.max(0, gapBefore) + delta}px !important; }`);
         shift += delta;
       }
+      const page = target !== null ? k + 1 : k;
+      while (this.pageStarts.length <= page) this.pageStarts.push(i);
+      if (mine.length) {
+        reserve[page] = (reserve[page] || FN_SEP) + notesH;
+        (pageNotes[page] || (pageNotes[page] = [])).push(...mine);
+      }
       bottom = top + (target !== null ? target - top : 0) + hgt;
     }
     // Only on screen: printing breaks pages by itself.
     this.pushSheet.textContent = `@media screen {\n${rules.join('\n')}\n}`;
-    const pages = Math.max(1, Math.floor(Math.max(0, bottom - 1) / stride) + 1);
+    const pages = Math.max(1, Math.floor(Math.max(0, bottom - 1) / stride) + 1, pageNotes.length);
     if (pages !== this.pages || this.sheets.childElementCount !== pages || this._sheetKey !== this.sheetKey()) {
       this.pages = pages;
       this.drawSheets();
     }
+    this.notePages = pageNotes;
+    this.drawNotes(refs);
     this.stack.style.height = `${pages * stride - GAP}px`;
     this.stack.style.zoom = String(this.zoom);
     this.updateOverlay();
     this.onStats({ pages: this.pages, page: this.currentPage() });
+  }
+
+  // =========================================================================
+  // Footnotes: <sup class="fn-ref" data-note="…"> in the text (numbered by a CSS counter);
+  // the note itself is shown, and typed, at the bottom of the page.
+  // =========================================================================
+  insertFootnote() {
+    this.focus();
+    const r = this.range();
+    if (!r) return;
+    this.change('Footnote', () => {
+      r.collapse(false);
+      const sup = h('sup.fn-ref', { contenteditable: 'false', 'data-note': '' });
+      r.insertNode(sup);
+      const after = document.createTextNode('​');
+      sup.after(after);
+      const sel = window.getSelection();
+      const c = document.createRange();
+      c.setStart(after, 1);
+      sel.removeAllRanges();
+      sel.addRange(c);
+      this.newNote = sup;
+    });
+    this.layout();
+    const ref = this.newNote;
+    this.newNote = null;
+    if (ref) this.focusNote(ref);
+  }
+
+  /** How tall a note is at the page's text width (cached). */
+  noteHeight(ref, width) {
+    const key = `${width}|${ref.dataset.note || ''}`;
+    let v = this.noteHeights.get(key);
+    if (v === undefined) {
+      this.noteMeasure.style.width = `${width}px`;
+      this.noteMeasure.replaceChildren(this.noteEl(ref, 1));
+      v = this.noteMeasure.firstChild.offsetHeight;
+      this.noteHeights.set(key, v);
+      if (this.noteHeights.size > 500) this.noteHeights.clear();
+    }
+    return v;
+  }
+
+  noteEl(ref, n) {
+    const text = h('div.fn-text');
+    text.innerHTML = noteHtml(ref.dataset.note || '');
+    return h('div.fn-note', h('span.fn-num', String(n)), text);
+  }
+
+  /** The notes at the bottom of each page (kept as they are while one is being typed in). */
+  drawNotes(refs) {
+    const g = this.pageSize();
+    const stride = g.h + GAP;
+    if (this.notesLayer.contains(document.activeElement) && document.activeElement.classList.contains('fn-text')) {
+      // Typing in a note: only its page's box moves with the page; nothing is rebuilt.
+      return;
+    }
+    const number = new Map(refs.map((r, i) => [r, i + 1]));
+    this.notesLayer.replaceChildren();
+    (this.notePages || []).forEach((list, page) => {
+      if (!list || !list.length) return;
+      const box = h('div.fn-box', { style: { left: `${g.ml}px`, width: `${g.w - g.ml - g.mr}px`, top: `${page * stride + g.h - g.mb}px` } }, h('div.fn-sep'));
+      for (const ref of list) {
+        const el = this.noteEl(ref, number.get(ref));
+        const text = el.querySelector('.fn-text');
+        text.contentEditable = 'true';
+        text.spellcheck = this.doc.spellcheck;
+        text.addEventListener('input', () => {
+          ref.dataset.note = text.innerHTML.replace(/<br>$/, '');
+          this.typing = true;
+          this.commitTypingSoon();
+          this.layoutSoon();
+        });
+        text.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertLineBreak'); }
+          if (e.key === 'Escape') { e.preventDefault(); this.gotoRef(ref); }
+          e.stopPropagation();
+        });
+        text.addEventListener('blur', () => { if (this.typing) this.commit('Footnote'); this.layoutSoon(); });
+        el.querySelector('.fn-num').addEventListener('click', () => this.gotoRef(ref));
+        el.ref = ref;
+        box.append(el);
+      }
+      this.notesLayer.append(box);
+    });
+  }
+
+  focusNote(ref) {
+    const el = [...this.notesLayer.querySelectorAll('.fn-note')].find((n) => n.ref === ref);
+    if (!el) return;
+    const text = el.querySelector('.fn-text');
+    el.scrollIntoView({ block: 'nearest' });
+    text.focus();
+    const r = document.createRange();
+    r.selectNodeContents(text);
+    r.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  gotoRef(ref) {
+    if (!this.doc.contains(ref)) return;
+    this.focus();
+    const r = document.createRange();
+    r.setStartAfter(ref);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    ref.scrollIntoView({ block: 'center' });
+  }
+
+  /**
+   * Printing: the pages break where they do on screen, and each page's footnotes are printed
+   * at its bottom. Undone by endPrint().
+   */
+  preparePrint() {
+    this.endPrint();
+    const refs = [...this.doc.querySelectorAll('sup.fn-ref')];
+    if (!refs.length) return;
+    this.layout();
+    const g = this.pageSize();
+    const stride = g.h + GAP;
+    const content = g.h - g.mt - g.mb;
+    const kids = [...this.doc.children];
+    const number = new Map(refs.map((r, i) => [r, i + 1]));
+    const starts = this.pageStarts || [0];
+    const added = [];
+    starts.forEach((startIdx, page) => {
+      const endIdx = (starts[page + 1] ?? kids.length) - 1;
+      const notes = (this.notePages || [])[page] || [];
+      const last = kids[endIdx];
+      if (!last || endIdx < startIdx) return;
+      // (A page break of the document's own already starts the page.)
+      const prev = kids[startIdx - 1];
+      if (page > 0 && startIdx !== starts[page - 1] && !(prev && prev.classList.contains('page-break'))) kids[startIdx].classList.add('print-break');
+      if (!notes.length) return;
+      const used = last.getBoundingClientRect().bottom / this.zoom - this.stack.getBoundingClientRect().top / this.zoom - page * stride - g.mt;
+      const box = h('div.fn-print', h('div.fn-sep'), ...notes.map((r) => this.noteEl(r, number.get(r))));
+      box.contentEditable = 'false';
+      // The block above gives up its bottom spacing, which would otherwise add to the gap.
+      last.classList.add('print-tight');
+      last.after(box);
+      const notesH = notes.reduce((a, r) => a + this.noteHeight(r, g.w - g.ml - g.mr), 0) + FN_SEP;
+      box.style.marginTop = `${Math.max(0, content - used - notesH - 3)}px`;
+      added.push(box);
+    });
+    this.printBits = added;
+  }
+
+  endPrint() {
+    for (const b of this.printBits || []) b.remove();
+    for (const el of this.doc.querySelectorAll('.print-break, .print-tight')) el.classList.remove('print-break', 'print-tight');
+    this.printBits = null;
   }
 
   sheetKey() { return JSON.stringify([this.meta.header, this.meta.footer, this.meta.firstPageDifferent, this.meta.title]); }
@@ -1314,6 +1518,8 @@ export class WordEditor {
   /** Pasted HTML, sanitised and with whitespace from the source markup collapsed. */
   cleanPasted(html) {
     const frag = sanitizeHtml(html.replace(/<!--StartFragment-->|<!--EndFragment-->/g, ''), { keepClasses: DOC_CLASSES });
+    // Copied text keeps its words, not the comments on them.
+    for (const c of frag.querySelectorAll('span.cmt')) c.replaceWith(...c.childNodes);
     const walker = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
     const texts = [];
     while (walker.nextNode()) texts.push(walker.currentNode);

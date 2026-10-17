@@ -4,17 +4,18 @@ import { icon } from '../../kit/icons.js';
 import { host, inElectron, readText, decodeText } from '../../kit/host.js';
 import * as commands from '../../kit/commands.js';
 import { createShell, tb, sep, combo, select, startScreen, onDropFiles, guardClose, refresh, splitter } from '../../kit/shell.js';
-import { toggleDrawer } from '../../kit/phone.js';
+import { toggleDrawer, isPhone } from '../../kit/phone.js';
 import { showMenu, contextMenu, popover, closeMenus } from '../../kit/menu.js';
 import { modal, toast, errorToast, busy, promptBox, confirmBox } from '../../kit/dialogs.js';
 import { pickColor } from '../../kit/color.js';
 import { sanitizeToString } from '../../kit/sanitize.js';
-import { knownFonts, allFonts, FONT_SIZES } from '../../kit/fonts.js';
+import { knownFonts, allFonts, FONT_SIZES, fontStack } from '../../kit/fonts.js';
 import { stepZoom } from '../../kit/zoom.js';
 import { WordEditor, PAGE_SIZES, DOC_CLASSES, defaultMeta } from './editor.js';
 import { readDocx, writeDocx, readOdt } from './docx.js';
 import { markdownToHtml, htmlToMarkdown, htmlToText, textToHtml, rtfToHtml } from './markdown.js';
 import { TEMPLATES, templateThumb } from './templates.js';
+import { Comments } from './comments.js';
 
 const DOC_FILTERS = [
   { name: 'All documents', exts: ['snakedoc', 'docx', 'odt', 'html', 'htm', 'md', 'markdown', 'txt', 'rtf'] },
@@ -54,23 +55,28 @@ const shell = await createShell({
 });
 
 const settings = host.settings;
+let comments = null;
 const ed = new WordEditor({
   settings,
-  onChange: () => { updateTitle(); refresh(); },
-  onSelection: () => { refresh(); if (painter && !painter.waiting) applyPainterSoon(); },
+  onChange: () => { updateTitle(); refresh(); if (comments) comments.paint(); },
+  onSelection: () => { refresh(); if (painter && !painter.waiting) applyPainterSoon(); if (comments) comments.caretMoved(); },
   onStats: (s) => updateStatus(s),
 });
 ed.markdownToHtml = markdownToHtml;
 ed.onOpenLink = (href) => host.openExternal(href);
 ed.onPickImage = () => insertPicture();
 ed.onEditHeader = () => headerFooterDialog();
+comments = new Comments(ed, settings, { onShow: (on) => { cmtSplit.classList.toggle('hidden', !on); settings.set('comments', on); refresh(); } });
 
 // Layout: navigation pane | workspace | find bar overlay
 const nav = h('div.panel.nav-pane', h('div.panel-head', 'Navigation', h('span.grow'),
   tb({ icon: 'x', tip: 'Close', run: () => commands.run('view.nav') })), h('div.panel-body.nav-list'));
 const navSplit = splitter(nav, { side: 'left', key: 'navWidth', initial: 240, min: 160, max: 480, title: 'Navigation', icon: 'toc' });
-shell.main.append(nav, navSplit, ed.el);
+const cmtSplit = splitter(comments.pane, { side: 'right', key: 'cmtWidth', initial: 300, min: 220, max: 520, title: 'Comments', icon: 'comment' });
+shell.main.append(nav, navSplit, ed.el, cmtSplit, comments.pane);
 if (!settings.get('nav', false)) { nav.classList.add('hidden'); navSplit.classList.add('hidden'); }
+comments.pane.classList.add('hidden');
+cmtSplit.classList.add('hidden');
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -166,6 +172,12 @@ commands.register(
   C('view.read', 'Read Mode', null, () => toggleReadMode(), { icon: 'book', category: 'View', checked: () => document.body.classList.contains('read-mode') }),
   C('view.spell', 'Check Spelling as You Type', null, () => toggleSetting('spellcheck', true, (on) => { ed.doc.spellcheck = on; }), { icon: 'spell', category: 'Review', checked: () => settings.get('spellcheck', true) }),
   // Review / tools
+  C('ins.footnote', 'Footnote', 'Ctrl+Alt+F', () => ed.insertFootnote(), { icon: 'superscript', category: 'Insert' }),
+  C('review.comment', 'New Comment', 'Ctrl+Alt+M', async () => { if (!(await comments.add())) toast('Select the text the comment is about first.', { timeout: 2500 }); }, { icon: 'comment', category: 'Review' }),
+  C('review.comments', 'Show Comments', null, () => comments.show(), { icon: 'comment', category: 'Review', checked: () => comments.visible }),
+  C('review.nextComment', 'Next Comment', null, () => comments.step(1), { icon: 'chevronDown', category: 'Review', when: () => comments.ordered().length > 0 }),
+  C('review.prevComment', 'Previous Comment', null, () => comments.step(-1), { icon: 'chevronUp', category: 'Review', when: () => comments.ordered().length > 0 }),
+  C('review.deleteComments', 'Delete All Comments…', null, () => comments.removeAll(), { icon: 'trash', category: 'Review', when: () => comments.ordered().length > 0 }),
   C('tools.wordCount', 'Word Count…', 'Ctrl+Shift+G', () => wordCountDialog(), { icon: 'fileText', category: 'Review' }),
   C('tools.readAloud', 'Read Aloud', 'Ctrl+Alt+Space', () => readAloud(), { icon: 'speaker', category: 'Review', checked: () => !!speaking }),
   C('tools.goal', 'Word Goal…', null, () => goalDialog(), { icon: 'star', category: 'Review' }),
@@ -310,6 +322,7 @@ shell.setRibbon([
       { label: 'Tables', items: [tb({ icon: 'table', label: 'Table', big: true, menu: () => [{ custom: tableGrid() }, { type: 'separator' }, { label: 'Insert table…', icon: 'table', run: () => tableDialog() }] })] },
       { label: 'Illustrations', items: [tb('ins.picture', { big: true, label: 'Picture' })] },
       { label: 'Links', items: [tb('fmt.link', { big: true, label: 'Link' })] },
+      { label: 'Notes', items: [tb('ins.footnote', { big: true, label: 'Footnote' }), tb('review.comment', { big: true, label: 'Comment' })] },
       { label: 'Layout', items: [tb('ins.cols2', { big: true, label: 'Columns', menu: () => [commands.item('ins.cols2'), commands.item('ins.cols3')] }), tb('ins.note', { big: true, label: 'Note box' })] },
       { label: 'Text', items: [h('div.rstack', tb('ins.date', { showLabel: true, label: 'Date' }), tb('ins.hr', { showLabel: true, label: 'Line' }), tb('para.code', { showLabel: true, label: 'Code' }))] },
       { label: 'Symbols', items: [tb({ icon: 'omega', label: 'Symbol', big: true, run: (b) => symbolPicker(b, 'symbols') }), tb({ icon: 'smile', label: 'Emoji', big: true, run: (b) => symbolPicker(b, 'emoji') })] },
@@ -326,6 +339,7 @@ shell.setRibbon([
   },
   {
     id: 'review', label: 'Review', groups: [
+      { label: 'Comments', items: [tb('review.comment', { big: true, label: 'New comment' }), h('div.rstack', tb('review.prevComment', { showLabel: true, label: 'Previous' }), tb('review.nextComment', { showLabel: true, label: 'Next' }), tb('review.deleteComments', { showLabel: true, label: 'Delete all' })), tb('review.comments', { big: true, label: 'Show comments' })] },
       { label: 'Proofing', items: [tb('view.spell', { big: true, label: 'Spelling' }), tb('tools.wordCount', { big: true, label: 'Word count' })] },
       { label: 'Speech', items: [tb('tools.readAloud', { big: true, label: 'Read aloud' })] },
       { label: 'Goals', items: [tb('tools.goal', { big: true, label: 'Word goal' })] },
@@ -401,7 +415,7 @@ function viewMenu() {
     { type: 'separator' }, I('view.themeDark'), I('view.themeLight'), I('view.themeSystem'), { label: 'Interface size', submenu: [I('view.uiBigger'), I('view.uiSmaller'), I('view.uiReset')] }, I('view.fullscreen')];
 }
 function insertMenu() {
-  return [I('ins.table'), I('ins.picture'), I('fmt.link'), { type: 'separator' }, I('ins.pageBreak'), I('ins.hr'), I('ins.cols2'), I('ins.cols3'), I('ins.note'),
+  return [I('ins.table'), I('ins.picture'), I('fmt.link'), { type: 'separator' }, I('ins.footnote'), I('review.comment'), { type: 'separator' }, I('ins.pageBreak'), I('ins.hr'), I('ins.cols2'), I('ins.cols3'), I('ins.note'),
     { type: 'separator' }, I('ins.symbol'), I('ins.date'), I('ins.toc'), I('ins.updateToc')];
 }
 function formatMenu() {
@@ -412,7 +426,7 @@ function formatMenu() {
     I('para.indent'), I('para.outdent'), { type: 'separator' }, I('fmt.color'), I('fmt.highlight'), I('fmt.painter'), I('fmt.clear')];
 }
 function toolsMenu() {
-  return [I('tools.wordCount'), I('tools.readAloud'), I('tools.goal'), I('view.spell'), I('tools.lookup'), { type: 'separator' }, I('tools.options')];
+  return [I('review.comment'), I('review.comments'), I('review.prevComment'), I('review.nextComment'), I('review.deleteComments'), { type: 'separator' }, I('tools.wordCount'), I('tools.readAloud'), I('tools.goal'), I('view.spell'), I('tools.lookup'), { type: 'separator' }, I('tools.options')];
 }
 
 // Recent files load asynchronously: fill the submenu when it is asked for.
@@ -481,7 +495,11 @@ function loadDocument(html, meta, { name = 'Untitled', file = null, format = 'sn
   start.hide();
   updateTitle();
   buildNav();
-  setTimeout(() => ed.layout(), 50);
+  comments.active = null;
+  comments.editing = null;
+  if (!isPhone()) comments.show(settings.get('comments', false) ? true : comments.ordered().length > 0);
+  else comments.paint();
+  setTimeout(() => { ed.layout(); if (isPhone()) ed.fitWidth(); }, 50);
   ed.focus();
 }
 
@@ -560,18 +578,41 @@ async function serialize(format) {
   const meta = ed.meta;
   switch (format) {
     case 'docx': return writeDocx(html, meta);
-    case 'html': return htmlPage(html, meta);
-    case 'md': return htmlToMarkdown(html);
-    case 'txt': return htmlToText(html);
+    case 'html': return htmlPage(notesAtEnd(html, 'html'), meta);
+    case 'md': return htmlToMarkdown(notesAtEnd(html, 'md'));
+    case 'txt': return htmlToText(notesAtEnd(html, 'txt'));
     default: return JSON.stringify({ format: 'snakedoc', version: 1, app: "Snake's Word", meta, html });
   }
+}
+
+/** For formats without footnotes or comments: the notes numbered at the end, comment marks gone. */
+function notesAtEnd(html, format) {
+  const box = document.createElement('div');
+  box.innerHTML = html;
+  for (const c of box.querySelectorAll('span.cmt')) c.replaceWith(...c.childNodes);
+  const refs = [...box.querySelectorAll('sup.fn-ref')];
+  if (!refs.length) return box.innerHTML;
+  const notes = refs.map((r, i) => {
+    const n = i + 1;
+    const note = r.dataset.note || '';
+    if (format === 'html') {
+      const sup = document.createElement('sup');
+      sup.innerHTML = `<a href="#fn-${n}" id="fnref-${n}">${n}</a>`;
+      r.replaceWith(sup);
+      return `<li id="fn-${n}">${note} <a href="#fnref-${n}" aria-label="Back">↩</a></li>`;
+    }
+    r.replaceWith(format === 'md' ? `[^${n}]` : `[${n}]`);
+    return format === 'md' ? `<p>[^${n}]: ${note}</p>` : `<p>[${n}] ${note}</p>`;
+  });
+  return format === 'html' ? `${box.innerHTML}<hr><ol class="footnotes">${notes.join('')}</ol>` : `${box.innerHTML}<hr>${notes.join('')}`;
 }
 
 function htmlPage(html, meta) {
   const css = [...document.styleSheets].map((s) => { try { return [...s.cssRules].map((r) => r.cssText).filter((t) => t.startsWith('.doc') || t.includes('.doc ')).join('\n'); } catch { return ''; } }).join('\n');
   return `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(meta.title || doc.name)}</title>
-<style>:root{--doc-font:"Carlito","Calibri","Aptos","Segoe UI","Inter","Noto Sans","Liberation Sans",Arial,sans-serif}body{margin:0;background:#f4f6f4}.doc{max-width:${8.5 * 96 - 192}px;margin:40px auto;padding:48px;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.12);font-family:var(--doc-font);font-size:${meta.fontSize}pt;line-height:${meta.lineHeight}}
-${css}</style></head><body><div class="doc">${html}</div></body></html>\n`;
+<style>:root{--doc-font:"Carlito","Calibri","Aptos","Segoe UI","Inter","Noto Sans","Liberation Sans",Arial,sans-serif}body{margin:0;background:#f4f6f4}.doc{max-width:${8.5 * 96 - 192}px;margin:40px auto;padding:48px;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.12);font-family:${meta.font ? fontStack(meta.font, 'var(--doc-font)') : 'var(--doc-font)'};font-size:${meta.fontSize}pt;line-height:${meta.lineHeight}}
+${css}
+${ed.styleCss('.doc')}</style></head><body><div class="doc">${html}</div></body></html>\n`;
 }
 
 async function save() {
@@ -623,17 +664,19 @@ async function exportPdf() {
   ed.commit('Typing');
   document.body.classList.add('printing');
   ed.clearFind();
+  ed.preparePrint();
   try {
     if (inElectron) {
       const f = await host.printPDF({ name: baseName(doc.name === 'Untitled' ? firstLine() || 'Document' : doc.name) });
       if (f) toast(`Exported ${f.name}`, { action: { label: 'Show', run: () => host.reveal(f) } });
     } else await host.printPDF();
-  } catch (err) { errorToast(err); } finally { document.body.classList.remove('printing'); }
+  } catch (err) { errorToast(err); } finally { ed.endPrint(); document.body.classList.remove('printing'); }
 }
 
 async function print() {
   document.body.classList.add('printing');
-  try { await host.print(); } finally { document.body.classList.remove('printing'); }
+  ed.preparePrint();
+  try { await host.print(); } finally { ed.endPrint(); document.body.classList.remove('printing'); }
 }
 
 async function pasteFromClipboard(opts) {
@@ -1166,6 +1209,14 @@ function openDocMenu(at, spell) {
     items.push({ type: 'separator' }, { label: 'Open link', icon: 'external', run: () => ed.onOpenLink(s.link.getAttribute('href')) }, { label: 'Edit link…', icon: 'link', run: () => linkDialog() },
       { label: 'Copy link address', icon: 'copy', run: () => navigator.clipboard.writeText(s.link.getAttribute('href') || '') }, { label: 'Remove link', icon: 'unlink', run: () => ed.unlink() });
   } else if (sel) items.push(I('fmt.link'));
+  items.push(I('review.comment'));
+  const cmtSpan = at.target.closest && at.target.closest('span.cmt');
+  if (cmtSpan) {
+    const cid = cmtSpan.dataset.cmt;
+    const c = comments.byId(cid);
+    items.push({ label: c && c.done ? 'Reopen comment' : 'Resolve comment', icon: 'check', run: () => comments.resolve(cid, !(c && c.done)) },
+      { label: 'Delete comment', icon: 'trash', run: () => comments.remove(cid) });
+  }
   if (s.cell) {
     items.push({ type: 'separator' },
       { label: 'Insert', icon: 'plus', submenu: [I('tbl.rowAbove'), I('tbl.rowBelow'), I('tbl.colLeft'), I('tbl.colRight')] },

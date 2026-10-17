@@ -48,3 +48,32 @@ export async function allFonts() {
 }
 
 export const FONT_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 32, 36, 40, 48, 56, 64, 72, 96];
+
+// Free fonts with the same letter widths as common Office fonts, so a document keeps its
+// line and page breaks on a computer without them (and the kind of font when none is there).
+const SUBSTITUTES = {
+  calibri: ['Carlito'], cambria: ['Caladea'], aptos: ['Carlito', 'Calibri'],
+  'times new roman': ['Liberation Serif', 'Tinos', 'Times'], times: ['Times New Roman', 'Liberation Serif', 'Tinos'],
+  arial: ['Liberation Sans', 'Arimo', 'Helvetica'], helvetica: ['Arial', 'Liberation Sans', 'Arimo'],
+  'courier new': ['Liberation Mono', 'Cousine', 'Courier'], courier: ['Courier New', 'Liberation Mono'],
+  georgia: ['Gelasio'], 'segoe ui': ['Selawik', 'Noto Sans'], consolas: ['Inconsolata', 'DejaVu Sans Mono'],
+  verdana: ['DejaVu Sans'], tahoma: ['DejaVu Sans'], 'century gothic': ['URW Gothic', 'TeX Gyre Adventor'],
+  garamond: ['EB Garamond'], 'book antiqua': ['TeX Gyre Pagella', 'Palatino'], 'palatino linotype': ['TeX Gyre Pagella', 'Palatino'],
+};
+
+/** The kind of font a name suggests: 'serif', 'monospace' or 'sans-serif'. */
+export function genericOf(name) {
+  const n = String(name || '').toLowerCase();
+  if (/mono|consol|courier|menlo|code|typewriter/.test(n)) return 'monospace';
+  if (/times|georgia|garamond|cambria|caladea|serif|book|palatino|minion|baskerville|didot|bodoni|century schoolbook|constantia/.test(n) && !/sans/.test(n)) return 'serif';
+  return 'sans-serif';
+}
+
+/** A CSS font-family list for a font name: the font, its look-alikes, then its kind. */
+export function fontStack(name, sansFallback = 'sans-serif') {
+  const n = String(name || '').replace(/["']/g, '').trim();
+  if (!n) return sansFallback;
+  const subs = SUBSTITUTES[n.toLowerCase()] || [];
+  const g = genericOf(n);
+  return [n, ...subs].map((f) => `"${f}"`).concat(g === 'sans-serif' ? sansFallback : g).join(', ');
+}

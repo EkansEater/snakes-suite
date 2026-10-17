@@ -4,6 +4,8 @@ import { readZip, writeZip } from '../../kit/zip.js';
 import { esc, parseXml, all, first, kids, kid, attr, XML_HEAD } from '../../kit/xml.js';
 import { bytesToBase64, dataUrlToBytes } from '../../kit/dom.js';
 import { PAGE_SIZES, PX_PER_IN, defaultMeta } from './editor.js';
+import { fontStack } from '../../kit/fonts.js';
+import { wrapRange } from './anchors.js';
 
 const TWIP = 15; // twentieths of a point per CSS pixel (1440 per inch / 96)
 const EMU = 9525; // English Metric Units per CSS pixel
@@ -53,26 +55,105 @@ export async function readDocx(bytes) {
   const doc = parseXml(docXml);
   const rels = relsOf(await text('word/_rels/document.xml.rels'));
 
-  // Style names (headings are found by name: ids differ between languages).
-  const styleNames = {};
+  // Styles: each paragraph and character style, its basedOn chain and its formatting.
+  // Headings are found by name: ids differ between languages.
+  const styleDefs = {};
+  let defaultParaStyle = null;
+  let defaultCharStyle = null;
+  let docDefaults = { rPr: null, pPr: null };
   const stylesXml = await text('word/styles.xml');
   if (stylesXml) {
-    for (const s of all(parseXml(stylesXml), 'style')) {
-      const id = attr(s, 'styleId');
-      const nm = first(s, 'name');
-      const based = first(s, 'basedOn');
-      styleNames[id] = { name: (nm ? attr(nm, 'val') : id || '').toLowerCase(), based: based ? attr(based, 'val') : null };
+    const sx = parseXml(stylesXml);
+    const dd = first(sx, 'docDefaults');
+    if (dd) {
+      const r = first(dd, 'rPrDefault');
+      const pp = first(dd, 'pPrDefault');
+      docDefaults = { rPr: r ? kid(r, 'rPr') : null, pPr: pp ? kid(pp, 'pPr') : null };
+    }
+    for (const st of all(sx, 'style')) {
+      const id = attr(st, 'styleId');
+      const nm = kid(st, 'name');
+      const based = kid(st, 'basedOn');
+      const type = attr(st, 'type');
+      styleDefs[id] = {
+        name: (nm ? attr(nm, 'val') : id || '').toLowerCase(), based: based ? attr(based, 'val') : null, type,
+        rPr: kid(st, 'rPr'), pPr: kid(st, 'pPr'), tblPr: kid(st, 'tblPr'), cond: kids(st, 'tblStylePr'),
+      };
+      const isDefault = ['1', 'true', 'on'].includes(attr(st, 'default'));
+      if (isDefault && type === 'paragraph') defaultParaStyle = id;
+      if (isDefault && type === 'character') defaultCharStyle = id;
     }
   }
-  const styleName = (id) => {
-    let s = styleNames[id];
-    let guard = 0;
-    while (s && guard++ < 6) {
-      if (/^(heading [1-6]|title|subtitle|quote|intense quote|caption|code|html preformatted|list paragraph)$/.test(s.name)) return s.name;
-      s = s.based ? styleNames[s.based] : null;
+  /** A style and the styles it is based on, the most basic first. */
+  const chain = (id) => {
+    const out = [];
+    let st = styleDefs[id];
+    for (let guard = 0; st && guard < 12; guard++) {
+      out.unshift(st);
+      st = st.based ? styleDefs[st.based] : null;
     }
-    return styleNames[id] ? styleNames[id].name : (id || '').toLowerCase();
+    return out;
   };
+  const styleName = (id) => {
+    const list = chain(id);
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (/^(heading [1-6]|title|subtitle|quote|intense quote|caption|code|html preformatted|list paragraph)$/.test(list[i].name)) return list[i].name;
+    }
+    return styleDefs[id] ? styleDefs[id].name : (id || '').toLowerCase();
+  };
+
+  // Theme fonts (Word 2007 and later refer to "the body font" rather than naming it).
+  const theme = { major: '', minor: '' };
+  const themeXml = await text('word/theme/theme1.xml');
+  if (themeXml) {
+    const tx = parseXml(themeXml);
+    for (const k of ['major', 'minor']) {
+      const f = first(tx, `${k}Font`);
+      const l = f ? kid(f, 'latin') : null;
+      theme[k] = l ? attr(l, 'typeface') || '' : '';
+    }
+  }
+  const themeFace = (t) => (!t ? '' : /^major/.test(t) ? theme.major : /^minor/.test(t) ? theme.minor : '');
+
+  /** Run formatting as plain values from rPr elements, later ones winning. */
+  function runFormat(rPrs) {
+    const f = {};
+    for (const rPr of rPrs) {
+      if (!rPr) continue;
+      for (const k of ['b', 'i', 'strike', 'dstrike', 'caps', 'smallCaps', 'vanish']) if (kid(rPr, k)) f[k] = on(rPr, k);
+      const u = kid(rPr, 'u');
+      if (u) f.u = attr(u, 'val') !== 'none';
+      const c = kid(rPr, 'color');
+      if (c && attr(c, 'val')) f.color = attr(c, 'val') === 'auto' ? null : attr(c, 'val').toUpperCase();
+      const sz = kid(rPr, 'sz');
+      if (sz && Number(attr(sz, 'val'))) f.sz = Number(attr(sz, 'val')) / 2;
+      const fonts = kid(rPr, 'rFonts');
+      if (fonts) {
+        const face = attr(fonts, 'ascii') || attr(fonts, 'hAnsi') || themeFace(attr(fonts, 'asciiTheme') || attr(fonts, 'hAnsiTheme'));
+        if (face) f.font = face;
+      }
+      const hl = kid(rPr, 'highlight');
+      if (hl) f.hl = HIGHLIGHT[attr(hl, 'val')] || null;
+      const shd = kid(rPr, 'shd');
+      if (shd) { const fill = attr(shd, 'fill'); f.shd = fill && !/^(auto|FFFFFF)$/i.test(fill) ? `#${fill}` : null; }
+      const va = kid(rPr, 'vertAlign');
+      if (va) f.va = attr(va, 'val');
+    }
+    return f;
+  }
+  const styleRPrs = (id) => chain(id).map((x) => x.rPr);
+  const stylePPrs = (id) => chain(id).map((x) => x.pPr);
+  // What every paragraph looks like unless told otherwise: the page's own font and size.
+  const baseFmt = runFormat([docDefaults.rPr, ...styleRPrs(defaultParaStyle)]);
+  const basePPrs = [docDefaults.pPr, ...stylePPrs(defaultParaStyle)];
+  const lastKid = (pPrs, name) => { for (let i = pPrs.length - 1; i >= 0; i--) { const k = pPrs[i] && kid(pPrs[i], name); if (k) return k; } return null; };
+  const lineOf = (sp) => {
+    if (!sp) return null;
+    const line = attr(sp, 'line');
+    const rule = attr(sp, 'lineRule');
+    return line && (!rule || rule === 'auto') ? Math.round((Number(line) / 240) * 100) / 100 : null;
+  };
+  const baseLine = lineOf(lastKid(basePPrs, 'spacing')) || 1.15;
 
   // Numbering: numId -> level -> format.
   const numFmt = {};
@@ -81,11 +162,18 @@ export async function readDocx(bytes) {
     const nx = parseXml(numXml);
     const abstract = {};
     for (const a of all(nx, 'abstractNum')) {
-      abstract[attr(a, 'abstractNumId')] = Object.fromEntries(all(a, 'lvl').map((l) => [attr(l, 'ilvl'), { fmt: val(l, 'numFmt') || 'bullet', text: val(l, 'lvlText') || '' }]));
+      abstract[attr(a, 'abstractNumId')] = Object.fromEntries(all(a, 'lvl').map((l) => [attr(l, 'ilvl'),
+        { fmt: val(l, 'numFmt') || 'bullet', text: val(l, 'lvlText') || '', start: Number(val(l, 'start') || 1), pPr: kid(l, 'pPr') }]));
     }
     for (const n of all(nx, 'num')) {
       const aid = first(n, 'abstractNumId');
-      numFmt[attr(n, 'numId')] = abstract[aid ? attr(aid, 'val') : ''] || {};
+      const levels = { ...(abstract[aid ? attr(aid, 'val') : ''] || {}) };
+      for (const o of kids(n, 'lvlOverride')) {
+        const so = kid(o, 'startOverride');
+        const il = attr(o, 'ilvl');
+        if (so && levels[il]) levels[il] = { ...levels[il], start: Number(attr(so, 'val') || 1) };
+      }
+      numFmt[attr(n, 'numId')] = levels;
     }
   }
 
@@ -105,6 +193,15 @@ export async function readDocx(bytes) {
   };
 
   const escText = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escAttr = (s) => escText(s).replace(/"/g, '&quot;');
+
+  // Footnotes and endnotes, by id (read before the body, which refers to them).
+  const notes = { foot: {}, end: {} };
+  const noteParts = [];
+  for (const [kind, part, tag] of [['foot', 'word/footnotes.xml', 'footnote'], ['end', 'word/endnotes.xml', 'endnote']]) {
+    const xml = await text(part);
+    if (xml) noteParts.push([kind, parseXml(xml), tag]);
+  }
 
   async function runs(parent) {
     let out = '';
@@ -119,8 +216,11 @@ export async function readDocx(bytes) {
         else if (anchor) href = `#h-${anchor.replace(/[^\w-]/g, '')}`;
         const inner = await runs(node);
         out += href ? `<a href="${escText(href)}">${inner}</a>` : inner;
-      } else if (ln === 'ins' || ln === 'smartTag' || ln === 'customXml' || ln === 'fldSimple' || ln === 'sdtContent') out += await runs(node);
+      } else if (['ins', 'moveTo', 'smartTag', 'customXml', 'fldSimple', 'sdtContent', 'dir', 'bdo'].includes(ln)) out += await runs(node);
+      else if (ln === 'oMathPara' || ln === 'oMath') out += `<i>${escText(all(node, 't').map((t) => t.textContent).join(''))}</i>`;
       else if (ln === 'sdt') out += await runs(kid(node, 'sdtContent') || node);
+      else if (ln === 'commentRangeStart') out += `<span data-cs="${escAttr(attr(node, 'id') || '')}"></span>`;
+      else if (ln === 'commentRangeEnd') out += `<span data-ce="${escAttr(attr(node, 'id') || '')}"></span>`;
       else if (ln === 'bookmarkStart') {
         const nm = attr(node, 'name');
         if (nm && !nm.startsWith('_')) out += `<span id="h-${nm.replace(/[^\w-]/g, '')}"></span>`;
@@ -141,6 +241,11 @@ export async function readDocx(bytes) {
         else if (t === 'separate') fieldDepth = 0;
         else if (t === 'end') fieldDepth = 0;
       } else if (ln === 'instrText' || fieldDepth) continue;
+      else if (ln === 'footnoteReference' || ln === 'endnoteReference') {
+        // A note: its text travels with its mark (the number is counted where it is shown).
+        const note = notes[ln === 'footnoteReference' ? 'foot' : 'end'][attr(c, 'id')];
+        if (note !== undefined) content += `<sup class="fn-ref" contenteditable="false" data-note="${escAttr(note)}"></sup>`;
+      }
       else if (ln === 't') content += escText(c.textContent);
       else if (ln === 'tab' || ln === 'ptab') content += '\t';
       else if (ln === 'br' || ln === 'cr') content += attr(c, 'type') === 'page' ? '<!--PAGEBREAK-->' : '<br>';
@@ -171,62 +276,54 @@ export async function readDocx(bytes) {
       }
     }
     if (!content) return '';
-    if (!rPr) return content;
+    // A note's mark is its own superscript: the run's formatting is not wrapped around it.
+    if (/^(<sup class="fn-ref"[^>]*><\/sup>)+$/.test(content)) return content;
+    const rs = rPr ? val(rPr, 'rStyle') : null;
+    const f = runFormat([...cur.rPrs, ...styleRPrs(rs || defaultCharStyle), rPr]);
+    if (f.vanish) return '';
     const styles = [];
-    if (val(rPr, 'color') && val(rPr, 'color') !== 'auto') styles.push(`color: #${val(rPr, 'color')}`);
-    const sz = val(rPr, 'sz');
-    if (sz) styles.push(`font-size: ${Number(sz) / 2}pt`);
-    const fonts = kid(rPr, 'rFonts');
-    const face = fonts ? (attr(fonts, 'ascii') || attr(fonts, 'hAnsi')) : null;
-    if (face) {
-      // Keep the kind of font when it is not installed here (Consolas -> any monospace).
-      const generic = /mono|consol|courier|menlo|code/i.test(face) ? 'monospace' : /times|georgia|garamond|cambria|serif|book|palatino|minion/i.test(face) && !/sans/i.test(face) ? 'serif' : 'sans-serif';
-      styles.push(`font-family: '${face.replace(/'/g, '')}', ${generic}`);
-    }
-    const hl = val(rPr, 'highlight');
-    const shd = kid(rPr, 'shd');
-    if (hl && HIGHLIGHT[hl]) styles.push(`background-color: ${HIGHLIGHT[hl]}`);
-    else if (shd && attr(shd, 'fill') && !/^(auto|FFFFFF)$/i.test(attr(shd, 'fill'))) styles.push(`background-color: #${attr(shd, 'fill')}`);
-    if (on(rPr, 'caps')) styles.push('text-transform: uppercase');
-    if (on(rPr, 'smallCaps')) styles.push('font-variant: small-caps');
+    if ((f.color || null) !== (cur.base.color || null)) styles.push(`color: ${f.color ? `#${f.color}` : '#000000'}`);
+    if (f.sz && f.sz !== cur.base.sz) styles.push(`font-size: ${f.sz}pt`);
+    // Its look-alikes and kind come along, for a computer without the font (Consolas -> any monospace).
+    if (f.font && f.font !== cur.base.font) styles.push(`font-family: ${fontStack(f.font).replace(/"/g, "'")}`);
+    if (f.hl) styles.push(`background-color: ${f.hl}`);
+    else if (f.shd) styles.push(`background-color: ${f.shd}`);
+    if (f.caps) styles.push('text-transform: uppercase');
+    if (f.smallCaps) styles.push('font-variant: small-caps');
     let out = styles.length ? `<span style="${styles.join('; ')}">${content}</span>` : content;
-    if (on(rPr, 'b')) out = `<b>${out}</b>`;
-    if (on(rPr, 'i')) out = `<i>${out}</i>`;
-    const u = kid(rPr, 'u');
-    if (u && attr(u, 'val') !== 'none') out = `<u>${out}</u>`;
-    if (on(rPr, 'strike') || on(rPr, 'dstrike')) out = `<s>${out}</s>`;
-    const va = val(rPr, 'vertAlign');
-    if (va === 'superscript') out = `<sup>${out}</sup>`;
-    if (va === 'subscript') out = `<sub>${out}</sub>`;
+    // A heading is bold by itself: only its runs that say otherwise are marked.
+    if (f.b && !(cur.bold || cur.th || (cur.base.b && f.b === cur.base.b && cur.base !== baseFmt))) out = `<b>${out}</b>`;
+    if (f.i && !(cur.italic || (cur.base.i && f.i === cur.base.i && cur.base !== baseFmt))) out = `<i>${out}</i>`;
+    if (f.u) out = `<u>${out}</u>`;
+    if (f.strike || f.dstrike) out = `<s>${out}</s>`;
+    if (f.va === 'superscript') out = `<sup>${out}</sup>`;
+    if (f.va === 'subscript') out = `<sub>${out}</sub>`;
     return out;
   }
 
-  function pStyleAttrs(pPr) {
+  // The paragraph being read: its style's run formatting, and what its tag shows by itself.
+  let cur = { rPrs: [], base: baseFmt, bold: false, italic: false };
+
+  /** CSS for a paragraph from its own and its style's properties (later pPr elements win). */
+  function pStyleAttrs(pPrs, listed) {
     const st = [];
-    if (!pPr) return st;
-    const jc = val(pPr, 'jc');
-    if (jc === 'center') st.push('text-align: center');
-    else if (jc === 'right' || jc === 'end') st.push('text-align: right');
-    else if (jc === 'both' || jc === 'distribute') st.push('text-align: justify');
-    const ind = kid(pPr, 'ind');
+    const jc = lastKid(pPrs, 'jc');
+    const j = jc ? attr(jc, 'val') : null;
+    if (j === 'center') st.push('text-align: center');
+    else if (j === 'right' || j === 'end') st.push('text-align: right');
+    else if (j === 'both' || j === 'distribute') st.push('text-align: justify');
+    const ind = lastKid(pPrs, 'ind');
     if (ind) {
       const left = Number(attr(ind, 'left') || attr(ind, 'start') || 0);
       const right = Number(attr(ind, 'right') || attr(ind, 'end') || 0);
       const firstLine = Number(attr(ind, 'firstLine') || 0) - Number(attr(ind, 'hanging') || 0);
-      if (left && !kid(pPr, 'numPr')) st.push(`margin-left: ${Math.round(left / TWIP)}px`);
+      if (left && !listed) st.push(`margin-left: ${Math.round(left / TWIP)}px`);
       if (right) st.push(`margin-right: ${Math.round(right / TWIP)}px`);
-      if (firstLine && !kid(pPr, 'numPr')) st.push(`text-indent: ${Math.round(firstLine / TWIP)}px`);
+      if (firstLine && !listed) st.push(`text-indent: ${Math.round(firstLine / TWIP)}px`);
     }
-    const sp = kid(pPr, 'spacing');
-    if (sp) {
-      const line = attr(sp, 'line');
-      const rule = attr(sp, 'lineRule');
-      if (line && (!rule || rule === 'auto')) {
-        const lh = Math.round((Number(line) / 240) * 100) / 100;
-        if (Math.abs(lh - 1.15) > 0.04 && lh > 0.5 && lh < 5) st.push(`line-height: ${lh}`);
-      }
-    }
-    const shd = kid(pPr, 'shd');
+    const lh = lineOf(lastKid(pPrs, 'spacing'));
+    if (lh && Math.abs(lh - baseLine) > 0.04 && lh > 0.5 && lh < 5) st.push(`line-height: ${lh}`);
+    const shd = lastKid(pPrs, 'shd');
     if (shd && attr(shd, 'fill') && !/^(auto|FFFFFF)$/i.test(attr(shd, 'fill'))) st.push(`background-color: #${attr(shd, 'fill')}`);
     return st;
   }
@@ -239,36 +336,81 @@ export async function readDocx(bytes) {
     return s;
   };
 
+  // How far each list has counted, so a list interrupted by a paragraph carries on.
+  const counters = {};
+  // The document's heading, title and subtitle styles.
+  const docStyles = {};
   async function paragraph(p) {
     const pPr = kid(p, 'pPr');
-    const sid = pPr ? val(pPr, 'pStyle') : null;
+    const sid = (pPr ? val(pPr, 'pStyle') : null) || defaultParaStyle;
     const sname = styleName(sid);
-    const numPr = pPr ? kid(pPr, 'numPr') : null;
+    const pPrs = [docDefaults.pPr, ...stylePPrs(sid), pPr];
+    // A list item by its own numbering, or by its style's (Word's "List Bullet" and friends).
+    let numId = null;
+    let lvl = 0;
+    for (const x of pPrs) {
+      const np = x && kid(x, 'numPr');
+      if (!np) continue;
+      const nid = kid(np, 'numId');
+      const il = kid(np, 'ilvl');
+      if (nid) numId = attr(nid, 'val');
+      if (il) lvl = Number(attr(il, 'val') || 0);
+    }
+    // How far in the item sits: numbering level's indent, under the paragraph's own.
+    let left = 0;
+    if (numId && numId !== '0') {
+      const lvlPPr = ((numFmt[numId] || {})[String(lvl)] || {}).pPr || null;
+      const ind = lastKid([docDefaults.pPr, ...stylePPrs(sid), lvlPPr, pPr], 'ind');
+      left = ind ? Number(attr(ind, 'left') || attr(ind, 'start') || 0) : 0;
+      // An item of a different list, indented further than the open one, sits inside it.
+      const top = listStack[listStack.length - 1];
+      if (top && top.numId !== numId && left) {
+        let d = 0;
+        while (d < listStack.length && listStack[d].left && listStack[d].left < left - 90) d++;
+        lvl = d;
+      }
+    }
+    const heading = /^heading [1-6]$|^title$/.test(sname);
+    const rPrs = [...styleRPrs(sid), ...(tableRPrs || [])];
+    cur = { rPrs, base: baseFmt, bold: heading, th: tableHead, italic: sname === 'quote' || sname === 'intense quote' };
+    // Headings, title and subtitle look as the document's own styles say (meta.styles):
+    // what the style gives is not repeated on each run.
+    const key = /^heading [1-6]$/.test(sname) ? `h${sname.slice(-1)}` : sname === 'title' || sname === 'subtitle' ? sname : null;
+    if (key) {
+      const sf = runFormat([docDefaults.rPr, ...styleRPrs(sid)]);
+      if (!tableRPrs && !docStyles[key]) docStyles[key] = { color: sf.color || null, size: sf.sz || null, font: sf.font || null, bold: !!sf.b, italic: !!sf.i };
+      cur.base = { ...baseFmt, ...sf };
+    } else if (cur.italic) cur.base = { ...baseFmt, ...runFormat(rPrs) };
+    const listed = numId && numId !== '0';
     let body = await runs(p);
     let pageBreakAfter = false;
     if (body.includes('<!--PAGEBREAK-->')) {
       pageBreakAfter = body.trim().endsWith('<!--PAGEBREAK-->') || body.replace('<!--PAGEBREAK-->', '').trim() === '';
       body = body.replace(/<!--PAGEBREAK-->/g, '');
     }
-    const st = pStyleAttrs(pPr);
+    const st = pStyleAttrs(pPrs, listed);
     const styleAttr = st.length ? ` style="${st.join('; ')}"` : '';
     const inner = body || '<br>';
     let out = '';
-    if (numPr && first(numPr, 'numId') && attr(first(numPr, 'numId'), 'val') !== '0') {
-      const numId = attr(first(numPr, 'numId'), 'val');
-      const lvl = Number(val(numPr, 'ilvl') || 0);
-      const f = (numFmt[numId] || {})[String(lvl)] || { fmt: 'bullet' };
+    if (listed) {
+      const f = (numFmt[numId] || {})[String(lvl)] || { fmt: 'bullet', start: 1 };
       const tag = f.fmt === 'bullet' || f.fmt === 'none' ? 'ul' : 'ol';
       const type = { lowerLetter: 'lower-alpha', upperLetter: 'upper-alpha', lowerRoman: 'lower-roman', upperRoman: 'upper-roman' }[f.fmt];
+      // Word's counting: each level counts on; a higher level starts the deeper ones again.
+      const cnt = counters[numId] || (counters[numId] = {});
+      for (const k of Object.keys(cnt)) if (Number(k) > lvl) delete cnt[k];
+      const n = cnt[lvl] = (cnt[lvl] || (f.start || 1) - 1) + 1;
       if (listStack.length > lvl + 1) out += closeLists(lvl);
       if (listStack.length === lvl + 1) {
         const top = listStack[lvl];
-        if (top.tag !== tag) { out += closeLists(lvl - 1); }
+        if (top.tag !== tag || (top.numId !== numId && lvl === 0)) { out += closeLists(lvl - 1); }
         else out += '</li>';
       }
       while (listStack.length < lvl + 1) {
-        listStack.push({ tag, numId });
-        out += `<${tag}${type ? ` style="list-style-type: ${type}"` : ''}>`;
+        const opening = listStack.length === lvl;
+        listStack.push({ tag, numId, left: listStack.length === lvl ? left : 0 });
+        const start = opening && tag === 'ol' && n > 1 ? ` start="${n}"` : '';
+        out += `<${tag}${start}${type ? ` style="list-style-type: ${type}"` : ''}>`;
       }
       out += `<li${styleAttr}>${inner}`;
       return out;
@@ -289,6 +431,9 @@ export async function readDocx(bytes) {
     return out + html;
   }
 
+  // Inside a table: its style's run formatting (and its header row's).
+  let tableRPrs = null;
+  let tableHead = false;
   async function table(tbl) {
     const cols = all(kid(tbl, 'tblGrid'), 'gridCol').map((g) => Math.round(Number(attr(g, 'w') || 0) / TWIP));
     const rows = kids(tbl, 'tr');
@@ -314,37 +459,66 @@ export async function readDocx(bytes) {
       }
     }
     const tblPr = kid(tbl, 'tblPr');
-    const borders = tblPr ? kid(tblPr, 'tblBorders') : null;
+    const tstyle = tblPr ? val(tblPr, 'tblStyle') : null;
+    const tchain = chain(tstyle);
+    const tborders = tblPr ? kid(tblPr, 'tblBorders') : null;
+    const borders = tborders || [...tchain].reverse().map((x) => x.tblPr && kid(x.tblPr, 'tblBorders')).find(Boolean) || null;
     const noBorders = borders && kids(borders).every((b) => ['nil', 'none'].includes(attr(b, 'val')));
+    // The table style's look for its first row, when the table uses it (Word's "Header Row" box).
+    const look = tblPr ? kid(tblPr, 'tblLook') : null;
+    const lookFirst = look && (attr(look, 'firstRow') === '1' || (parseInt(attr(look, 'val') || '0', 16) & 0x20) !== 0);
+    const firstCond = lookFirst ? tchain.flatMap((x) => x.cond).filter((c) => attr(c, 'type') === 'firstRow').pop() : null;
+    const firstTc = firstCond ? kid(firstCond, 'tcPr') : null;
+    const firstShd = firstTc ? kid(firstTc, 'shd') : null;
+    const firstFill = firstShd && attr(firstShd, 'fill') && !/^(auto|FFFFFF)$/i.test(attr(firstShd, 'fill')) ? attr(firstShd, 'fill') : null;
+    const firstRPr = firstCond ? kid(firstCond, 'rPr') : null;
+    const headRow = (r) => r === 0 && rows[0] && (kid(kid(rows[0], 'trPr'), 'tblHeader') || (firstCond && (firstFill || (firstRPr && on(firstRPr, 'b')))));
     let out = `<table class="${noBorders ? 'tbl-plain' : 'tbl-grid'}">`;
     if (cols.length && cols.every((w) => w > 0)) out += `<colgroup>${cols.map((w) => `<col style="width:${w}px">`).join('')}</colgroup>`;
     out += '<tbody>';
     for (let r = 0; r < grid.length; r++) {
       out += '<tr>';
+      const th = headRow(r);
       for (const cell of grid[r]) {
         if (cell.skip) continue;
         const tcPr = kid(cell.tc, 'tcPr');
         const st = [];
         const shd = tcPr ? kid(tcPr, 'shd') : null;
         if (shd && attr(shd, 'fill') && !/^(auto|FFFFFF)$/i.test(attr(shd, 'fill'))) st.push(`background-color: #${attr(shd, 'fill')}`);
+        else if (th && firstFill) st.push(`background-color: #${firstFill}`);
         const va = val(tcPr, 'vAlign');
         if (va === 'center') st.push('vertical-align: middle');
         else if (va === 'bottom') st.push('vertical-align: bottom');
         let inner = '';
         listStack = [];
+        const outer = [tableRPrs, tableHead];
+        tableRPrs = th && firstRPr ? [...styleRPrs(tstyle), firstRPr] : styleRPrs(tstyle);
+        tableHead = !!th;
         for (const child of kids(cell.tc)) {
           if (child.localName === 'p') inner += await paragraph(child);
           else if (child.localName === 'tbl') inner += closeLists() + await table(child);
         }
+        [tableRPrs, tableHead] = outer;
         inner += closeLists();
         // A cell with one plain paragraph keeps just its text.
         const single = /^<p>(.*)<\/p>$/s.exec(inner);
         if (single && !single[1].includes('<p')) inner = single[1];
-        out += `<td${cell.span > 1 ? ` colspan="${cell.span}"` : ''}${cell.rowspan > 1 ? ` rowspan="${cell.rowspan}"` : ''}${st.length ? ` style="${st.join('; ')}"` : ''}>${inner || '<br>'}</td>`;
+        const tag = th ? 'th' : 'td';
+        out += `<${tag}${cell.span > 1 ? ` colspan="${cell.span}"` : ''}${cell.rowspan > 1 ? ` rowspan="${cell.rowspan}"` : ''}${st.length ? ` style="${st.join('; ')}"` : ''}>${inner || '<br>'}</${tag}>`;
       }
       out += '</tr>';
     }
     return `${out}</tbody></table>`;
+  }
+
+  for (const [kind, nx, tag] of noteParts) {
+    for (const n of all(nx, tag)) {
+      const type = attr(n, 'type');
+      if (type && type !== 'normal') continue;
+      const paras = [];
+      for (const p of kids(n, 'p')) paras.push(await runs(p));
+      notes[kind][attr(n, 'id')] = paras.filter((x) => x.trim()).join('<br>').trim();
+    }
   }
 
   const body = first(doc, 'body');
@@ -367,8 +541,62 @@ export async function readDocx(bytes) {
     return `<ul class="checklist">${items.join('')}</ul>`;
   });
 
-  // Page setup, header and footer.
+  // Comments: comments.xml, threads and resolved marks from commentsExtended.xml, and the
+  // stretches of text they are about (commentRangeStart/End) as comment spans.
+  const comments = [];
+  const cxml = await text('word/comments.xml');
+  if (cxml) {
+    const byId = {};
+    const byPara = {};
+    for (const c of all(parseXml(cxml), 'comment')) {
+      const paras = kids(c, 'p');
+      const textOf = (p) => all(p, 't').map((t) => t.textContent).join('');
+      const item = {
+        id: `c${attr(c, 'id')}`, author: attr(c, 'author') || '', initials: attr(c, 'initials') || '', date: attr(c, 'date') || '',
+        text: paras.map(textOf).join('\n').trim(), done: false, replies: [],
+      };
+      byId[attr(c, 'id')] = item;
+      const last = paras[paras.length - 1];
+      if (last && attr(last, 'paraId')) byPara[attr(last, 'paraId')] = item;
+    }
+    const ext = await text('word/commentsExtended.xml');
+    const parentOf = new Map();
+    if (ext) {
+      for (const e of all(parseXml(ext), 'commentEx')) {
+        const item = byPara[attr(e, 'paraId')];
+        if (!item) continue;
+        if (['1', 'true'].includes(attr(e, 'done'))) item.done = true;
+        const parent = byPara[attr(e, 'paraIdParent')];
+        if (parent && parent !== item) parentOf.set(item, parent);
+      }
+    }
+    for (const item of Object.values(byId)) {
+      const parent = parentOf.get(item);
+      if (parent) parent.replies.push({ author: item.author, initials: item.initials, date: item.date, text: item.text });
+    }
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    for (const [wid, item] of Object.entries(byId)) {
+      const a = box.querySelector(`span[data-cs="${CSS.escape(wid)}"]`);
+      const b = box.querySelector(`span[data-ce="${CSS.escape(wid)}"]`);
+      if (parentOf.has(item) || !a || !b || (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING)) continue;
+      const r = document.createRange();
+      r.setStartAfter(a);
+      r.setEndBefore(b);
+      wrapRange(r, box, item.id);
+      if (box.querySelector(`span.cmt[data-cmt="${CSS.escape(item.id)}"]`)) comments.push(item);
+    }
+    for (const m of box.querySelectorAll('span[data-cs], span[data-ce]')) m.remove();
+    html = box.innerHTML;
+  } else html = html.replace(/<span data-c[se]="[^"]*"><\/span>/g, '');
+
+  // Page setup, header and footer; the document's own font, size and line spacing.
   const meta = defaultMeta();
+  if (baseFmt.font) meta.font = baseFmt.font;
+  meta.fontSize = baseFmt.sz || (stylesXml ? 10 : 11);
+  meta.lineHeight = baseLine;
+  if (Object.keys(docStyles).length) meta.styles = docStyles;
+  if (comments.length) meta.comments = comments;
   const sect = kids(body, 'sectPr')[0] || all(body, 'sectPr').pop();
   if (sect) {
     const pg = kid(sect, 'pgSz');
@@ -561,6 +789,23 @@ export async function writeDocx(html, meta) {
     return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${n}" name="Picture ${n}" descr="${alt}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="${NS.a}" noChangeAspect="1"/></wp:cNvGraphicFramePr>${graphic}</wp:inline></w:drawing></w:r>`;
   }
 
+  // Comments: Word's ids in document order (replies after), and where each one's text starts and ends.
+  const cmtSpans = [...root.querySelectorAll('span.cmt[data-cmt]')];
+  const cmtList = [];
+  for (const sp of cmtSpans) {
+    const c = (meta.comments || []).find((x) => x.id === sp.dataset.cmt);
+    if (c && !cmtList.includes(c)) cmtList.push(c);
+  }
+  const cmtIds = new Map();
+  let cmtSeq = 0;
+  for (const c of cmtList) cmtIds.set(c, [cmtSeq++, ...(c.replies || []).map(() => cmtSeq++)]);
+  const cmtFirst = new Map();
+  const cmtLast = new Map();
+  for (const sp of cmtSpans) { if (!cmtFirst.has(sp.dataset.cmt)) cmtFirst.set(sp.dataset.cmt, sp); cmtLast.set(sp.dataset.cmt, sp); }
+  const cmtOf = (sp) => cmtList.find((x) => x.id === sp.dataset.cmt);
+  // Footnotes, numbered from 1 in document order.
+  const footnotes = [];
+
   // Inline content of a block -> runs.
   async function inline(node, f) {
     let out = '';
@@ -569,6 +814,18 @@ export async function writeDocx(html, meta) {
       if (c.nodeType !== 1) continue;
       const tag = c.tagName;
       if (tag === 'BR') { out += '<w:r><w:br/></w:r>'; continue; }
+      if (tag === 'SUP' && c.classList.contains('fn-ref')) {
+        footnotes.push(c.dataset.note || '');
+        out += `<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${footnotes.length}"/></w:r>`;
+        continue;
+      }
+      if (tag === 'SPAN' && c.classList.contains('cmt') && cmtOf(c)) {
+        const ids = cmtIds.get(cmtOf(c));
+        if (cmtFirst.get(c.dataset.cmt) === c) out += ids.map((n) => `<w:commentRangeStart w:id="${n}"/>`).join('');
+        out += await inline(c, f);
+        if (cmtLast.get(c.dataset.cmt) === c) out += ids.map((n) => `<w:commentRangeEnd w:id="${n}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${n}"/></w:r>`).join('');
+        continue;
+      }
       if (tag === 'IMG') { out += await imageRun(c); continue; }
       if (['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE', 'LI'].includes(tag)) continue; // handled as blocks
       const g = { ...f };
@@ -831,12 +1088,20 @@ export async function writeDocx(html, meta) {
   const font = meta.font || 'Calibri';
   const fs = Math.round((meta.fontSize || 11) * 2);
   const style = (id, name, ppr, rpr, extra = '') => `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>${extra}${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${rpr ? `<w:rPr>${rpr}</w:rPr>` : ''}</w:style>`;
-  const head = (n, size, before, after) => style(`Heading${n}`, `heading ${n}`, `<w:keepNext/><w:spacing w:before="${before}" w:after="${after}"/><w:outlineLvl w:val="${n - 1}"/>`, `<w:b/><w:color w:val="1F5B3A"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/>`);
+  // Heading, title and subtitle looks: the document's own (from a file it was opened from), else ours.
+  const own = meta.styles || {};
+  const look = (k, d) => {
+    const v = own[k];
+    if (!v) return d;
+    const sz = v.size ? Math.round(v.size * 2) : null;
+    return `${v.font ? `<w:rFonts w:ascii="${esc(v.font)}" w:hAnsi="${esc(v.font)}"/>` : ''}${v.bold ? '<w:b/>' : ''}${v.italic ? '<w:i/>' : ''}${v.color ? `<w:color w:val="${esc(v.color)}"/>` : ''}${sz ? `<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>` : ''}`;
+  };
+  const head = (n, size, before, after) => style(`Heading${n}`, `heading ${n}`, `<w:keepNext/><w:spacing w:before="${before}" w:after="${after}"/><w:outlineLvl w:val="${n - 1}"/>`, look(`h${n}`, `<w:b/><w:color w:val="1F5B3A"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/>`));
   const styles = `${XML_HEAD}<w:styles xmlns:w="${NS.w}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${esc(font)}" w:hAnsi="${esc(font)}" w:eastAsia="${esc(font)}" w:cs="${esc(font)}"/><w:sz w:val="${fs}"/><w:szCs w:val="${fs}"/><w:lang w:val="en-US"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="${Math.round((meta.lineHeight || 1.15) * 240)}" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
 ${head(1, 40, 360, 120)}${head(2, 32, 280, 80)}${head(3, 26, 240, 60)}${head(4, 24, 200, 40)}${head(5, 22, 200, 40)}${head(6, 22, 200, 40)}
-${style('Title', 'Title', '<w:spacing w:after="80"/>', '<w:sz w:val="56"/><w:szCs w:val="56"/><w:spacing w:val="-10"/>')}
-${style('Subtitle', 'Subtitle', '<w:spacing w:after="240"/>', '<w:color w:val="5A6560"/><w:sz w:val="28"/>')}
+${style('Title', 'Title', '<w:spacing w:after="80"/>', look('title', '<w:sz w:val="56"/><w:szCs w:val="56"/><w:spacing w:val="-10"/>'))}
+${style('Subtitle', 'Subtitle', '<w:spacing w:after="240"/>', look('subtitle', '<w:color w:val="5A6560"/><w:sz w:val="28"/>'))}
 ${style('Quote', 'Quote', '<w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="3FB950"/></w:pBdr><w:ind w:left="240"/>', '<w:i/><w:color w:val="3B443E"/>')}
 ${style('Caption', 'caption', '', '<w:i/><w:color w:val="5A6560"/><w:sz w:val="18"/>')}
 ${style('Code', 'Code', '<w:shd w:val="clear" w:color="auto" w:fill="F3F5F3"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', '<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="20"/>')}
@@ -844,14 +1109,60 @@ ${style('ListParagraph', 'List Paragraph', '<w:spacing w:after="40"/><w:contextu
 ${style('Header', 'header', '', '<w:color w:val="555555"/><w:sz w:val="18"/>')}${style('Footer', 'footer', '', '<w:color w:val="555555"/><w:sz w:val="18"/>')}
 ${style('TOCHeading', 'TOC Heading', '', '<w:b/><w:sz w:val="28"/>')}
 <w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="1F6FEB"/><w:u w:val="single"/></w:rPr></w:style>
+${style('CommentText', 'annotation text', '<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', '<w:sz w:val="20"/><w:szCs w:val="20"/>')}
+<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>
+${style('FootnoteText', 'footnote text', '<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>', '<w:sz w:val="20"/><w:szCs w:val="20"/>')}
+<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>
 </w:styles>`;
 
-  const ct = `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="bmp" ContentType="image/bmp"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>${extraParts.map((p) => `<Override PartName="/${p.name}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${p.name.includes('header') ? 'header' : 'footer'}+xml"/>`).join('')}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
+  // Comments (comments.xml) and their threads and resolved marks (commentsExtended.xml).
+  const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
+  const W15 = 'http://schemas.microsoft.com/office/word/2012/wordml';
+  const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+  if (cmtList.length) {
+    let para = 0x10000000;
+    const commentXml = [];
+    const exXml = [];
+    const one = (n, who, initials, date, textBody, parentPara, done) => {
+      const lines = String(textBody || '').split('\n');
+      const ids = lines.map(() => (++para).toString(16).toUpperCase());
+      const ps = lines.map((line, i) => `<w:p w14:paraId="${ids[i]}" w14:textId="77777777"><w:pPr><w:pStyle w:val="CommentText"/></w:pPr>${i === 0 ? '<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:annotationRef/></w:r>' : ''}<w:r><w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`).join('');
+      commentXml.push(`<w:comment w:id="${n}" w:author="${esc(who || 'Author')}" w:date="${esc((date || new Date().toISOString()).replace(/\.\d+Z$/, 'Z'))}" w:initials="${esc(initials || '')}">${ps}</w:comment>`);
+      const last = ids[ids.length - 1];
+      exXml.push(`<w15:commentEx w15:paraId="${last}"${parentPara ? ` w15:paraIdParent="${parentPara}"` : ''} w15:done="${done ? 1 : 0}"/>`);
+      return last;
+    };
+    for (const c of cmtList) {
+      const ids = cmtIds.get(c);
+      const top = one(ids[0], c.author, c.initials, c.date, c.text, null, c.done);
+      (c.replies || []).forEach((r, i) => one(ids[i + 1], r.author, r.initials, r.date, r.text, top, c.done));
+    }
+    extraParts.push({ name: 'word/comments.xml', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+      data: `${XML_HEAD}<w:comments xmlns:w="${NS.w}" xmlns:w14="${W14}" xmlns:mc="${MC}" mc:Ignorable="w14">${commentXml.join('')}</w:comments>` });
+    extraParts.push({ name: 'word/commentsExtended.xml', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml',
+      data: `${XML_HEAD}<w15:commentsEx xmlns:w15="${W15}" xmlns:mc="${MC}" mc:Ignorable="w15">${exXml.join('')}</w15:commentsEx>` });
+    addRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments', 'comments.xml');
+    addRel('http://schemas.microsoft.com/office/2011/relationships/commentsExtended', 'commentsExtended.xml');
+  }
+  // Footnotes (footnotes.xml), after Word's two separator notes.
+  if (footnotes.length) {
+    const sep = (id, type, what) => `<w:footnote w:type="${type}" w:id="${id}"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:${what}/></w:r></w:p></w:footnote>`;
+    const parts = [sep(-1, 'separator', 'separator'), sep(0, 'continuationSeparator', 'continuationSeparator')];
+    for (let i = 0; i < footnotes.length; i++) {
+      const box = document.createElement('div');
+      box.innerHTML = footnotes[i];
+      parts.push(`<w:footnote w:id="${i + 1}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r>${await inline(box, {})}</w:p></w:footnote>`);
+    }
+    extraParts.push({ name: 'word/footnotes.xml', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
+      data: `${XML_HEAD}<w:footnotes xmlns:w="${NS.w}" xmlns:r="${NS.r}">${parts.join('')}</w:footnotes>` });
+    addRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes', 'footnotes.xml');
+  }
+  const ct = `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Default Extension="bmp" ContentType="image/bmp"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>${extraParts.map((p) => `<Override PartName="/${p.name}" ContentType="${p.type || `application/vnd.openxmlformats-officedocument.wordprocessingml.${p.name.includes('header') ? 'header' : 'footer'}+xml`}"/>`).join('')}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
   const docRels = `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>${rels.map((r) => `<Relationship Id="${r.id}" Type="${r.type}" Target="${esc(r.target)}"${r.external ? ' TargetMode="External"' : ''}/>`).join('')}</Relationships>`;
   const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
   const core = `${XML_HEAD}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc(meta.title || '')}</dc:title><dc:creator>${esc(meta.author || '')}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`;
   const app = `${XML_HEAD}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Snake's Word</Application></Properties>`;
-  const settings = `${XML_HEAD}<w:settings xmlns:w="${NS.w}"><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
+  const settings = `${XML_HEAD}<w:settings xmlns:w="${NS.w}"><w:defaultTabStop w:val="720"/>${footnotes.length ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : ''}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`;
 
   return writeZip([
     { name: '[Content_Types].xml', data: ct },
@@ -876,6 +1187,15 @@ export async function readOdt(bytes) {
   if (!zip.has('content.xml')) throw new Error('This file has no content.xml in it.');
   const doc = parseXml(await zip.get('content.xml').text());
   const escText = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escAttr = (s) => escText(s).replace(/"/g, '&quot;');
+
+  // Footnotes and endnotes, by id (read before the body, which refers to them).
+  const notes = { foot: {}, end: {} };
+  const noteParts = [];
+  for (const [kind, part, tag] of [['foot', 'word/footnotes.xml', 'footnote'], ['end', 'word/endnotes.xml', 'endnote']]) {
+    const xml = await text(part);
+    if (xml) noteParts.push([kind, parseXml(xml), tag]);
+  }
   const auto = {};
   for (const st of all(doc, 'style')) {
     const name = attr(st, 'name');

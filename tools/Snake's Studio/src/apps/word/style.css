@@ -117,6 +117,50 @@
 
 /* ---- navigation pane ---- */
 .nav-pane { border-right: 1px solid var(--border); }
+
+/* Footnotes: numbered marks in the text, the notes at the bottom of their page */
+.doc { counter-reset: fn; }
+.doc sup.fn-ref { cursor: pointer; color: #1f6feb; padding: 0 1px; line-height: 0; }
+.doc sup.fn-ref::after { counter-increment: fn; content: counter(fn); }
+.notes-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.fn-box { position: absolute; transform: translateY(-100%); pointer-events: auto; color: #1c241f; }
+.fn-sep { width: 33%; border-top: 1px solid #9aa59d; margin: 6px 0 7px; height: 0; }
+.fn-note { display: flex; gap: 4px; font-size: 9.5pt; line-height: 1.3; margin-bottom: 2px; }
+.fn-num { font-size: 0.75em; vertical-align: super; line-height: 1; color: #1f6feb; cursor: pointer; flex: none; min-width: 10px; }
+.fn-text { flex: 1; min-width: 0; outline: none; white-space: pre-wrap; word-break: break-word; min-height: 1.3em; cursor: text; }
+.fn-text:focus { background: rgba(31, 111, 235, .06); }
+.fn-measure { position: absolute; left: -10000px; top: 0; visibility: hidden; pointer-events: none; }
+.fn-measure .fn-sep { display: none; }
+.fn-print { break-inside: avoid; color: #1c241f; }
+
+/* Comments: the text they are about, and the pane */
+.doc span.cmt { background: rgba(255, 196, 0, .28); border-bottom: 2px solid rgba(214, 160, 0, .75); }
+.doc span.cmt.cmt-done { background: transparent; border-bottom: 1px dashed rgba(150, 150, 150, .6); }
+.doc span.cmt.cmt-on { background: rgba(255, 176, 0, .55); }
+.cmt-pane { width: 300px; border-left: 1px solid var(--border); }
+.cmt-pane .panel-head .check { font-size: 12px; color: var(--fg2); margin-right: 4px; }
+.cmt-list { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.cmt-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cmt-card { background: var(--widget); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; cursor: default; }
+.cmt-card.on { border-color: #d6a000; box-shadow: 0 0 0 1px #d6a000; }
+.cmt-card.done { opacity: .7; }
+.cmt-top { display: flex; align-items: flex-start; gap: 4px; }
+.cmt-top .cmt-head { flex: 1; min-width: 0; }
+.cmt-tools { display: flex; gap: 0; opacity: .0; transition: opacity .12s; }
+.cmt-card:hover .cmt-tools, .cmt-card.on .cmt-tools { opacity: 1; }
+.cmt-tools .tb { min-width: 24px; height: 24px; padding: 0 3px; }
+.cmt-head { display: flex; align-items: center; gap: 8px; }
+.cmt-avatar { width: 26px; height: 26px; border-radius: 50%; color: #fff; display: grid; place-items: center; font: 600 11px var(--font); flex: none; }
+.cmt-who { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.cmt-who b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmt-who .muted { font-size: 11px; }
+.cmt-quote { font-size: 12px; color: var(--fg2); border-left: 3px solid #d6a000; padding-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmt-text { white-space: pre-wrap; word-break: break-word; }
+.cmt-reply { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.cmt-reply .cmt-avatar { width: 22px; height: 22px; font-size: 10px; }
+.cmt-edit, .cmt-replybox { width: 100%; resize: vertical; min-height: 30px; font: inherit; box-sizing: border-box; }
+.cmt-actions { gap: 6px; }
+@media print { .doc span.cmt { background: none !important; border: 0 !important; } .cmt-pane { display: none !important; } }
 .nav-list { padding: 6px; }
 .nav-item { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .nav-item.drop { box-shadow: inset 0 2px 0 var(--accent); }
@@ -152,7 +196,10 @@ body.read-mode .doc { cursor: default; }
 @media print {
   .word .ws { overflow: visible; padding: 0; background: #fff; }
   .word .stack { zoom: 1 !important; width: auto !important; height: auto !important; margin: 0; filter: none !important; }
-  .sheets, .ruler, .overlay-layer, .find-bar, .nav-pane, .start, .splitter { display: none !important; }
+  .sheets, .ruler, .overlay-layer, .notes-layer, .fn-measure, .find-bar, .nav-pane, .start, .splitter { display: none !important; }
+  .doc .print-break { break-before: page; margin-top: 0 !important; }
+  .doc .print-tight { margin-bottom: 0 !important; }
+  .doc .fn-print .fn-sep { margin-top: 0; }
   .word .doc { margin: 0 !important; width: auto !important; min-height: 0 !important; }
   .doc .page-break { border: 0; margin: 0; }
   .doc .page-break::after { display: none; }
