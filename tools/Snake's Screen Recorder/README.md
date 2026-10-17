@@ -8,6 +8,7 @@ A simple screen and audio recorder.
 - Pause / resume, countdown, optional mouse cursor, quality and frame-rate presets
 - Optional green outline around the selected region, always on top (never appears in the video)
 - Recordings list with a built-in preview player (MP4, GIF and MP3)
+- **Trim** in the preview: play to a spot, press **Start here** (I) and **End here** (O), then **Save trimmed copy**; the original is kept. Cutting only the end is instant and lossless
 - Tray icon and `snakescreen --toggle` for a global hotkey
 
 ## Run

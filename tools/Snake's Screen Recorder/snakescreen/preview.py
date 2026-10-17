@@ -1,12 +1,16 @@
-"""Preview panel: plays the selected MP4, GIF or MP3 inside the main window."""
+"""Preview panel: plays the selected MP4, GIF or MP3 inside the main window, and trims it."""
 
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
-from PyQt6.QtCore import QRectF, QSize, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QImage, QMovie, QPainter
+from PyQt6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QMovie, QPainter, QShortcut
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from . import snake_theme
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from .platforms import POPEN_FLAGS, ffmpeg
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QStyle, QStyleOptionSlider, QVBoxLayout, QWidget
 
 PANEL_WIDTH = 440
 
@@ -46,8 +50,43 @@ class _Canvas(QWidget):
         p.drawImage(target, self.image)
 
 
+class _TrimSlider(QSlider):
+    """The position slider, with the parts a trim would cut off shaded."""
+
+    def __init__(self):
+        super().__init__(Qt.Orientation.Horizontal)
+        self.trim_in = None
+        self.trim_out = None
+
+    def _x(self, value, groove):
+        span = max(self.maximum() - self.minimum(), 1)
+        return groove.left() + (value - self.minimum()) / span * groove.width()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.trim_in is None and self.trim_out is None:
+            return
+        opt = QStyleOptionSlider()
+        self.initStyleOption(opt)
+        groove = self.style().subControlRect(QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderGroove, self)
+        p = QPainter(self)
+        shade = QColor(snake_theme.TITLE)
+        shade.setAlpha(190)
+        top, height = self.rect().top() + 3, self.rect().height() - 6
+        start = self._x(self.trim_in or 0, groove)
+        end = self._x(self.trim_out if self.trim_out is not None else self.maximum(), groove)
+        if start > groove.left():
+            p.fillRect(QRectF(groove.left(), top, start - groove.left(), height), shade)
+        if end < groove.right():
+            p.fillRect(QRectF(end, top, groove.right() - end, height), shade)
+        p.setPen(QColor(snake_theme.ACCENT))
+        for x in (start, end):
+            p.drawLine(int(x), top, int(x), top + height)
+
+
 class PreviewPanel(QWidget):
     closed = pyqtSignal()
+    trimmed = pyqtSignal(str)  # a trimmed copy was saved there
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -90,7 +129,7 @@ class PreviewPanel(QWidget):
         self.play_btn = QPushButton()
         self.play_btn.setFixedWidth(44)
         self.play_btn.clicked.connect(self.toggle_play)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = _TrimSlider()
         self.slider.sliderPressed.connect(lambda: setattr(self, "_seeking", True))
         self.slider.sliderReleased.connect(self._seek_released)
         self.slider.sliderMoved.connect(self._seek_to)
@@ -99,9 +138,40 @@ class PreviewPanel(QWidget):
         controls.addWidget(self.slider, 1)
         controls.addWidget(self.time_label)
         layout.addLayout(controls)
+
+        # Trim: mark where the copy starts and ends while watching, then save it.
+        self.trim_in = None
+        self.trim_out = None
+        self._trim_proc = None
+        trim = QHBoxLayout()
+        self.in_btn = QPushButton("⟦ Start here", objectName="small")
+        self.in_btn.setToolTip("Keep from the current position (I)")
+        self.in_btn.clicked.connect(self.mark_in)
+        self.out_btn = QPushButton("End here ⟧", objectName="small")
+        self.out_btn.setToolTip("Keep up to the current position (O)")
+        self.out_btn.clicked.connect(self.mark_out)
+        self.reset_btn = QPushButton("Reset", objectName="small")
+        self.reset_btn.setToolTip("Keep the whole recording")
+        self.reset_btn.clicked.connect(self.reset_trim)
+        self.save_trim_btn = QPushButton("Save trimmed copy", objectName="small")
+        self.save_trim_btn.setToolTip("Save the part between the marks as a new file next to this one")
+        self.save_trim_btn.clicked.connect(self.save_trimmed)
+        trim.addWidget(self.in_btn)
+        trim.addWidget(self.out_btn)
+        trim.addWidget(self.reset_btn)
+        trim.addStretch(1)
+        trim.addWidget(self.save_trim_btn)
+        layout.addLayout(trim)
+        self.trim_label = QLabel(objectName="hint")
+        layout.addWidget(self.trim_label)
+        self._trim_timer = QTimer(self, interval=250, timeout=self._poll_trim)
+        for key, slot in (("I", self.mark_in), ("O", self.mark_out)):
+            QShortcut(QKeySequence(key), self, slot, context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
+
         self.info = QLabel(objectName="hint", wordWrap=True)
         layout.addWidget(self.info)
         self._update_play_button()
+        self._update_trim()
 
     # -- public -----------------------------------------------------------
     def show_file(self, path):
@@ -145,6 +215,7 @@ class PreviewPanel(QWidget):
         self.slider.setValue(0)
         self._update_info()
         self._update_play_button()
+        self.reset_trim()
         self.show()
 
     def close_preview(self):
@@ -169,6 +240,126 @@ class PreviewPanel(QWidget):
                 self.player.play()
 
     # -- internals --------------------------------------------------------
+    # -- trimming ---------------------------------------------------------
+    def _trimmable(self):
+        return bool(self.path) and self._movie is None and Path(self.path).exists() and self.player.duration() > 0
+
+    def mark_in(self):
+        if not self._trimmable():
+            return
+        pos = self.player.position()
+        self.trim_in = pos if pos > 0 else None
+        if self.trim_out is not None and self.trim_out <= pos:
+            self.trim_out = None
+        self._update_trim()
+
+    def mark_out(self):
+        if not self._trimmable():
+            return
+        pos = self.player.position()
+        self.trim_out = pos if pos < self.player.duration() else None
+        if self.trim_in is not None and self.trim_in >= pos:
+            self.trim_in = None
+        self._update_trim()
+
+    def reset_trim(self):
+        self.trim_in = self.trim_out = None
+        self._update_trim()
+
+    def _update_trim(self):
+        self.slider.trim_in, self.slider.trim_out = self.trim_in, self.trim_out
+        self.slider.update()
+        busy = self._trim_proc is not None
+        can = self._trimmable() and not busy
+        for b in (self.in_btn, self.out_btn):
+            b.setEnabled(can)
+        marked = self.trim_in is not None or self.trim_out is not None
+        self.reset_btn.setEnabled(can and marked)
+        self.save_trim_btn.setEnabled(can and marked)
+        if busy:
+            return
+        if self.path and self._movie is not None:
+            self.trim_label.setText("GIFs cannot be trimmed here.")
+        elif marked:
+            start = self.trim_in or 0
+            end = self.trim_out if self.trim_out is not None else self.player.duration()
+            self.trim_label.setText(f"Keeps {_exact(start)} to {_exact(end)} ({_exact(end - start)} of {_clock(self.player.duration())})")
+        else:
+            self.trim_label.setText("To trim, play to a spot and press Start here or End here.")
+
+    def _trim_target(self):
+        src = Path(self.path)
+        for n in range(1, 1000):
+            out = src.with_name(f"{src.stem} (trimmed{'' if n == 1 else f' {n}'}){src.suffix}")
+            if not out.exists():
+                return out
+        raise OSError("too many trimmed copies")
+
+    def save_trimmed(self):
+        if not self._trimmable() or self._trim_proc is not None:
+            return
+        tool = ffmpeg()
+        if not tool:
+            self.trim_label.setText("Trimming needs ffmpeg, which was not found.")
+            return
+        start = (self.trim_in or 0) / 1000
+        end = (self.trim_out if self.trim_out is not None else self.player.duration()) / 1000
+        out = self._trim_target()
+        cmd = [tool, "-hide_banner", "-nostdin", "-y"]
+        if start > 0:
+            cmd += ["-ss", f"{start:.3f}"]
+        cmd += ["-i", self.path, "-t", f"{end - start:.3f}", "-map", "0"]
+        if out.suffix.lower() == ".mp3" or start == 0:
+            # MP3 cuts cleanly anywhere, and so does any video at its end: copy, losing nothing.
+            cmd += ["-c", "copy"]
+        else:
+            # A video cut at its start must be encoded again to begin on that exact frame.
+            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]
+        if out.suffix.lower() == ".mp4":
+            cmd += ["-movflags", "+faststart"]
+        fd, progress = tempfile.mkstemp(prefix="snakescreen-trim-", suffix=".txt")
+        os.close(fd)
+        self._trim_progress = Path(progress)
+        self._trim_log = tempfile.TemporaryFile()
+        cmd += ["-progress", str(self._trim_progress), "-nostats", str(out)]
+        try:
+            self._trim_proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=self._trim_log, stderr=self._trim_log, **POPEN_FLAGS)
+        except OSError as e:
+            self.trim_label.setText(f"Could not run ffmpeg: {e}")
+            return
+        self._trim_out, self._trim_length = out, max(end - start, 0.001)
+        self.trim_label.setText("Trimming…")
+        self._update_trim()
+        self._trim_timer.start()
+
+    def _poll_trim(self):
+        proc = self._trim_proc
+        if proc.poll() is None:
+            try:
+                lines = self._trim_progress.read_text(encoding="utf-8", errors="replace").splitlines()
+                done = [int(x.split("=", 1)[1]) for x in lines if x.startswith("out_time_us=") and x[12:].strip().isdigit()]
+                if done:
+                    self.trim_label.setText(f"Trimming… {min(99, done[-1] / 1e4 / self._trim_length):.0f}%")
+            except OSError:
+                pass
+            return
+        self._trim_timer.stop()
+        self._trim_proc = None
+        self._trim_progress.unlink(missing_ok=True)
+        out = self._trim_out
+        if proc.returncode == 0 and out.exists() and out.stat().st_size > 0:
+            self._trim_log.close()
+            self.reset_trim()
+            self.trim_label.setText(f"Saved {out.name}")
+            self.trimmed.emit(str(out))
+        else:
+            self._trim_log.seek(0)
+            tail = self._trim_log.read().decode("utf-8", "replace").strip().splitlines()[-1:]
+            self._trim_log.close()
+            out.unlink(missing_ok=True)
+            self._update_trim()
+            self.trim_label.setText("Trimming failed" + (f": {tail[0]}" if tail else "."))
+
     def _unload(self):
         self.player.stop()
         self.player.setSource(QUrl())
@@ -209,6 +400,7 @@ class PreviewPanel(QWidget):
         self.slider.setRange(0, max(ms, 0))
         self._on_position(self.player.position())
         self._update_info()
+        self._update_trim()
 
     def _on_position(self, ms):
         if not self._seeking:
@@ -241,6 +433,12 @@ class PreviewPanel(QWidget):
 def _clock(ms):
     s = max(ms, 0) // 1000
     return f"{s // 3600}:{s % 3600 // 60:02}:{s % 60:02}" if s >= 3600 else f"{s // 60}:{s % 60:02}"
+
+
+def _exact(ms):
+    """A trim mark, to a tenth of a second."""
+    s = max(ms, 0) / 1000
+    return f"{int(s // 60)}:{s % 60:04.1f}"
 
 
 def _size(n):

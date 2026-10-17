@@ -75,6 +75,7 @@ class MainWindow(QWidget):
         self.preview = PreviewPanel()
         self.preview.hide()
         self.preview.closed.connect(self._preview_closed)
+        self.preview.trimmed.connect(self._on_trimmed)
         outer.addWidget(self.preview)
 
         # what to make
@@ -568,6 +569,11 @@ class MainWindow(QWidget):
         self._restore()
         if self.tray.isVisible():
             self.tray.showMessage(APP_NAME, f"Saved {Path(path).name}", app_icon(), 4000)
+
+    def _on_trimmed(self, path):
+        self._add_recent(path)
+        self._save()
+        self.status.setText(f"Saved {path}")
 
     def _on_failed(self, message):
         self._restore()
