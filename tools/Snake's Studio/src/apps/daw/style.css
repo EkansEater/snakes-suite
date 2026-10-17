@@ -1,0 +1,114 @@
+@import "../../kit/kit.css";
+
+:root { --dw-head: 230px; }
+.dw-root { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+/* Transport */
+.dw-transport { gap: 3px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.dw-transport::-webkit-scrollbar { display: none; }
+.dw-transport > * { flex: none; }
+.dw-transport > .grow { flex: 1 1 auto; }
+.dw-transport .tb.rec svg { color: #f85149; }
+.dw-transport .tb.rec.on { background: #5a1d1d; border-color: #f85149; }
+body.dw-recording .dw-transport .tb.rec { animation: dw-blink 1s steps(2) infinite; }
+@keyframes dw-blink { 50% { background: transparent; } }
+.dw-clockbox { display: flex; flex-direction: column; align-items: flex-end; padding: 0 10px; margin: 0 4px; background: var(--input); border: 1px solid var(--border2); border-radius: 6px; min-width: 96px; line-height: 1.1; }
+.dw-time { font: 600 15px var(--mono); color: var(--highlight); }
+.dw-clock { font: 11px var(--mono); color: var(--fg2); }
+.dw-lab { color: var(--fg2); font-size: 12px; padding: 0 2px 0 4px; }
+.dw-num { width: 58px; text-align: right; }
+.dw-transport input[type="range"] { width: 110px; }
+.dw-volic { color: var(--fg2); display: grid; place-items: center; }
+
+/* Meters: two thin bars, left and right */
+.dw-meter { display: flex; flex-direction: column; gap: 2px; width: 60px; flex: none; }
+.dw-meter > div { height: 4px; border-radius: 2px; width: 0; background: linear-gradient(90deg, #3fb950 0 70%, #d29922 70% 90%, #f85149 90%); background-size: 60px 100%; transition: width .06s linear; }
+.dw-meter.master { width: 90px; }
+.dw-meter.master > div { background-size: 90px 100%; }
+.dw-meter.clip { outline: 1px solid #f85149; outline-offset: 1px; border-radius: 2px; }
+
+/* Tracks and timeline */
+.dw-mid { flex: 1; display: flex; position: relative; min-height: 0; min-width: 0; }
+.dw-scroller { flex: 1; overflow: auto; position: relative; background: var(--canvas); min-width: 0; }
+.dw-rulerrow { position: sticky; top: 0; z-index: 3; display: flex; height: 30px; background: var(--side); border-bottom: 1px solid var(--border); min-width: max-content; }
+.dw-corner { position: sticky; left: 0; z-index: 4; width: var(--dw-head); flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: var(--side); border-right: 1px solid var(--border); box-sizing: border-box; }
+.dw-rulerlane { position: relative; flex: none; }
+.dw-ruler { position: sticky; left: var(--dw-head); display: block; cursor: text; touch-action: none; }
+.dw-rows { min-width: max-content; }
+.dw-row { display: flex; border-bottom: 1px solid var(--border); box-sizing: border-box; }
+.dw-head {
+  --tc: var(--accent); position: sticky; left: 0; z-index: 2; width: var(--dw-head); flex: none; box-sizing: border-box;
+  display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 6px 8px 6px 10px;
+  background: var(--side); border-right: 1px solid var(--border); border-left: 4px solid var(--tc);
+}
+.dw-head.on { background: color-mix(in srgb, var(--tc) 12%, var(--side)); }
+.dw-hrow { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.dw-hrow .select { flex: 1; min-width: 0; height: 24px; font-size: 12px; }
+.dw-hrow input[type="range"] { flex: 1; min-width: 0; width: 60px; }
+.dw-hrow input.dw-pan { flex: 0 0 44px; }
+.dw-tname { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dw-tog {
+  flex: none; height: 22px; min-width: 24px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border2);
+  background: var(--button2); color: var(--fg2); font: 600 11px var(--font); cursor: default;
+}
+.dw-tog:hover { color: var(--fg); }
+.dw-tog.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.dw-tog.arm { color: #f85149; }
+.dw-tog.arm.on { background: #f85149; border-color: #f85149; color: #fff; }
+.dw-lane { position: relative; flex: none; touch-action: pan-y; }
+.dw-lanecanvas { position: sticky; left: var(--dw-head); display: block; }
+.dw-spacer { height: 1px; }
+.dw-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 24px; color: var(--fg2); background: var(--canvas); }
+.dw-empty h2 { color: var(--fg); margin: 6px 0 0; font-weight: 500; }
+.dw-empty p { max-width: 460px; margin: 0 0 8px; }
+
+/* The bottom panel */
+.dw-panel { border-top: 1px solid var(--border); }
+.dw-panelbody { flex: 1; overflow: auto; min-height: 0; }
+.dw-fxrow { display: flex; gap: 10px; padding: 10px; align-items: flex-start; min-width: max-content; }
+.dw-fxtitle { display: flex; flex-direction: column; gap: 2px; width: 120px; padding-top: 4px; }
+.dw-fx { width: 220px; flex: none; background: var(--widget); border: 1px solid var(--border2); border-radius: 8px; padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.dw-fx.off { opacity: .55; }
+.dw-fxhead { display: flex; align-items: center; gap: 2px; }
+.dw-fxhead .tb { min-width: 22px; height: 22px; padding: 0 2px; }
+.dw-param { display: grid; grid-template-columns: 70px 1fr 62px; align-items: center; gap: 6px; font-size: 12px; }
+.dw-param input { width: 100%; min-width: 0; }
+.dw-pname { color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dw-pval { font: 11px var(--mono); text-align: right; white-space: nowrap; }
+.dw-fxadd { width: 140px; height: 120px; flex: none; border: 1px dashed var(--border2); border-radius: 8px; background: transparent; color: var(--fg2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: default; }
+.dw-fxadd:hover { color: var(--fg); border-color: var(--accent); }
+
+.dw-loops { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.dw-loopbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.dw-loopprog { width: 160px; }
+.dw-loopprog > div { transition: none; }
+.dw-loopcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.dw-loop { background: var(--widget); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.dw-loop.active { border-color: color-mix(in srgb, var(--accent) 50%, var(--border2)); }
+.dw-loophead { display: flex; align-items: center; gap: 2px; }
+.dw-loopbtn { --lc: var(--button2); height: 64px; border-radius: 8px; border: 0; background: var(--lc); color: var(--fg); font: 600 14px var(--font); cursor: default; }
+.dw-loopbtn:active { transform: scale(.98); }
+.dw-looprow { display: flex; align-items: center; gap: 8px; }
+.dw-looprow input { flex: 1; }
+.dw-loopsrc { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+
+/* Tuner */
+.dw-tuner { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: min(380px, 80vw); padding: 6px 0; }
+.dw-note { font: 700 64px var(--font); line-height: 1; color: var(--fg); }
+.dw-tuner.intune .dw-note { color: var(--accent); }
+.dw-scale { position: relative; width: 100%; height: 34px; border-radius: 6px; background: linear-gradient(90deg, #f8514933, #d2992233 35%, #3fb95055 50%, #d2992233 65%, #f8514933); }
+.dw-zero { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg3); }
+.dw-needle { position: absolute; top: -4px; bottom: -4px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--fg); transition: left .08s linear; }
+.dw-tuner.intune .dw-needle { background: var(--accent); }
+.dw-cents { font: 13px var(--mono); color: var(--fg2); min-height: 1em; }
+
+/* Phones */
+.phone .dw-transport input[type="range"], .phone .dw-meter.master { display: none; }
+.phone .dw-clockbox { min-width: 76px; padding: 0 6px; }
+.phone .dw-head { padding: 4px 4px 4px 6px; gap: 3px; }
+.phone .dw-hrow input.dw-pan, .phone .dw-head .dw-meter { display: none; }
+.phone .dw-tog { min-width: 22px; padding: 0 3px; }
+.phone .dw-fx { width: 200px; }
+.phone .dw-fxtitle { display: none; }
+.phone .dw-param { grid-template-columns: 1fr auto; row-gap: 0; }
+.phone .dw-param input { grid-column: 1 / -1; grid-row: 2; }

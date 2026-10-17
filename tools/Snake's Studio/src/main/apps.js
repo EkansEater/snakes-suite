@@ -52,6 +52,7 @@ const WEB_APPS = {
   screen: { name: "Snake's Screen Recorder", short: 'Screen Recorder', tagline: 'Screen and sound recorder', open: [] },
   converter: { name: "Snake's Converter", short: 'Converter', tagline: 'File converter', open: [] },
   compressor: { name: "Snake's Compressor", short: 'Compressor', tagline: 'Lossless archiver', open: [{ name: 'Snake archives', exts: ['snake'] }] },
+  daw: { name: "Snake's DAW", short: 'DAW', tagline: 'Record and practise', open: [{ name: 'Sounds', exts: audio }] },
 };
 
 const HOME = { name: "Snake's Studio", short: 'Studio', tagline: 'Office, creative and media apps' };

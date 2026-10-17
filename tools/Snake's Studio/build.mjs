@@ -67,6 +67,8 @@ for (const [id, meta] of Object.entries(all)) {
     icons: [{ src: `../icons/${icon}.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: `../icons/${icon}.svg`, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
   }, null, 2)]);
+  // An app's audio thread (an AudioWorklet module): src/apps/<id>/worklet.js -> dist/<id>/worklet.js
+  if (fs.existsSync(path.join(dir, 'worklet.js'))) entries[`${id}/worklet`] = path.join(dir, 'worklet.js');
   // Extra windows of an app: src/apps/<id>/pages/<name>.js (+ <name>.css) -> dist/<id>/<name>.html
   const extra = path.join(dir, 'pages');
   if (fs.existsSync(extra)) {

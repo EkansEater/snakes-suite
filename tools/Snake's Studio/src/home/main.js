@@ -23,7 +23,7 @@ const SUITE = [
   { id: 'player', name: "Snake's Player", tag: 'Plays almost any video or song', group: 'Media', kind: 'studio' },
   { id: 'soundpad', name: "Snake's SoundPad", tag: 'A soundboard: one tap per sound', group: 'Media', kind: 'web', where: EVERYWHERE },
   { id: 'screen', name: "Snake's Screen Recorder", tag: 'Screen to video or GIF, sound to audio', group: 'Media', kind: 'web', where: EVERYWHERE },
-  { id: 'daw', name: "Snake's DAW", tag: 'Amp, effects, looper and recording', group: 'Media', kind: 'native', where: EVERYWHERE },
+  { id: 'daw', name: "Snake's DAW", tag: 'Amp, effects, looper and recording', group: 'Media', kind: 'web', where: EVERYWHERE },
   { id: 'mp3', name: "Snake's MP3 Converter", tag: 'Video links to tagged MP3s', group: 'Media', kind: 'native', where: EVERYWHERE,
     why: 'It downloads from video sites, which a web page is not allowed to do.' },
   { id: 'converter', name: "Snake's Converter", tag: 'Audio, video, pictures, documents', group: 'Tools', kind: 'web', where: EVERYWHERE },

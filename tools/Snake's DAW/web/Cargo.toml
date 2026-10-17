@@ -1,0 +1,25 @@
+# Snake's DAW in the browser: the desktop app's own mixer, effects, loop station and tuner
+# (compiled in by path from ../src), driven from a Web Audio worklet through a small C-style
+# interface. Build: ./build.sh (writes tools/Snake's Studio/src/apps/daw/daw.wasm).
+[package]
+name = "snakedaw-web"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+rtrb = "0.3"
+hound = "3.5"
+anyhow = "1"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
