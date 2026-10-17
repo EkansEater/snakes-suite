@@ -10,6 +10,17 @@
 .slide .text-inner ul, .slide .text-inner ol { margin: 0; padding-left: 1.2em; }
 .slide .text-inner li { margin: 0 0 .35em; }
 .slide .text-inner.bullets > p { display: list-item; list-style: disc; margin-left: 1.1em; }
+/* Outline levels (from PowerPoint): deeper items sit further in, with their own bullets. */
+.slide .text-inner > p[data-lvl="1"] { margin-left: 1.2em; }
+.slide .text-inner > p[data-lvl="2"] { margin-left: 2.4em; }
+.slide .text-inner > p[data-lvl="3"] { margin-left: 3.6em; }
+.slide .text-inner > p[data-lvl="4"], .slide .text-inner > p[data-lvl="5"], .slide .text-inner > p[data-lvl="6"], .slide .text-inner > p[data-lvl="7"], .slide .text-inner > p[data-lvl="8"] { margin-left: 4.8em; }
+.slide .text-inner.bullets > p[data-lvl="1"] { margin-left: 2.3em; list-style-type: "– "; }
+.slide .text-inner.bullets > p[data-lvl="2"] { margin-left: 3.5em; list-style-type: square; }
+.slide .text-inner.bullets > p[data-lvl="3"] { margin-left: 4.7em; list-style-type: "– "; }
+.slide .text-inner.bullets > p[data-nobullet] { list-style: none; }
+.slide .text-inner.numbered > p[data-nobullet] { counter-increment: none; padding-left: 0; }
+.slide .text-inner.numbered > p[data-nobullet]::before { content: none; }
 .slide .text-inner.numbered { counter-reset: n; }
 .slide .text-inner.numbered > p { counter-increment: n; position: relative; padding-left: 1.6em; }
 .slide .text-inner.numbered > p::before { content: counter(n) "."; position: absolute; left: 0; opacity: .8; }

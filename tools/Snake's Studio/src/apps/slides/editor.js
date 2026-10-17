@@ -3,7 +3,7 @@
 import { h, clamp, uid, rafOnce, drag } from '../../kit/dom.js';
 import { hoverZoom, keepAnchor } from '../../kit/zoom.js';
 import { sanitizeHtml } from '../../kit/sanitize.js';
-import { renderSlide, settle, THEMES } from './model.js';
+import { renderSlide, settle, themeOf } from './model.js';
 
 const SNAP = 6;
 
@@ -32,7 +32,7 @@ export class SlideEditor {
   }
 
   get slide() { return this.pres.slides[this.index]; }
-  get theme() { return THEMES[this.pres.theme] || THEMES.snake; }
+  get theme() { return themeOf(this.pres); }
   item(id) { return this.slide.items.find((it) => it.id === id); }
   get selected() { return this.slide ? this.slide.items.filter((it) => this.sel.has(it.id)) : []; }
 

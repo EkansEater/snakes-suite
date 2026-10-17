@@ -4,7 +4,11 @@ import { readZip, writeZip } from '../../kit/zip.js';
 import { esc, parseXml, all, first, kids, kid, attr, XML_HEAD } from '../../kit/xml.js';
 import { uid, bytesToBase64, dataUrlToBytes, escapeHtml } from '../../kit/dom.js';
 import { drawChart } from '../../kit/charts.js';
-import { THEMES, themeColor, newPresentation, slideBackground } from './model.js';
+import { fontStack } from '../../kit/fonts.js';
+import { Book } from '../sheets/engine.js';
+import { writeXlsx } from '../sheets/io.js';
+import { chartXml } from '../sheets/xlsxparts.js';
+import { themeOf, themeColor, newPresentation, slideBackground } from './model.js';
 
 const EMU = 9525; // per CSS pixel at 96 dpi
 const NS = {
@@ -56,8 +60,11 @@ function paragraphsXml(html, base, theme) {
       if (['P', 'DIV', 'H1', 'H2', 'H3', 'BLOCKQUOTE'].includes(tag)) {
         flush();
         const runs = [];
-        collectRuns(c, {}, runs);
-        paras.push({ runs, level, bullet, align: c.style.textAlign });
+        const pf = {};
+        if (c.style.fontSize) pf.size = /pt$/.test(c.style.fontSize) ? parseFloat(c.style.fontSize) / 0.75 : parseFloat(c.style.fontSize);
+        if (c.style.color) pf.color = c.style.color;
+        collectRuns(c, pf, runs);
+        paras.push({ runs, level: level + Number((c.dataset && c.dataset.lvl) || 0), bullet, align: c.style.textAlign, nobullet: !!(c.dataset && c.dataset.nobullet) });
       } else if (tag === 'UL' || tag === 'OL') {
         flush();
         let n = 1;
@@ -77,8 +84,9 @@ function paragraphsXml(html, base, theme) {
   const sz = Math.round((base.size || 24) * 0.75 * 100);
   return paras.map((p) => {
     const algn = { center: 'ctr', right: 'r', justify: 'just' }[p.align || base.align] || 'l';
-    const bu = p.bullet && p.bullet.num ? `<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>` : p.bullet || base.bullets ? '<a:buFont typeface="Arial"/><a:buChar char="•"/>' : '<a:buNone/>';
-    const ind = p.bullet || base.bullets ? ` marL="${342900 + p.level * 342900}" indent="-342900"` : p.level ? ` marL="${p.level * 342900}"` : '';
+    const listed = !p.nobullet && (p.bullet || base.bullets || base.numbered);
+    const bu = p.nobullet ? '<a:buNone/>' : (p.bullet && p.bullet.num) || (!p.bullet && base.numbered) ? '<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>' : p.bullet || base.bullets ? `<a:buFont typeface="Arial"/><a:buChar char="${['•', '–', '▪'][p.level % 3]}"/>` : '<a:buNone/>';
+    const ind = `${p.level ? ` lvl="${Math.min(8, p.level)}"` : ''}${listed ? ` marL="${342900 + p.level * 342900}" indent="-342900"` : p.level ? ` marL="${p.level * 342900}"` : ''}`;
     const runs = p.runs.map((r) => {
       if (r.br) return '<a:br/>';
       const f = r.fmt;
@@ -123,7 +131,7 @@ async function chartPng(item, theme) {
 }
 
 export async function writePptx(pres) {
-  const theme = THEMES[pres.theme] || THEMES.snake;
+  const theme = themeOf(pres);
   const W = Math.round(pres.size.w * EMU);
   const H = Math.round(pres.size.h * EMU);
   const media = [];
@@ -145,6 +153,8 @@ export async function writePptx(pres) {
   };
   const files = [];
   const slideRels = [];
+  const charts = [];
+  let chartSeq = 0;
   let shapeId = 2;
 
   for (let si = 0; si < pres.slides.length; si++) {
@@ -172,6 +182,26 @@ export async function writePptx(pres) {
         const color = hex6(themeColor(theme, st.stroke)) || hex6(theme.text);
         const flipV = it.dir === 'up' ? ' flipV="1"' : '';
         shapes += `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="Line ${id}"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm${flipV}><a:off x="${Math.round(it.x * EMU)}" y="${Math.round(it.y * EMU)}"/><a:ext cx="${Math.round(it.w * EMU)}" cy="${Math.round(it.h * EMU)}"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="${Math.round((st.strokeWidth || 4) * 9525)}">${solid(color)}${st.dash ? `<a:prstDash val="${st.dash === 'dot' ? 'sysDot' : 'dash'}"/>` : ''}${st.arrow ? '<a:tailEnd type="triangle"/>' : ''}</a:ln></p:spPr></p:cxnSp>`;
+      } else if (it.type === 'chart' && it.chart && (it.chart.series || []).length) {
+        // A real PowerPoint chart, with its numbers in an embedded workbook (Edit Data works).
+        const n = ++chartSeq;
+        const c = it.chart;
+        const book = new Book();
+        const sh = book.addSheet('Sheet1');
+        const cats = c.categories || [];
+        c.series.forEach((ser, j) => book.setValue(sh, 0, j + 1, String(ser.name || `Series ${j + 1}`)));
+        cats.forEach((cat, i) => book.setValue(sh, i + 1, 0, String(cat)));
+        c.series.forEach((ser, j) => (ser.values || []).forEach((v, i) => { if (typeof v === 'number') book.setValue(sh, i + 1, j + 1, v); }));
+        const last = Math.max(cats.length, ...c.series.map((x) => (x.values || []).length));
+        const col = (j) => String.fromCharCode(66 + j);
+        const refs = { cats: cats.length ? `Sheet1!$A$2:$A$${last + 1}` : null, series: c.series.map((ser, j) => ({ name: ser.name, nameRef: `Sheet1!$${col(j)}$1`, values: `Sheet1!$${col(j)}$2:$${col(j)}$${last + 1}` })) };
+        const xml = chartXml(book, { type: c.type || 'column', title: c.title || '' }, refs).replace('</c:chartSpace>', '<c:externalData r:id="rId1"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>');
+        files.push({ name: `ppt/charts/chart${n}.xml`, data: xml });
+        files.push({ name: `ppt/charts/_rels/chart${n}.xml.rels`, data: relsXml([{ id: 'rId1', type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/package', target: `../embeddings/Microsoft_Excel_Worksheet${n}.xlsx` }]) });
+        files.push({ name: `ppt/embeddings/Microsoft_Excel_Worksheet${n}.xlsx`, data: await writeXlsx(book), store: true });
+        charts.push(n);
+        const rid = rel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart', `../charts/chart${n}.xml`);
+        shapes += `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Chart ${id}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${Math.round(it.x * EMU)}" y="${Math.round(it.y * EMU)}"/><a:ext cx="${Math.max(1, Math.round(it.w * EMU))}" cy="${Math.max(1, Math.round(it.h * EMU))}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="${rid}"/></a:graphicData></a:graphic></p:graphicFrame>`;
       } else if (it.type === 'image' || it.type === 'chart') {
         let name;
         if (it.type === 'chart') name = addMedia(await chartPng(it, theme), 'png');
@@ -233,7 +263,7 @@ export async function writePptx(pres) {
   const layout = `${XML_HEAD}<p:sldLayout xmlns:a="${NS.a}" xmlns:r="${NS.r}" xmlns:p="${NS.p}" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
   const notesMaster = `${XML_HEAD}<p:notesMaster xmlns:a="${NS.a}" xmlns:r="${NS.r}" xmlns:p="${NS.p}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:notesMaster>`;
   const exts = new Set(media.map((m) => m.name.split('.').pop()));
-  const ct = `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...exts].map((e) => `<Default Extension="${e}" ContentType="${e === 'svg' ? 'image/svg+xml' : `image/${e}`}"/>`).join('')}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${hasNotes ? '<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/><Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' : ''}${pres.slides.map((s, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>${s.notes ? `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>` : ''}`).join('')}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
+  const ct = `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...exts].map((e) => `<Default Extension="${e}" ContentType="${e === 'svg' ? 'image/svg+xml' : `image/${e}`}"/>`).join('')}${charts.length ? '<Default Extension="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/>' : ''}${charts.map((n) => `<Override PartName="/ppt/charts/chart${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join('')}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${hasNotes ? '<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/><Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' : ''}${pres.slides.map((s, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>${s.notes ? `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>` : ''}`).join('')}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
   const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
   const out = [
     { name: '[Content_Types].xml', data: ct },
@@ -278,49 +308,121 @@ export async function readPptx(bytes) {
   pres.size = { w: Math.round(W), h: Math.round(H), name: 'From PowerPoint' };
   pres.sizeId = 'custom';
   pres.slides = [];
+  const relsCache = new Map();
   const rels = async (path) => {
+    if (relsCache.has(path)) return relsCache.get(path);
     const dir = path.slice(0, path.lastIndexOf('/'));
     const file = path.slice(path.lastIndexOf('/') + 1);
     const xml = await text(`${dir}/_rels/${file}.rels`);
     const map = {};
-    if (!xml) return map;
-    for (const r of all(parseXml(xml), 'Relationship')) {
-      const t = r.getAttribute('Target');
-      map[r.getAttribute('Id')] = { type: r.getAttribute('Type'), target: t, path: resolvePath(dir, t), external: r.getAttribute('TargetMode') === 'External' };
+    if (xml) {
+      for (const r of all(parseXml(xml), 'Relationship')) {
+        const t = r.getAttribute('Target');
+        map[r.getAttribute('Id')] = { type: r.getAttribute('Type'), target: t, path: resolvePath(dir, t), external: r.getAttribute('TargetMode') === 'External' };
+      }
     }
+    relsCache.set(path, map);
     return map;
   };
   const presRels = await rels('ppt/presentation.xml');
-  // Theme colours.
+
+  // The theme: its colours and its two fonts (headings and body).
   const scheme = {};
+  const fonts = { major: '', minor: '' };
   const themeRel = Object.values(presRels).find((r) => /theme$/.test(r.type));
   const themeXml = themeRel ? await text(themeRel.path) : null;
   if (themeXml) {
-    const cs = first(parseXml(themeXml), 'clrScheme');
+    const tdoc = parseXml(themeXml);
+    const cs = first(tdoc, 'clrScheme');
     for (const el of kids(cs)) {
       const c = first(el, 'srgbClr') || first(el, 'sysClr');
       scheme[el.localName] = c ? (attr(c, 'val') && c.localName === 'srgbClr' ? attr(c, 'val') : attr(c, 'lastClr')) : null;
     }
-    scheme.bg1 = scheme.lt1; scheme.tx1 = scheme.dk1; scheme.bg2 = scheme.lt2; scheme.tx2 = scheme.dk2;
+    for (const k of ['major', 'minor']) { const f = first(tdoc, `${k}Font`); const l = f ? kid(f, 'latin') : null; fonts[k] = l ? attr(l, 'typeface') || '' : ''; }
   }
+  scheme.bg1 = scheme.lt1; scheme.tx1 = scheme.dk1; scheme.bg2 = scheme.lt2; scheme.tx2 = scheme.dk2;
   const colorOf = (el) => {
     if (!el) return null;
     const s = first(el, 'srgbClr');
     const sc = first(el, 'schemeClr');
-    let hex = s ? attr(s, 'val') : sc ? scheme[attr(sc, 'val')] : null;
-    const src = s || sc;
+    const sys = first(el, 'sysClr');
+    let hex = s ? attr(s, 'val') : sc ? scheme[attr(sc, 'val')] : sys ? attr(sys, 'lastClr') : null;
+    const src = s || sc || sys;
     if (!hex) return null;
     if (src) {
       const lm = first(src, 'lumMod');
       const lo = first(src, 'lumOff');
-      if (lm || lo) {
-        const n = parseInt(hex, 16);
-        const f = (v) => Math.round(Math.min(255, v * (lm ? Number(attr(lm, 'val')) / 100000 : 1) + 255 * (lo ? Number(attr(lo, 'val')) / 100000 : 0)));
-        hex = [f(n >> 16), f((n >> 8) & 255), f(n & 255)].map((v) => v.toString(16).padStart(2, '0')).join('');
-      }
+      const tint = first(src, 'tint');
+      const shade = first(src, 'shade');
+      let n = parseInt(hex, 16);
+      let rgb = [n >> 16, (n >> 8) & 255, n & 255];
+      if (lm || lo) rgb = rgb.map((v) => v * (lm ? Number(attr(lm, 'val')) / 100000 : 1) + 255 * (lo ? Number(attr(lo, 'val')) / 100000 : 0));
+      if (tint) rgb = rgb.map((v) => v + (255 - v) * (1 - Number(attr(tint, 'val')) / 100000));
+      if (shade) rgb = rgb.map((v) => v * (Number(attr(shade, 'val')) / 100000));
+      n = 0;
+      hex = rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
     }
     return `#${hex.toLowerCase()}`;
   };
+  const faceOf = (tf) => (!tf ? null : tf === '+mj-lt' ? fonts.major || null : tf === '+mn-lt' ? fonts.minor || null : tf.startsWith('+') ? null : tf);
+
+  // Text formatting at each outline level (lvl1pPr ... lvl9pPr) of a list style.
+  const levels = (el) => {
+    const out = [];
+    if (!el) return out;
+    const one = (p) => {
+      if (!p) return null;
+      const o = {};
+      if (attr(p, 'algn')) o.align = { ctr: 'center', r: 'right', just: 'justify', dist: 'justify' }[attr(p, 'algn')] || 'left';
+      if (attr(p, 'marL') !== null) o.marL = Number(attr(p, 'marL')) / EMU;
+      if (kid(p, 'buNone')) o.bullet = 'none';
+      else if (kid(p, 'buAutoNum')) o.bullet = 'num';
+      else if (kid(p, 'buChar')) o.bullet = 'char';
+      const d = kid(p, 'defRPr');
+      if (d) {
+        if (attr(d, 'sz')) o.size = Number(attr(d, 'sz')) / 100;
+        if (attr(d, 'b') !== null) o.bold = attr(d, 'b') === '1';
+        if (attr(d, 'i') !== null) o.italic = attr(d, 'i') === '1';
+        const c = colorOf(kid(d, 'solidFill'));
+        if (c) o.color = c;
+        const l = kid(d, 'latin');
+        if (l) o.font = attr(l, 'typeface');
+      }
+      return o;
+    };
+    const def = one(kid(el, 'defPPr'));
+    for (let i = 1; i <= 9; i++) out[i - 1] = { ...(def || {}), ...(one(kid(el, `lvl${i}pPr`)) || {}) };
+    return out;
+  };
+  // A layout's or master's placeholders: where they sit, their text styles, their anchor.
+  const partCache = new Map();
+  const partInfo = async (path) => {
+    if (!path) return { phs: [], bg: null, tx: null };
+    if (partCache.has(path)) return partCache.get(path);
+    const xml = await text(path);
+    const info = { phs: [], bg: null, tx: null };
+    if (xml) {
+      const d = parseXml(xml);
+      for (const sp of all(d, 'sp')) {
+        const ph = first(first(sp, 'nvPr'), 'ph');
+        if (!ph) continue;
+        const txBody = kid(sp, 'txBody');
+        const bodyPr = txBody ? kid(txBody, 'bodyPr') : null;
+        info.phs.push({ type: attr(ph, 'type') || 'body', idx: attr(ph, 'idx'), xfrm: first(first(sp, 'spPr'), 'xfrm'), lst: levels(txBody ? kid(txBody, 'lstStyle') : null), anchor: bodyPr ? attr(bodyPr, 'anchor') : null });
+      }
+      const bgPr = first(first(d, 'bg'), 'bgPr');
+      const bgRef = first(first(d, 'bg'), 'bgRef');
+      if (bgPr) info.bg = bgPr;
+      else if (bgRef) info.bg = bgRef;
+      const txs = first(d, 'txStyles');
+      if (txs) info.tx = { title: levels(kid(txs, 'titleStyle')), body: levels(kid(txs, 'bodyStyle')), other: levels(kid(txs, 'otherStyle')) };
+    }
+    partCache.set(path, info);
+    return info;
+  };
+  const defaultText = levels(first(pd, 'defaultTextStyle'));
+  const findPh = (list, type, idx) => list.find((p) => idx !== null && idx !== undefined && p.idx === idx && idx !== '0')
+    || list.find((p) => p.type === type) || list.find((p) => (type === 'ctrTitle' && p.type === 'title') || (type === 'subTitle' && p.type === 'body') || (type === 'obj' && p.type === 'body'));
 
   const assetFrom = async (relsMap, rid) => {
     const r = relsMap[rid];
@@ -332,19 +434,33 @@ export async function readPptx(bytes) {
     pres.assets[id] = `data:${mime};base64,${bytesToBase64(await zip.get(r.path).read())}`;
     return id;
   };
-
-  // Placeholder positions inherited from layouts and masters.
-  const phMap = async (path) => {
-    const xml = await text(path);
-    const out = [];
-    if (!xml) return out;
-    for (const sp of all(parseXml(xml), 'sp')) {
-      const ph = first(first(sp, 'nvPr'), 'ph');
-      const xf = first(first(sp, 'spPr'), 'xfrm');
-      if (ph && xf) out.push({ type: attr(ph, 'type') || 'body', idx: attr(ph, 'idx'), xfrm: xf });
-    }
-    return out;
+  const backgroundOf = async (bg, relsMap) => {
+    if (!bg) return null;
+    if (bg.localName === 'bgRef') { const c = colorOf(bg); return c ? { color: c } : null; }
+    const blip = first(bg, 'blip');
+    if (blip) { const a = await assetFrom(relsMap, attr(blip, 'embed')); return a ? { image: a } : null; }
+    if (first(bg, 'gradFill')) { const stops = all(bg, 'gs').map((g) => colorOf(g)); return { color: stops[0], gradient: stops[stops.length - 1], angle: 135 }; }
+    const c = colorOf(first(bg, 'solidFill'));
+    return c ? { color: c } : null;
   };
+
+  // The file's own theme, as one of ours: its background, title and text colours, fonts.
+  const masterRel0 = Object.values(presRels).find((r) => /slideMaster$/.test(r.type));
+  const master0 = await partInfo(masterRel0 && masterRel0.path);
+  const masterBg = master0.bg ? await backgroundOf(master0.bg, masterRel0 ? await rels(masterRel0.path) : {}) : null;
+  const titleLvl = (master0.tx && master0.tx.title[0]) || {};
+  const bodyLvl = (master0.tx && master0.tx.body[0]) || {};
+  const bgHex = (masterBg && masterBg.color) || `#${scheme.lt1 || 'ffffff'}`;
+  const textHex = bodyLvl.color || `#${scheme.dk1 || '000000'}`;
+  const mix = (a, b, t) => { const p = (x) => [1, 3, 5].map((i) => parseInt(x.slice(i, i + 2), 16)); const A = p(a); const B = p(b); return `#${A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('')}`; };
+  pres.customTheme = {
+    name: 'From the file', bg: masterBg && masterBg.gradient ? `linear-gradient(135deg, ${masterBg.color} 0%, ${masterBg.gradient} 100%)` : bgHex,
+    title: titleLvl.color || textHex, text: textHex, muted: /^#[0-9a-f]{6}$/i.test(bgHex) && /^#[0-9a-f]{6}$/i.test(textHex) ? mix(textHex, bgHex, 0.4) : textHex,
+    accents: [1, 2, 3, 4, 5, 6].map((i) => `#${(scheme[`accent${i}`] || '3fb950').toLowerCase()}`),
+    heading: fontStack(faceOf(titleLvl.font) || fonts.major || 'Calibri Light'), body: fontStack(faceOf(bodyLvl.font) || fonts.minor || 'Calibri'),
+    titleWeight: titleLvl.bold ? 700 : 400,
+  };
+  pres.theme = 'file';
 
   const sldIds = all(first(pd, 'sldIdLst'), 'sldId');
   for (const sid of sldIds) {
@@ -355,25 +471,24 @@ export async function readPptx(bytes) {
     const sd = parseXml(sx);
     const srels = await rels(r.path);
     const layoutRel = Object.values(srels).find((x) => /slideLayout$/.test(x.type));
-    const layoutPh = layoutRel ? await phMap(layoutRel.path) : [];
+    const layout = await partInfo(layoutRel && layoutRel.path);
     const layoutRels = layoutRel ? await rels(layoutRel.path) : {};
     const masterRel = Object.values(layoutRels).find((x) => /slideMaster$/.test(x.type));
-    const masterPh = masterRel ? await phMap(masterRel.path) : [];
+    const master = await partInfo(masterRel && masterRel.path);
+    const tx = master.tx || { title: [], body: [], other: [] };
     const slide = { id: uid('sl'), layout: 'blank', items: [], notes: '', transition: { type: 'fade', duration: 0.5 }, hidden: attr(first(sd, 'sld'), 'show') === '0' };
-    // Background.
-    const bgPr = first(first(sd, 'bg'), 'bgPr');
-    if (bgPr) {
-      const blip = first(bgPr, 'blip');
-      if (blip) { const a = await assetFrom(srels, attr(blip, 'embed')); if (a) slide.bg = { image: a }; }
-      else if (first(bgPr, 'gradFill')) { const stops = all(bgPr, 'gs').map((g) => colorOf(g)); slide.bg = { color: stops[0], gradient: stops[stops.length - 1], angle: 135 }; }
-      else { const c = colorOf(first(bgPr, 'solidFill')); if (c) slide.bg = { color: c }; }
-    } else slide.bg = { color: '#ffffff' };
+    // Background: the slide's, else its layout's, else the master's (which the theme has).
+    const own = first(first(sd, 'bg'), 'bgPr') || first(first(sd, 'bg'), 'bgRef');
+    if (own) slide.bg = await backgroundOf(own, srels);
+    else if (layout.bg) slide.bg = await backgroundOf(layout.bg, layoutRels);
+    if (!slide.bg) delete slide.bg;
+
     const xfrmOf = (el, ph) => {
       let xf = first(first(el, 'spPr') || el, 'xfrm');
       if (!xf && ph) {
         const type = attr(ph, 'type') || 'body';
         const idx = attr(ph, 'idx');
-        const hit = layoutPh.find((p) => (idx && p.idx === idx) || p.type === type) || masterPh.find((p) => p.type === type || (type === 'ctrTitle' && p.type === 'title') || (type === 'subTitle' && p.type === 'body'));
+        const hit = [findPh(layout.phs, type, idx), findPh(master.phs, type, idx)].find((p) => p && p.xfrm);
         xf = hit && hit.xfrm;
       }
       if (!xf) return null;
@@ -381,35 +496,106 @@ export async function readPptx(bytes) {
       const ext = kid(xf, 'ext');
       return { x: Number(attr(off, 'x')) / EMU, y: Number(attr(off, 'y')) / EMU, w: Number(attr(ext, 'cx')) / EMU, h: Number(attr(ext, 'cy')) / EMU, rot: Number(attr(xf, 'rot') || 0) / 60000, flipH: attr(xf, 'flipH') === '1', flipV: attr(xf, 'flipV') === '1' };
     };
-    const textOf = (txBody, defSize) => {
+    // Text of a shape, through the levels it inherits (master text styles, master and layout
+    // placeholders, its own list style), as our HTML plus the box's own style.
+    const textOf = (el, ph) => {
+      const txBody = kid(el, 'txBody');
+      if (!txBody) return { html: '', style: {} };
+      const type = ph ? attr(ph, 'type') || 'body' : null;
+      const idx = ph ? attr(ph, 'idx') : null;
+      const kind = !ph ? 'other' : type === 'title' || type === 'ctrTitle' ? 'title' : 'body';
+      const chain = [kind === 'other' ? (defaultText.length ? defaultText : tx.other) : tx[kind]];
+      if (ph) { const m = findPh(master.phs, type, idx); const l = findPh(layout.phs, type, idx); if (m) chain.push(m.lst); if (l) chain.push(l.lst); }
+      chain.push(levels(kid(txBody, 'lstStyle')));
+      const at = (lvl) => Object.assign({}, ...chain.map((c) => (c && c[lvl]) || {}));
+      const base = at(0);
       let html = '';
-      let maxSz = 0;
-      let algn = null;
-      let bullets = false;
       for (const p of kids(txBody, 'p')) {
         const pPr = kid(p, 'pPr');
-        if (pPr && attr(pPr, 'algn')) algn = attr(pPr, 'algn');
-        if (pPr && (kid(pPr, 'buChar') || kid(pPr, 'buAutoNum'))) bullets = true;
-        let inner = '';
-        for (const r of kids(p)) {
-          if (r.localName === 'br') { inner += '<br>'; continue; }
-          if (r.localName !== 'r' && r.localName !== 'fld') continue;
-          const rPr = kid(r, 'rPr');
-          const t = escapeHtml((kid(r, 't') || { textContent: '' }).textContent);
-          const st = [];
-          const szv = rPr && attr(rPr, 'sz') ? Number(attr(rPr, 'sz')) / 100 / 0.75 : null;
-          if (szv) { maxSz = Math.max(maxSz, szv); st.push(`font-size: ${Math.round(szv)}px`); }
-          const c = rPr ? colorOf(kid(rPr, 'solidFill')) : null;
-          if (c) st.push(`color: ${c}`);
-          let s = st.length ? `<span style="${st.join('; ')}">${t}</span>` : t;
-          if (rPr && attr(rPr, 'b') === '1') s = `<b>${s}</b>`;
-          if (rPr && attr(rPr, 'i') === '1') s = `<i>${s}</i>`;
-          if (rPr && attr(rPr, 'u') && attr(rPr, 'u') !== 'none') s = `<u>${s}</u>`;
-          inner += s;
+        const lvl = Math.min(8, Number((pPr && attr(pPr, 'lvl')) || 0));
+        const L = { ...at(lvl) };
+        if (pPr) {
+          if (attr(pPr, 'algn')) L.align = { ctr: 'center', r: 'right', just: 'justify', dist: 'justify' }[attr(pPr, 'algn')] || 'left';
+          if (kid(pPr, 'buNone')) L.bullet = 'none'; else if (kid(pPr, 'buAutoNum')) L.bullet = 'num'; else if (kid(pPr, 'buChar')) L.bullet = 'char';
         }
-        html += `<p${pPr && attr(pPr, 'algn') && attr(pPr, 'algn') !== 'l' ? ` style="text-align: ${{ ctr: 'center', r: 'right', just: 'justify' }[attr(pPr, 'algn')] || 'left'}"` : ''}>${inner || '<br>'}</p>`;
+        let inner = '';
+        for (const rr of kids(p)) {
+          if (rr.localName === 'br') { inner += '<br>'; continue; }
+          if (rr.localName !== 'r' && rr.localName !== 'fld') continue;
+          const rPr = kid(rr, 'rPr');
+          let t = escapeHtml((kid(rr, 't') || { textContent: '' }).textContent);
+          const st = [];
+          const size = rPr && attr(rPr, 'sz') ? Number(attr(rPr, 'sz')) / 100 : null;
+          if (size && Math.abs(size - (L.size || 18)) > 0.01) st.push(`font-size: ${Math.round((size / 0.75) * 10) / 10}px`);
+          const c = rPr ? colorOf(kid(rPr, 'solidFill')) : null;
+          if (c && c !== L.color) st.push(`color: ${c}`);
+          const face = rPr && kid(rPr, 'latin') ? faceOf(attr(kid(rPr, 'latin'), 'typeface')) : null;
+          if (face && face !== faceOf(L.font)) st.push(`font-family: ${fontStack(face).replace(/"/g, "'")}`);
+          if (st.length) t = `<span style="${st.join('; ')}">${t}</span>`;
+          const b = rPr && attr(rPr, 'b') !== null ? attr(rPr, 'b') === '1' : !!L.bold;
+          const it = rPr && attr(rPr, 'i') !== null ? attr(rPr, 'i') === '1' : !!L.italic;
+          if (b && !base.bold) t = `<b>${t}</b>`;
+          if (it && !base.italic) t = `<i>${t}</i>`;
+          if (rPr && attr(rPr, 'u') && attr(rPr, 'u') !== 'none') t = `<u>${t}</u>`;
+          if (rPr && attr(rPr, 'strike') && attr(rPr, 'strike') !== 'noStrike') t = `<s>${t}</s>`;
+          const link = rPr && kid(rPr, 'hlinkClick');
+          const url = link && srels[attr(link, 'id')] && srels[attr(link, 'id')].external ? srels[attr(link, 'id')].target : null;
+          if (url && /^(https?:|mailto:)/i.test(url)) t = `<a href="${escapeHtml(url)}">${t}</a>`;
+          inner += t;
+        }
+        const pst = [];
+        if (L.align && L.align !== (base.align || 'left')) pst.push(`text-align: ${L.align}`);
+        if (lvl && L.size && L.size !== base.size) pst.push(`font-size: ${Math.round((L.size / 0.75) * 10) / 10}px`);
+        if (L.color && L.color !== base.color) pst.push(`color: ${L.color}`);
+        const noBullet = (base.bullet === 'char' || base.bullet === 'num') && L.bullet === 'none';
+        html += `<p${lvl ? ` data-lvl="${lvl}"` : ''}${noBullet ? ' data-nobullet="1"' : ''}${pst.length ? ` style="${pst.join('; ')}"` : ''}>${inner || '<br>'}</p>`;
       }
-      return { html: html.replace(/^(<p><br><\/p>)+$/, ''), size: maxSz || defSize, align: { ctr: 'center', r: 'right', just: 'justify' }[algn] || 'left', bullets };
+      const bodyPr = kid(txBody, 'bodyPr');
+      const anchor = (bodyPr && attr(bodyPr, 'anchor')) || (ph && [findPh(layout.phs, type, idx), findPh(master.phs, type, idx)].map((p) => p && p.anchor).find(Boolean)) || 't';
+      const font = faceOf(base.font);
+      const themeFont = kind === 'title' ? pres.customTheme.heading : pres.customTheme.body;
+      return {
+        html: html.replace(/^(<p><br><\/p>)+$/, ''),
+        style: {
+          size: Math.round(((base.size || (kind === 'title' ? 44 : 18)) / 0.75) * 10) / 10, align: base.align || 'left', valign: anchor === 'ctr' ? 'middle' : anchor === 'b' ? 'bottom' : 'top',
+          bullets: base.bullet === 'char' || undefined, numbered: base.bullet === 'num' || undefined,
+          role: kind === 'title' ? 'title' : type === 'subTitle' ? 'subtitle' : 'body',
+          color: base.color || null, bold: base.bold && kind !== 'title' ? true : undefined, italic: base.italic || undefined,
+          font: font && fontStack(font) !== themeFont ? font : undefined, autofit: bodyPr && kid(bodyPr, 'normAutofit') ? undefined : false,
+        },
+      };
+    };
+    const chartOf = async (rid) => {
+      const rel = srels[rid];
+      const xml = rel ? await text(rel.path) : null;
+      if (!xml) return null;
+      const cx = parseXml(xml);
+      const plot = first(cx, 'plotArea');
+      const KIND = { barChart: 'column', bar3DChart: 'column', lineChart: 'line', line3DChart: 'line', areaChart: 'area', area3DChart: 'area', pieChart: 'pie', pie3DChart: 'pie', doughnutChart: 'doughnut', scatterChart: 'scatter' };
+      const kindEl = plot ? kids(plot).find((k) => KIND[k.localName]) : null;
+      if (!kindEl) return null;
+      let type = KIND[kindEl.localName];
+      if (type === 'column') {
+        const dir = first(kindEl, 'barDir');
+        const grouping = first(kindEl, 'grouping');
+        type = dir && attr(dir, 'val') === 'bar' ? 'bar' : grouping && /stacked/i.test(attr(grouping, 'val') || '') ? 'stacked' : 'column';
+      }
+      const pts = (el) => {
+        if (!el) return [];
+        const cache = first(el, 'strCache') || first(el, 'numCache') || first(el, 'strLit') || first(el, 'numLit');
+        if (!cache) return [];
+        const n = Number(attr(first(cache, 'ptCount'), 'val') || 0);
+        const out = Array(n).fill(null);
+        for (const pt of all(cache, 'pt')) out[Number(attr(pt, 'idx'))] = first(pt, 'v') ? first(pt, 'v').textContent : null;
+        return out;
+      };
+      const sers = kids(kindEl, 'ser');
+      if (!sers.length) return null;
+      const categories = pts(kid(sers[0], 'cat') || kid(sers[0], 'xVal')).map((v) => (v === null ? '' : String(v)));
+      const series = sers.map((s, i) => ({ name: pts(kid(s, 'tx'))[0] || (first(kid(s, 'tx'), 'v') || {}).textContent || `Series ${i + 1}`, values: pts(kid(s, 'val') || kid(s, 'yVal')).map((v) => (v === null || v === '' ? null : Number(v))) }));
+      const titleEl = kid(first(cx, 'chart'), 'title');
+      const title = titleEl ? all(titleEl, 't').map((t) => t.textContent).join('') : '';
+      return { type, title, categories: categories.length ? categories : series[0].values.map((_, i) => String(i + 1)), series };
     };
     const walk = async (tree, off = { dx: 0, dy: 0, sx: 1, sy: 1 }) => {
       for (const el of kids(tree)) {
@@ -433,21 +619,23 @@ export async function readPptx(bytes) {
           const spPr = kid(el, 'spPr');
           const geom = first(spPr, 'prstGeom');
           const prst = geom ? attr(geom, 'prst') : 'rect';
-          const fill = spPr && kid(spPr, 'solidFill') ? colorOf(kid(spPr, 'solidFill')) : spPr && kid(spPr, 'gradFill') ? colorOf(first(kid(spPr, 'gradFill'), 'gs')) : null;
+          const styleEl = kid(el, 'style');
+          const fill = spPr && kid(spPr, 'solidFill') ? colorOf(kid(spPr, 'solidFill')) : spPr && kid(spPr, 'gradFill') ? colorOf(first(kid(spPr, 'gradFill'), 'gs')) : spPr && kid(spPr, 'noFill') ? null : styleEl && geom && !ph ? colorOf(kid(styleEl, 'fillRef')) : null;
           const lnEl = spPr && kid(spPr, 'ln');
-          const stroke = lnEl && kid(lnEl, 'solidFill') ? colorOf(kid(lnEl, 'solidFill')) : null;
-          const type = ph ? attr(ph, 'type') || 'body' : null;
-          const isTitle = type === 'title' || type === 'ctrTitle';
-          const t = textOf(kid(el, 'txBody'), isTitle ? 44 / 0.75 * 0.75 : type === 'subTitle' ? 30 : 24);
-          const bodyPr = first(kid(el, 'txBody'), 'bodyPr');
-          const valign = bodyPr && attr(bodyPr, 'anchor') === 'ctr' ? 'middle' : bodyPr && attr(bodyPr, 'anchor') === 'b' ? 'bottom' : 'top';
-          const isShape = prst !== 'rect' || fill;
-          const item = {
-            id: uid('it'), type: isShape && !ph && GEOM_BACK[prst] ? 'shape' : 'text', ...pos, html: t.html,
-            style: { size: Math.round(t.size || 24), align: t.align, valign, bullets: t.bullets && !isTitle, role: isTitle ? 'title' : type === 'subTitle' ? 'subtitle' : 'body', color: null },
-          };
-          if (item.type === 'shape') { item.shape = GEOM_BACK[prst] || 'rect'; item.style.fill = fill || 'none'; item.style.color = '#ffffff'; }
-          else if (fill) item.style.fill = fill;
+          const lnRef = styleEl ? kid(styleEl, 'lnRef') : null;
+          const stroke = lnEl && kid(lnEl, 'solidFill') ? colorOf(kid(lnEl, 'solidFill')) : lnEl && kid(lnEl, 'noFill') ? null : !ph && lnRef && Number(attr(lnRef, 'idx')) > 0 ? colorOf(lnRef) : null;
+          const t = textOf(el, ph);
+          const isShape = !ph && (prst !== 'rect' || fill) && !attr(first(el, 'cNvSpPr'), 'txBox');
+          const item = { id: uid('it'), type: isShape && GEOM_BACK[prst] ? 'shape' : 'text', ...pos, html: t.html, style: t.style };
+          if (ph) item.ph = { ctrTitle: 'title', subTitle: 'subtitle' }[attr(ph, 'type') || 'body'] || attr(ph, 'type') || 'body';
+          if (item.type === 'shape') {
+            item.shape = GEOM_BACK[prst] || 'rect';
+            item.style.fill = fill || 'none';
+            // A shape's text takes its theme style's colour (white on the fill, as PowerPoint draws it).
+            const fontRef = styleEl ? colorOf(kid(styleEl, 'fontRef')) : null;
+            if (fontRef) item.style.color = fontRef;
+            else if (!t.style.color) item.style.color = '#ffffff';
+          } else if (fill) item.style.fill = fill;
           if (stroke) { item.style.stroke = stroke; item.style.strokeWidth = Math.max(1, Math.round(Number(attr(lnEl, 'w') || 12700) / 9525)); }
           if (!t.html && item.type === 'text' && !fill && !stroke) continue;
           slide.items.push(item);
@@ -459,13 +647,21 @@ export async function readPptx(bytes) {
           const lnEl = first(el, 'ln');
           slide.items.push({ id: uid('it'), type: 'line', ...pos, dir: box.flipV ? 'up' : 'down', style: { stroke: lnEl ? colorOf(kid(lnEl, 'solidFill')) : '#000000', strokeWidth: Math.max(1, Math.round(Number(attr(lnEl, 'w') || 19050) / 9525)), arrow: !!(lnEl && kid(lnEl, 'tailEnd') && attr(kid(lnEl, 'tailEnd'), 'type') !== 'none') } });
         } else if (ln === 'graphicFrame') {
-          const tbl = first(el, 'tbl');
-          if (!tbl) continue;
           const xf = kid(el, 'xfrm');
           const o = xf && kid(xf, 'off'); const e = xf && kid(xf, 'ext');
           const gp = xf ? { x: off.dx + Number(attr(o, 'x')) / EMU, y: off.dy + Number(attr(o, 'y')) / EMU, w: Number(attr(e, 'cx')) / EMU, h: Number(attr(e, 'cy')) / EMU } : pos;
-          const rows = kids(tbl, 'tr').map((tr) => kids(tr, 'tc').map((tc) => ({ html: escapeHtml(all(tc, 't').map((x) => x.textContent).join('')) })));
-          slide.items.push({ id: uid('it'), type: 'table', ...gp, rot: 0, rows, style: { size: 18 } });
+          const chartRef = first(el, 'chart');
+          if (chartRef) {
+            const chart = await chartOf(attr(chartRef, 'id'));
+            if (chart) slide.items.push({ id: uid('it'), type: 'chart', ...gp, rot: 0, chart });
+            continue;
+          }
+          const tbl = first(el, 'tbl');
+          if (!tbl) continue;
+          const tblPr = kid(tbl, 'tblPr');
+          const rows = kids(tbl, 'tr').map((tr) => kids(tr, 'tc').map((tc) => ({ html: kids(kid(tc, 'txBody'), 'p').map((p) => escapeHtml(all(p, 't').map((x) => x.textContent).join(''))).join('<br>') })));
+          const sizes = all(tbl, 'rPr').map((x) => Number(attr(x, 'sz') || 0)).filter(Boolean);
+          slide.items.push({ id: uid('it'), type: 'table', ...gp, rot: 0, rows, style: { size: sizes.length ? Math.round((sizes[0] / 100 / 0.75) * 10) / 10 : 24, headerRow: tblPr ? attr(tblPr, 'firstRow') === '1' : true, striped: tblPr && attr(tblPr, 'bandRow') === '1' ? true : undefined } });
         }
       }
     };
@@ -479,7 +675,7 @@ export async function readPptx(bytes) {
     if (notesRel) {
       const nx = await text(notesRel.path);
       if (nx) {
-        const body = all(parseXml(nx), 'sp').find((sp) => { const ph = first(sp, 'ph'); return ph && attr(ph, 'type') === 'body'; });
+        const body = all(parseXml(nx), 'sp').find((sp) => { const p = first(sp, 'ph'); return p && attr(p, 'type') === 'body'; });
         if (body) slide.notes = all(body, 'p').map((p) => all(p, 't').map((t) => t.textContent).join('')).join('\n').trim();
       }
     }

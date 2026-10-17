@@ -12,7 +12,7 @@ import { knownFonts, allFonts, FONT_SIZES } from '../../kit/fonts.js';
 import { stepZoom, pinch } from '../../kit/zoom.js';
 import { CHART_TYPES } from '../../kit/charts.js';
 import { History } from '../../kit/history.js';
-import { SIZES, THEMES, SHAPES, LAYOUTS, makeSlide, newPresentation, renderSlide, settle, shapePath, themeColor, textOf } from './model.js';
+import { SIZES, THEMES, SHAPES, LAYOUTS, makeSlide, newPresentation, renderSlide, settle, shapePath, themeColor, textOf, themeOf } from './model.js';
 import { SlideEditor } from './editor.js';
 import { Show } from './show.js';
 import { readPptx, writePptx } from './pptx.js';
@@ -78,7 +78,7 @@ if (!settings.get('format', true)) { format.classList.add('hidden'); formatSplit
 // ---------------------------------------------------------------------------
 // Undo: snapshots of the deck (pictures live in pres.assets, shared)
 // ---------------------------------------------------------------------------
-const snap = () => JSON.stringify({ size: pres.size, sizeId: pres.sizeId, theme: pres.theme, slides: pres.slides, showNumbers: pres.showNumbers });
+const snap = () => JSON.stringify({ size: pres.size, sizeId: pres.sizeId, theme: pres.theme, customTheme: pres.customTheme, slides: pres.slides, showNumbers: pres.showNumbers });
 function commit(label = 'Edit', key = null) {
   const now = snap();
   if (now === snapshot) { drawSorterSoon(); return; }
@@ -422,7 +422,7 @@ function numberField(label, value, onChange, { step = 1, min = -100000, max = 10
 }
 
 function colorField(label, value, onChange, { allowNone = true, theme = true } = {}) {
-  const T = THEMES[pres.theme];
+  const T = themeOf(pres);
   const resolved = themeColor(T, value) || 'transparent';
   const sw = h('button.fp-swatch', { style: { background: value === 'none' || !value ? 'transparent' : resolved }, 'data-tip': label });
   sw.addEventListener('click', () => {
@@ -504,7 +504,7 @@ function buildFormat() {
     h('div.row', { style: { gap: '2px' } }, ...['top', 'middle', 'bottom'].map((a) => tb({ icon: { top: 'alignObjTop', middle: 'alignObjMiddle', bottom: 'alignObjBottom' }[a], tip: `Text at the ${a}`, on: () => (S.valign || 'top') === a, run: () => upd({ valign: a }, 'Align') })), sep(),
       tb({ icon: 'listBullets', tip: 'Bullets', on: () => !!S.bullets, run: () => upd({ bullets: !S.bullets || undefined, numbered: undefined }, 'Bullets') }), tb({ icon: 'listNumbers', tip: 'Numbers', on: () => !!S.numbered, run: () => upd({ numbered: !S.numbered || undefined, bullets: undefined }, 'Numbers') }),
       tb({ icon: 'columns', tip: 'Two columns', on: () => S.columns === 2, run: () => upd({ columns: S.columns === 2 ? undefined : 2 }, 'Columns') })),
-    colorField('Colour', S.color || null, (c) => inlineStyle('color', themeColor(THEMES[pres.theme], c), 'color', c === 'none' ? undefined : c, 'Text colour')),
+    colorField('Colour', S.color || null, (c) => inlineStyle('color', themeColor(themeOf(pres), c), 'color', c === 'none' ? undefined : c, 'Text colour')),
     numberField('Line spacing', S.lineHeight || 1.3, (v) => upd({ lineHeight: clamp(v, 0.8, 3) }, 'Line spacing'), { step: 0.05, min: 0.8, max: 3 }),
     numberField('Padding', S.padding ?? (it.type === 'shape' ? 16 : 8), (v) => upd({ padding: clamp(v, 0, 200) }, 'Padding'), { min: 0, max: 200 }),
     h('label.check', h('input', { type: 'checkbox', checked: S.autofit !== false, onchange: (e) => upd({ autofit: e.target.checked ? undefined : false }, 'Fit text') }), 'Shrink text to fit the box'),
@@ -622,7 +622,9 @@ async function altText(it) {
 
 function themeGallery() {
   const grid = h('div.theme-grid');
-  for (const [id, t] of Object.entries(THEMES)) {
+  const list = Object.entries(THEMES);
+  if (pres.customTheme) list.unshift(['file', pres.customTheme]);
+  for (const [id, t] of list) {
     const card = h(`button.theme-card${pres.theme === id ? '.on' : ''}`, { style: { background: t.bg } },
       h('div', { style: { color: t.title, fontFamily: t.heading, fontWeight: t.titleWeight, fontSize: '15px', textTransform: t.upper ? 'uppercase' : '' } }, t.name),
       h('div', { style: { color: t.text, fontFamily: t.body, fontSize: '10px' } }, 'Body text'),
@@ -949,7 +951,7 @@ function fileMenu() {
 function editMenu() { return [I('edit.undo', { label: history.undoLabel ? `Undo ${history.undoLabel}` : 'Undo' }), I('edit.redo'), { type: 'separator' }, I('edit.cut'), I('edit.copy'), I('edit.paste'), I('edit.duplicate'), I('edit.delete'), { type: 'separator' }, I('edit.selectAll'), I('edit.editText')]; }
 function viewMenu() { return [I('view.sorter'), I('view.notes'), I('view.format'), I('view.snap'), I('view.ribbon'), { type: 'separator' }, I('view.zoomIn'), I('view.zoomOut'), I('view.fit'), { type: 'separator' }, I('view.themeDark'), I('view.themeLight'), I('view.themeSystem'), I('view.fullscreen')]; }
 function insertMenu() { return [I('slide.new'), I('ins.text'), I('ins.picture'), I('ins.table'), I('ins.chart'), { label: 'Shape', icon: 'shapes', submenu: SHAPES.map(([k, l]) => ({ label: l, run: () => addShape(k) })) }, I('ins.line'), I('ins.arrow'), I('slide.numbers')]; }
-function formatMenu() { return [I('fmt.bold'), I('fmt.italic'), I('fmt.underline'), I('fmt.bullets'), { type: 'separator' }, I('arr.front'), I('arr.back'), I('arr.forward'), I('arr.backward'), I('arr.group'), I('arr.ungroup'), { type: 'separator' }, { label: 'Theme', icon: 'theme', submenu: Object.entries(THEMES).map(([id, t]) => ({ label: t.name, checked: () => pres.theme === id, run: () => setTheme(id) })) }]; }
+function formatMenu() { return [I('fmt.bold'), I('fmt.italic'), I('fmt.underline'), I('fmt.bullets'), { type: 'separator' }, I('arr.front'), I('arr.back'), I('arr.forward'), I('arr.backward'), I('arr.group'), I('arr.ungroup'), { type: 'separator' }, { label: 'Theme', icon: 'theme', submenu: [...(pres.customTheme ? [['file', pres.customTheme]] : []), ...Object.entries(THEMES)].map(([id, t]) => ({ label: t.name, checked: () => pres.theme === id, run: () => setTheme(id) })) }]; }
 function slideMenu() {
   return [I('slide.new'), I('slide.duplicate'), I('slide.delete'), I('slide.hide'), { type: 'separator' }, { label: 'Layout', icon: 'layout', submenu: () => layoutMenu(true) },
     { label: 'Transition', icon: 'transition', submenu: [['none', 'None'], ['fade', 'Fade'], ['slide', 'Slide'], ['push', 'Push'], ['zoom', 'Zoom'], ['cover', 'Cover'], ['flip', 'Flip']].map(([t, n]) => ({ label: n, checked: () => ((ed.slide.transition && ed.slide.transition.type) || 'fade') === t, run: () => setTransition(t) })) },
@@ -992,7 +994,7 @@ shell.statusLeft.append(slideItem, themeItem, saveItem);
 shell.statusRight.append(tb('view.notes', { cls: 'status-tb' }), showBtn, zoomBox);
 function updateStatus() {
   slideItem.textContent = `Slide ${ed.index + 1} of ${pres.slides.length}`;
-  themeItem.textContent = (THEMES[pres.theme] || THEMES.snake).name;
+  themeItem.textContent = themeOf(pres).name;
 }
 function updateTitle() {
   shell.setTitle(file.name, history.dirty);
@@ -1004,6 +1006,7 @@ function updateTitle() {
 // Files
 // ---------------------------------------------------------------------------
 function usePres(p, { name = 'Untitled', handle = null, format = 'snakeslides' } = {}) {
+  saveNotes(); // (the old presentation's: the box then shows the new one's)
   pres = p;
   if (!pres.assets) pres.assets = {};
   file.handle = handle;
@@ -1014,6 +1017,7 @@ function usePres(p, { name = 'Untitled', handle = null, format = 'snakeslides' }
   history.clear();
   snapshot = snap();
   ed.setPres(pres);
+  loadNotes();
   thumbCache.clear();
   selectedSlides = new Set([pres.slides[0].id]);
   start.hide();

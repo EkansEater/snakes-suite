@@ -106,6 +106,12 @@ export function newPresentation(themeId = 'snake', sizeId = 'wide') {
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
+/** The presentation's theme: one of ours, or the one a PowerPoint file brought with it. */
+export function themeOf(pres) {
+  if (pres && pres.theme === 'file' && pres.customTheme) return pres.customTheme;
+  return THEMES[pres && pres.theme] || THEMES.snake;
+}
+
 /** Resolve "accent0".."accent5", "title", "text" to colours of the theme. */
 export function themeColor(theme, c, fallback = null) {
   if (!c) return fallback;
@@ -238,7 +244,11 @@ export function renderItem(item, theme, pres, opts = {}) {
   if (item.type === 'chart') {
     const canvas = h('canvas.item-chart');
     el.append(canvas);
-    el.chartDraw = (scale = 1) => drawChart(canvas, { ...item.chart, theme: isDarkBg(theme, item) ? 'dark' : 'light', background: 'transparent', font: theme.body }, { width: item.w, height: item.h, dpr: (window.devicePixelRatio || 1) * scale });
+    // Series take the theme's accent colours, as PowerPoint draws them.
+    const acc = theme.accents || [];
+    const pie = ['pie', 'doughnut'].includes(item.chart && item.chart.type);
+    const series = ((item.chart && item.chart.series) || []).map((s, i) => ({ ...s, color: s.color || acc[i % acc.length], colors: s.colors || (pie && i === 0 ? (item.chart.categories || []).map((_, j) => acc[j % acc.length]) : undefined) }));
+    el.chartDraw = (scale = 1) => drawChart(canvas, { ...item.chart, series, theme: isDarkBg(theme, item) ? 'dark' : 'light', background: 'transparent', font: theme.body }, { width: item.w, height: item.h, dpr: (window.devicePixelRatio || 1) * scale });
   }
   if (item.type === 'table') {
     const table = h('table.item-table');
@@ -281,7 +291,7 @@ export function slideBackground(slide, theme, pres) {
 
 /** A whole slide as an element at its real size (scale it with CSS). */
 export function renderSlide(slide, pres, opts = {}) {
-  const theme = THEMES[pres.theme] || THEMES.snake;
+  const theme = themeOf(pres);
   const el = h('div.slide', { dataset: { id: slide.id } });
   Object.assign(el.style, { width: `${pres.size.w}px`, height: `${pres.size.h}px`, background: slideBackground(slide, theme, pres) });
   if (theme.bar && !slide.bg && slide.layout !== 'blank') el.append(h('div.theme-bar', { style: { background: theme.bar } }));
