@@ -21,7 +21,7 @@ fs.mkdirSync(path.join(out, 'icons'), { recursive: true });
 // The same policy the Electron protocol sends as a header (minus snake-media:, which
 // only exists there). A <meta> policy cannot carry frame-ancestors.
 const CSP = [
-  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
+  "default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: snake-media:", "media-src 'self' data: blob: snake-media:", "font-src 'self' data:",
   "connect-src 'self' data: blob: snake-media:", "worker-src 'self' blob:", "frame-src 'none'", "object-src 'none'",
   "base-uri 'none'", "form-action 'none'",
@@ -104,7 +104,7 @@ const opts = {
   minify: !watch,
   sourcemap: watch ? 'inline' : false,
   target: ['chrome120', 'firefox121', 'safari17'],
-  loader: { '.svg': 'text', '.woff2': 'file', '.png': 'file' },
+  loader: { '.svg': 'text', '.woff2': 'file', '.png': 'file', '.wasm': 'file' },
   logLevel: 'info',
   legalComments: 'none',
 };

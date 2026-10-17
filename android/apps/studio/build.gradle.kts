@@ -30,6 +30,7 @@ abstract class PackStudio : DefaultTask() {
         out.resolve("sw.js").delete()
         // Android has its own apps for these (installed by the hub): only the seven Studio apps here.
         for (other in listOf("code", "soundpad", "screen", "converter", "compressor", "daw")) out.resolve(other).deleteRecursively()
+        out.listFiles { f -> f.name.endsWith(".wasm") }?.forEach { it.delete() }
     }
 }
 

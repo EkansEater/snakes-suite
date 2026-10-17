@@ -51,6 +51,7 @@ const WEB_APPS = {
   soundpad: { name: "Snake's SoundPad", short: 'SoundPad', tagline: 'Soundboard', open: [{ name: 'Sounds', exts: audio }] },
   screen: { name: "Snake's Screen Recorder", short: 'Screen Recorder', tagline: 'Screen and sound recorder', open: [] },
   converter: { name: "Snake's Converter", short: 'Converter', tagline: 'File converter', open: [] },
+  compressor: { name: "Snake's Compressor", short: 'Compressor', tagline: 'Lossless archiver', open: [{ name: 'Snake archives', exts: ['snake'] }] },
 };
 
 const HOME = { name: "Snake's Studio", short: 'Studio', tagline: 'Office, creative and media apps' };

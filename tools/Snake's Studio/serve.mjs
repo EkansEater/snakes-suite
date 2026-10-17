@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const root = path.resolve('dist');
 const port = Number(process.env.PORT || 5178);
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.wasm': 'application/wasm' };
 
 // For automated tests only: with SNAKE_TEST_DIR set, PUT /__save/<name> writes the body there.
 const testDir = process.env.SNAKE_TEST_DIR ? path.resolve(process.env.SNAKE_TEST_DIR) : null;

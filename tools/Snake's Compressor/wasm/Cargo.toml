@@ -1,0 +1,23 @@
+# Snake's Compressor's engine for the browser: the same zstd (C library) and BLAKE3 as
+# the desktop app, compiled to WebAssembly. The .snake format itself is written in
+# JavaScript (tools/Snake's Studio/src/apps/compressor). Build: ./build.sh
+[package]
+name = "snake-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+zstd = { version = "0.13", default-features = false }
+blake3 = { version = "1", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
