@@ -106,6 +106,10 @@ tools/Snake's Studio/
 - [x] Android in this repository (`android/`, from the old "Snake's Suite APK" folder, which is untouched): builds from `../suite.json` and the tools' own sources. New **Snake's Studio** APK: the seven Studio apps (one APK, seven launcher icons and tasks) on the website's own pages, with a bridge for the file picker, saving in place, recent files (persisted permissions), printing, Open with; tested page-side against a stand-in bridge (open, save, Save As .docx, back button with unsaved changes). Android hub: Studio apps listed (one shared download), the signed index is checked (Ed25519 in Kotlin, RFC 8032 tests), renamed Snake's Master Suite. All 13 release APKs build and are signed with the existing key (`cd android && ./build.sh`). Not done: trying them on a phone (no emulator here: no KVM).
 - [x] iOS (`ios/`): Snake's Studio for iPhone and iPad (Swift, WKWebView, the same pages and the same bridge requests as Android), built by `.github/workflows/ios.yml` on GitHub's Macs into an unsigned .ipa. Not compiled yet (no Mac here; the workflow runs once pushed). Installing needs signing: free with your Apple ID through a sideloading tool (re-sign every 7 days) or $99/year for TestFlight/App Store; the website's Add to Home Screen works today.
 
+- [x] Every app online (2026-10-16/17): the website is now Snake's Master Suite with every app, not only the Studio. Browser versions of SoundPad, Screen Recorder (with a GIF encoder in the kit), Converter (PDF writer, FLAC/Opus encoders), Compressor (.snake both ways with the desktop, and ZIP), Snake's Code, and the DAW (the desktop engine compiled to WebAssembly in an AudioWorklet: record, monitor, effects, loop station, tuner, export). The iPhone app is Snake's Master Suite too.
+- [x] Fidelity and features (2026-10-17): Word comments and footnotes, .docx styles kept both ways; Spreadsheets reads and writes Excel charts, notes, conditional formats and validation, ~85 more functions and LAMBDA (`node test/functions.test.mjs`); Slides keeps PowerPoint looks (masters, layouts, themes) and real charts both ways; TIFF everywhere pictures open (and HEIC where the system decodes it); desktop Converter turns Word, spreadsheets and PowerPoint into PDF without LibreOffice; desktop Compressor opens ZIP, 7z, tar (.gz/.bz2/.xz/.zst) and makes ZIPs; Snake's Code talks to installed language servers (clangd, pyright/pylsp, rust-analyzer, gopls and ~20 more: completions, hover, problems, go to definition, references, rename, formatting, quick fixes, Ctrl+T symbols); Screen Recorder trims recordings; MP3 Converter saves M4A/Opus/FLAC/WAV and splits videos into tracks by chapter; SoundPad trims and loops sounds on a waveform
+- [x] Build check (2026-10-17): every package built on Linux and started (CLIs, Qt apps offscreen, egui and Electron apps headless under gamescope), all 13 Android APKs, DAW and Compressor tests, Studio tests. Fixed on the way: the Studio build needed the repo's shared icons (now optional); Python packages built in a venv that saw the system's PySide6 missed libshiboken (build in a clean venv); SoundPad's Windows/macOS mode needs PySide6-Addons (Qt Multimedia), which it did not list; the DAW's effects panel cut off knobs; versions: every app changed since v1.1.6 but kept its version, so `--reuse` would have shipped old builds. Now suite 1.2.0, apps 1.1.0, hub 1.1.4, and `build.py` stops when an app's own version differs from suite.json
+
 ## Publishing the phone apps
 
 - Android: `cd android && ./build.sh && python3 tools/release.py --publish` adds the APKs to the
@@ -122,11 +126,12 @@ tools/Snake's Studio/
   over CDP (Runtime.evaluate on `window.snakeApp`). `SNAKE_TEST_PDF=<path>` makes PDF export
   write there without a dialog. Never `pkill -f` a pattern that appears in your own command.
 
-## Where work stopped (2026-10-16)
+## Where work stopped (2026-10-17)
 
 Everything is built and tested locally on the `master-suite` branch: the Studio and its seven
 apps, the overhaul of every tool, the hub, packaging with ffmpeg (a Linux Studio package was
 built and played an AC3 MKV through its own ffmpeg), the signed index and the web mirror
-workflow. All of it is on main and released as v1.1.6. Not yet done by hand: running the
+workflow. v1.1.6 is on main and released; everything listed above since then is committed on
+`master-suite` only, ready to release as v1.2.0 (not pushed). Not yet done by hand: running the
 packages on a real Windows PC or Mac (CI builds them, nobody has opened them there). Test helpers: `SNAKE_TEST_SAVEAS=<dir>` (Save As without a
 dialog), `SNAKE_TEST_PDF=<path>`. Next releases: `python ship.py`.
