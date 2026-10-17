@@ -122,6 +122,9 @@ GLYPHS = {
   <rect x="190" y="118" width="42" height="56" rx="6" {S}/>
   <path d="M190 104 L232 92" {S}/>""",
     # Snake's Studio: sparkles either side.
+    # Terminal: a shell prompt, > on the left and the cursor _ on the right.
+    "terminal": f"""  <path d="M30 98 L62 128 L30 158" {S}/>
+  <path d="M188 176 L228 176" {S}/>""",
     "studio": f"""  <path d="M44 92 Q48 120 72 124 Q48 128 44 156 Q40 128 16 124 Q40 120 44 92 Z" {F}/>
   <path d="M212 112 Q215 132 232 135 Q215 138 212 158 Q209 138 192 135 Q209 132 212 112 Z" {F}/>""",
 }

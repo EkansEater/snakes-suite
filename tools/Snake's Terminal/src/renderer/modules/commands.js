@@ -1,0 +1,55 @@
+// Every action has an id and a name: the keys, the menus and the command palette all run them.
+export const COMMAND_TITLES = {
+  'tab.new': 'New tab',
+  'window.new': 'New window',
+  'pane.splitRight': 'Split right',
+  'pane.splitDown': 'Split down',
+  'pane.close': 'Close pane',
+  'pane.maximize': 'Maximize pane (toggle)',
+  'pane.left': 'Go to the pane on the left',
+  'pane.right': 'Go to the pane on the right',
+  'pane.up': 'Go to the pane above',
+  'pane.down': 'Go to the pane below',
+  'pane.next': 'Next pane',
+  'pane.prev': 'Previous pane',
+  'pane.broadcast': 'Broadcast typing to all panes of the tab (toggle)',
+  'tab.next': 'Next tab',
+  'tab.prev': 'Previous tab',
+  'tab.moveLeft': 'Move tab left',
+  'tab.moveRight': 'Move tab right',
+  'tab.rename': 'Rename tab',
+  'tab.close': 'Close tab',
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [`tab.goto${n}`, `Go to tab ${n}`])),
+  'tab.goto9': 'Go to the last tab',
+  'edit.copy': 'Copy',
+  'edit.paste': 'Paste',
+  'edit.selectAll': 'Select all',
+  'find.open': 'Find',
+  'term.clear': 'Clear the screen and scrollback',
+  'term.reset': 'Reset the terminal',
+  'term.scrollTop': 'Scroll to the top',
+  'term.scrollBottom': 'Scroll to the bottom',
+  'term.pageUp': 'Scroll up a page',
+  'term.pageDown': 'Scroll down a page',
+  'font.bigger': 'Bigger text',
+  'font.smaller': 'Smaller text',
+  'font.reset': 'Text size back to normal',
+  'devices.toggle': 'Devices: connect to another computer',
+  'devices.add': 'Devices: save a device',
+  'palette.open': 'Command palette',
+  'prefs.open': 'Settings',
+  'prefs.profiles': 'Settings: profiles',
+  'prefs.colours': 'Settings: colours',
+  'prefs.keys': 'Settings: keys',
+  'window.fullscreen': 'Full screen (toggle)',
+  'window.close': 'Close window',
+};
+
+export const handlers = {};
+
+export function run(id, ...args) {
+  const fn = handlers[id];
+  if (!fn) return false;
+  Promise.resolve(fn(...args)).catch((err) => console.error(id, err));
+  return true;
+}

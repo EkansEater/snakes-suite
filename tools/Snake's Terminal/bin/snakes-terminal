@@ -1,0 +1,5 @@
+#!/bin/sh
+# Start Snake's Terminal from this folder: snakes-terminal [folder] [--toggle] [-e command…]
+APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+[ -f "$APP_DIR/dist/app.js" ] || (cd "$APP_DIR" && node build.mjs) || exit 1
+exec "$APP_DIR/node_modules/.bin/electron" "$APP_DIR" "$@" >/dev/null 2>&1 &
