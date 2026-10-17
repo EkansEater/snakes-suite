@@ -265,3 +265,23 @@ pre.cmd { margin: 0; padding: 8px 10px; background: var(--input); border-radius:
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #ffffff1a; border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #ffffff2e; background-clip: padding-box; border: 2px solid transparent; }
+
+/* ---- Narrow windows and phones ---- */
+@media (max-width: 720px) {
+  .devices { position: absolute; inset: 0; width: auto; z-index: 20; }
+  .main { position: relative; }
+  .tab { min-width: 70px; }
+  .devices-btn span { display: none; }
+  .modal.wide { width: 100vw; height: 100vh; border-radius: 0; }
+  .prefs { flex-direction: column; }
+  .prefs-nav { width: auto; flex-direction: row; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .prefs-split { flex-direction: column; }
+  .prefs-list { width: auto; }
+}
+.touchkeys { display: flex; gap: 4px; padding: 4px; background: var(--title); border-top: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; flex: none; }
+.touchkeys::-webkit-scrollbar { display: none; }
+.touchkey { flex: none; min-width: 44px; height: 38px; padding: 0 10px; border: 1px solid var(--border2); border-radius: 6px; background: var(--widget); color: var(--fg); font: 14px var(--mono); }
+.touchkey:active { background: var(--sel); }
+.touchkey.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.os-android .tabbar { -webkit-app-region: none; }
+.os-android .tab-close { opacity: 1; }

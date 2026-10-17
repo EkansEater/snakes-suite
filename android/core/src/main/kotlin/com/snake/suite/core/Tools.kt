@@ -46,6 +46,8 @@ object Tools {
         studio("movie", "Snake's Movie Maker", "Video editor", "Cut clips, add titles, music and transitions, export a video.", R.drawable.tile_movie, "MovieActivity"),
         Tool("code", "Snake's Code", "Code editor",
             "A code editor with Monaco, file tree, search and Markdown preview.", R.drawable.tile_code),
+        Tool("terminal", "Snake's Terminal", "Terminal and SSH",
+            "Tabs and splits, and SSH to your computers: it finds them on your network.", R.drawable.tile_terminal),
         Tool("compressor", "Snake's Compressor", "Lossless archiver",
             "Pack big files and folders into checksummed .snake archives.", R.drawable.tile_compressor),
         Tool("converter", "Snake's Converter", "File converter",

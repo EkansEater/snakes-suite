@@ -93,6 +93,14 @@ async function refresh(all = false) {
 // ---------------------------------------------------------------------------
 function renderHere() {
   if (!local) return;
+  if (local.os === 'android') {
+    // A phone connects out; it does not take connections.
+    lists.here.replaceChildren(
+      el('div.dev-me', {}, el('strong', { text: local.hostname }), el('span.dev-os', { text: 'Android' })),
+      el('div.dev-status', {}, el('span.dot'), 'Connect from here to your computers. Your computers show up below when they are on this network (or save them).'),
+    );
+    return;
+  }
   const status = local.sshServer
     ? el('div.dev-status.on', {}, el('span.dot'), 'SSH is on: your other devices can connect to this one.')
     : el('div.dev-status', {}, el('span.dot'), 'SSH is off: this computer can connect out, but not be connected to.');

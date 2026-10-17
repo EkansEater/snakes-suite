@@ -17,6 +17,7 @@ import { openPalette } from './modules/palette.js';
 import { openFind, closeFind } from './modules/find.js';
 import { showMenu, toast, openDialogs } from './modules/ui.js';
 import { parseItermColors } from './modules/themes.js';
+import { initTouchKeys } from './modules/touchkeys.js';
 
 let devicesPanel;
 let closing = false;
@@ -33,7 +34,7 @@ async function boot() {
   const newBtn = el('button.icon-btn.new-tab', { title: `New tab (${keyLabel('tab.new')})`, on: { click: () => run('tab.new') } }, icon('plus'));
   const newMenu = el('button.icon-btn.new-menu', { title: 'New tab with…', on: { click: (e) => newTabMenu(e.currentTarget) } }, icon('chevron'));
   const devBtn = el('button.icon-btn.devices-btn', { title: `Devices (${keyLabel('devices.toggle')})`, on: { click: () => run('devices.toggle') } }, icon('devices'), el('span', { text: 'Devices' }));
-  const winCtl = platform.mac ? '' : el('div.win-controls', {},
+  const winCtl = platform.mac || platform.android ? '' : el('div.win-controls', {},
     el('button.win-btn', { title: 'Minimize', on: { click: () => window.snake.win.minimize() } }, icon('min')),
     el('button.win-btn.max', { title: 'Maximize', on: { click: () => window.snake.win.toggleMaximize() } }, icon('max')),
     el('button.win-btn.close', { title: 'Close', on: { click: () => window.snake.win.close() } }, icon('close')));
@@ -47,6 +48,7 @@ async function boot() {
   devicesPanel = el('aside.devices', { hidden: true });
   const bodies = el('div.bodies');
   document.getElementById('app').append(bar, el('div.main', {}, devicesPanel, bodies));
+  if (platform.android) initTouchKeys(document.getElementById('app'));
   window.snake.win.onMaximized((m) => {
     document.body.classList.toggle('maximized', m);
     const b = document.querySelector('.win-btn.max');

@@ -1,0 +1,23 @@
+[package]
+name = "snakessh"
+version = "1.0.0"
+edition = "2021"
+description = "A small SSH client for Snake's Terminal on Android (phones have no ssh program)"
+
+[[bin]]
+name = "snakessh"
+path = "src/main.rs"
+
+[dependencies]
+russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
+tokio = { version = "1", features = ["rt", "net", "io-util", "io-std", "time", "macros", "signal", "sync"] }
+libc = "0.2"
+anyhow = "1"
+rand = "0.8"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

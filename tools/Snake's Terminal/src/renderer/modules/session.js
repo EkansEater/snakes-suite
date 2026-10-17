@@ -11,12 +11,24 @@ import { el, bus, basename, platform, debounce, uid } from './util.js';
 import { settings, profileById, schemeById, FONT_FALLBACK, hostLabel, saveSettings } from './settings.js';
 import { xtermTheme } from './themes.js';
 import { env } from './env.js';
+import { applyMods } from './touchkeys.js';
 
 const sessions = new Map(); // pty id -> Session
 const SHELLS = new Set(['bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'mksh', 'tcsh', 'csh', 'nu', 'xonsh', 'elvish', 'pwsh', 'powershell', 'cmd', 'login', 'wsl', 'bash.exe', 'pwsh.exe', 'powershell.exe', 'cmd.exe', 'wsl.exe']);
 
-window.snake.pty.onData((id, data) => sessions.get(id)?.receive(data));
-window.snake.pty.onExit((id, code, signal) => sessions.get(id)?.exited(code, signal));
+// A fast program can speak (or end) before the page has heard back that it started:
+// keep what arrives for an id not known yet, and hand it over when it is.
+const early = new Map();
+window.snake.pty.onData((id, data) => {
+  const s = sessions.get(id);
+  if (s) s.receive(data);
+  else early.set(id, { data: (early.get(id)?.data || '') + data, exit: early.get(id)?.exit });
+});
+window.snake.pty.onExit((id, code, signal) => {
+  const s = sessions.get(id);
+  if (s) s.exited(code, signal);
+  else early.set(id, { data: early.get(id)?.data || '', exit: [code, signal] });
+});
 
 export let fontZoom = 0; // window-wide font size change (Ctrl/Cmd + and -)
 export function setFontZoom(z) {
@@ -209,6 +221,12 @@ export class Session {
       // The window may have changed size while the program was starting.
       this.doFit();
       window.snake.pty.resize(this.id, this.term.cols, this.term.rows);
+      const before = early.get(res.id);
+      if (before) {
+        early.delete(res.id);
+        if (before.data) this.receive(before.data);
+        if (before.exit) this.exited(...before.exit);
+      }
       this.started = Date.now();
       if (this.opts.input) setTimeout(() => this.write(this.opts.input), 300);
     } catch (err) {
@@ -224,6 +242,7 @@ export class Session {
   }
 
   input(data) {
+    if (platform.android) data = applyMods(data);
     if (this.state === 'running') {
       this.write(data);
       bus.emit('session:input', this, data);

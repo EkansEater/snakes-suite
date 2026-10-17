@@ -24,7 +24,7 @@ ICONS = ROOT.parent / "shared" / "icons"
 DRAWABLE = ROOT / "core" / "src" / "main" / "res" / "drawable"
 NS = "{http://www.w3.org/2000/svg}"
 APPS = {"suite": "suite", "soundpad": "soundpad", "compressor": "compressor", "converter": "converter",
-        "screen": "screen", "mp3": "mp3", "code": "code", "daw": "daw"}
+        "screen": "screen", "mp3": "mp3", "code": "code", "terminal": "terminal", "daw": "daw"}
 # One APK (apps/studio) with a launcher icon for each Studio app.
 STUDIO = ["word", "sheets", "slides", "paint", "photo", "player", "movie"]
 ALL_IDS = list(APPS.values()) + ["recompiler"] + STUDIO

@@ -1,4 +1,4 @@
-//! Pseudo-terminals for Snake's Code on Android: what node-pty does on the desktop.
+//! Pseudo-terminals for Snake's Code and Snake's Terminal on Android: what node-pty does on the desktop.
 //!
 //! `spawn` opens a pty, forks, and runs the shell on the child side. Kotlin
 //! reads and writes the returned master fd (through a ParcelFileDescriptor),
@@ -125,4 +125,27 @@ pub extern "system" fn Java_com_snake_suite_code_NativePty_hangup(_: JNIEnv, _: 
         libc::kill(-pid, libc::SIGHUP);
         libc::kill(pid, libc::SIGHUP);
     }
+}
+
+// The same four calls for Snake's Terminal (its NativePty class lives in its own package).
+#[no_mangle]
+pub extern "system" fn Java_com_snake_suite_terminal_NativePty_spawn(
+    env: JNIEnv, class: JClass, argv: JObjectArray, envp: JObjectArray, cwd: JString, cols: jint, rows: jint,
+) -> jintArray {
+    Java_com_snake_suite_code_NativePty_spawn(env, class, argv, envp, cwd, cols, rows)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_snake_suite_terminal_NativePty_resize(env: JNIEnv, class: JClass, fd: jint, cols: jint, rows: jint) {
+    Java_com_snake_suite_code_NativePty_resize(env, class, fd, cols, rows)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_snake_suite_terminal_NativePty_waitFor(env: JNIEnv, class: JClass, pid: jint) -> jint {
+    Java_com_snake_suite_code_NativePty_waitFor(env, class, pid)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_snake_suite_terminal_NativePty_hangup(env: JNIEnv, class: JClass, pid: jint) {
+    Java_com_snake_suite_code_NativePty_hangup(env, class, pid)
 }

@@ -1,10 +1,11 @@
 // Small helpers shared by the page: elements, icons, events, platform.
 
-export const platform = { os: 'linux', mac: false, win: false };
+export const platform = { os: 'linux', mac: false, win: false, android: false };
 export function setPlatform(os) {
-  platform.os = os === 'darwin' ? 'macos' : os === 'win32' ? 'windows' : 'linux';
+  platform.os = os === 'darwin' ? 'macos' : os === 'win32' ? 'windows' : os === 'android' ? 'android' : 'linux';
   platform.mac = platform.os === 'macos';
   platform.win = platform.os === 'windows';
+  platform.android = platform.os === 'android';
 }
 
 /** el('div.a.b', {attrs, on: {click}}, ...children) */

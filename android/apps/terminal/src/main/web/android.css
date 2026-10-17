@@ -1,0 +1,9 @@
+/* Snake's Terminal on Android: the phone draws the system bars; the keyboard row sits at the bottom. */
+html, body { height: 100%; }
+.tabbar { padding-left: 2px; }
+.tab-close { width: 26px; height: 26px; }
+.icon-btn { min-width: 36px; height: 36px; }
+.sash.row { width: 8px; background: transparent; box-shadow: inset 3px 0 0 transparent, inset -4px 0 0 var(--border); }
+.sash.col { height: 8px; background: transparent; box-shadow: inset 0 -4px 0 var(--border); }
+.menu-item { height: 40px; }
+.dev-row { padding: 10px 8px; }
