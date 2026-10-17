@@ -150,7 +150,7 @@ function* each(args, ctx) {
       const { r1, c1 } = ctx.clamp(a);
       for (let r = a.r0; r <= r1; r++) {
         for (let c = a.c0; c <= c1; c++) {
-          if (ctx.hiddenSkip && ctx.hiddenSkip(a.sheet, r)) continue;
+          if (ctx.hiddenSkip && ctx.hiddenSkip(a.sheet, r, c)) continue;
           yield [ctx.value(a.sheet, r, c), true];
         }
       }
@@ -945,6 +945,536 @@ def('PROGRESS', { args: 'value, [max]', desc: 'A progress bar inside the cell', 
   return new Spark([Math.max(0, Math.min(1, m ? v / m : 0))], { type: 'progress', value: v });
 } });
 def('SHEETNAME SHEET', { args: '', desc: 'The name of this sheet', fn: (a, ctx) => ctx.sheet });
+
+// ---- subtotals that see hidden and filtered rows ----
+const SUB = { 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV.S', 8: 'STDEV.P', 9: 'SUM', 10: 'VAR.S', 11: 'VAR.P' };
+const nested = (ctx, sheet, r, c) => /^=\s*(SUBTOTAL|AGGREGATE)\s*\(/i.test(ctx.formulaText(sheet, r, c) || '');
+def('SUBTOTAL', { args: 'function_num, ref1, [ref2], …', desc: 'A total that leaves out filtered rows (101–111: hidden rows too) and other subtotals', volatile: true, fn: (a, ctx) => {
+  const k = num(scalar(a[0], ctx));
+  if (isErr(k)) return k;
+  const name = SUB[Math.trunc(k) % 100];
+  if (!name || (k > 11 && k < 101) || k > 111) return err('#VALUE!');
+  const all = k >= 100;
+  const saved = ctx.hiddenSkip;
+  ctx.hiddenSkip = (sheet, r, c) => (ctx.rowHidden ? ctx.rowHidden(sheet, r, all) : false) || nested(ctx, sheet, r, c);
+  try { return FN[name].fn(a.slice(1).filter((x) => x !== undefined), ctx); } finally { ctx.hiddenSkip = saved; }
+} });
+def('AGGREGATE', { args: 'function_num, options, ref1, [k]', desc: 'A total that can leave out hidden rows, errors and subtotals', volatile: true, acceptsErrors: true, fn: (a, ctx) => {
+  const k = num(scalar(a[0], ctx));
+  const opt = a[1] === undefined ? 0 : num(scalar(a[1], ctx));
+  if (firstErr(k, opt)) return firstErr(k, opt);
+  const hidden = [1, 3, 5, 7].includes(opt);
+  const noErrors = [2, 3, 6, 7].includes(opt);
+  const noNested = [0, 1, 2, 3].includes(opt);
+  const saved = ctx.hiddenSkip;
+  ctx.hiddenSkip = (sheet, r, c) => (hidden && ctx.rowHidden ? ctx.rowHidden(sheet, r, true) : false) || (noNested && nested(ctx, sheet, r, c));
+  const vals = [];
+  try { for (const [v] of each([a[2]], ctx)) vals.push(v); } finally { ctx.hiddenSkip = saved; }
+  if (!noErrors) { const e = vals.find(isErr); if (e) return e; }
+  const xs = vals.filter((v) => typeof v === 'number');
+  const kk = a[3] !== undefined ? num(scalar(a[3], ctx)) : null;
+  switch (Math.trunc(k)) {
+    case 1: return mean(xs);
+    case 2: return xs.length;
+    case 3: return vals.filter((v) => v !== null && v !== '' && !(noErrors && isErr(v))).length;
+    case 4: return xs.length ? Math.max(...xs) : 0;
+    case 5: return xs.length ? Math.min(...xs) : 0;
+    case 6: return xs.reduce((p, v) => p * v, 1);
+    case 7: case 8: { const v = variance(xs, k === 7); return isErr(v) ? v : Math.sqrt(v); }
+    case 9: return sum(xs);
+    case 10: case 11: return variance(xs, k === 10);
+    case 12: return xs.length ? percentile(xs, 0.5) : err('#NUM!');
+    case 13: { const m = modeOf(xs); return m === null ? err('#N/A') : m; }
+    case 14: case 15: { const s = sorted(xs); if (k === 14) s.reverse(); return kk >= 1 && kk <= s.length ? s[Math.ceil(kk) - 1] : err('#NUM!'); }
+    case 16: case 17: case 18: case 19: {
+      if (kk === null || isErr(kk)) return err('#VALUE!');
+      const p = k === 16 || k === 18 ? kk : kk / 4;
+      return p < 0 || p > 1 ? err('#NUM!') : percentile(xs, p, k >= 18);
+    }
+    default: return err('#VALUE!');
+  }
+} });
+function modeOf(xs) {
+  const counts = new Map();
+  let best = null;
+  let bestN = 1;
+  for (const x of xs) { const n = (counts.get(x) || 0) + 1; counts.set(x, n); if (n > bestN) { bestN = n; best = x; } }
+  return best;
+}
+
+// ---- finance ----
+def('XNPV', { args: 'rate, values, dates', desc: 'Net present value of cash flows on given dates', fn: (a, ctx) => {
+  const r = num(scalar(a[0], ctx));
+  const v = flat(a[1], ctx).map(num);
+  const d = flat(a[2], ctx).map(num);
+  if (isErr(r)) return r;
+  if (v.length !== d.length || !v.length) return err('#NUM!');
+  const e = [...v, ...d].find(isErr);
+  if (e) return e;
+  return v.reduce((s, x, i) => s + x / (1 + r) ** ((d[i] - d[0]) / 365), 0);
+} });
+def('XIRR', { args: 'values, dates, [guess]', desc: 'Internal rate of return of cash flows on given dates', fn: (a, ctx) => {
+  const v = flat(a[0], ctx).map(num);
+  const d = flat(a[1], ctx).map(num);
+  if (v.length !== d.length || v.length < 2) return err('#NUM!');
+  const e = [...v, ...d].find(isErr);
+  if (e) return e;
+  if (!v.some((x) => x > 0) || !v.some((x) => x < 0)) return err('#NUM!');
+  const f = (r) => v.reduce((s, x, i) => s + x / (1 + r) ** ((d[i] - d[0]) / 365), 0);
+  const df = (r) => v.reduce((s, x, i) => { const t = (d[i] - d[0]) / 365; return s - (t * x) / (1 + r) ** (t + 1); }, 0);
+  let r = a[2] !== undefined ? num(scalar(a[2], ctx)) : 0.1;
+  for (let i = 0; i < 100; i++) {
+    const nr = r - f(r) / df(r);
+    if (!Number.isFinite(nr) || nr <= -1) break;
+    if (Math.abs(nr - r) < 1e-10) return nr;
+    r = nr;
+  }
+  // Newton did not settle: bisection between -99.99% and 1000%.
+  let lo = -0.9999;
+  let hi = 10;
+  if (f(lo) * f(hi) > 0) return err('#NUM!');
+  for (let i = 0; i < 300; i++) { const m = (lo + hi) / 2; if (f(lo) * f(m) <= 0) hi = m; else lo = m; }
+  return (lo + hi) / 2;
+} });
+function pmtOf(rate, nper, pv, fv = 0, type = 0) {
+  if (rate === 0) return -(pv + fv) / nper;
+  const p = (1 + rate) ** nper;
+  return (-rate * (pv * p + fv)) / ((1 + rate * type) * (p - 1));
+}
+function cumulative(a, ctx, principal) {
+  const [rate, nper, pv, start, end, type] = a.map((x) => num(scalar(x, ctx)));
+  const e = firstErr(rate, nper, pv, start, end, type);
+  if (e) return e;
+  if (rate <= 0 || nper <= 0 || pv <= 0 || start < 1 || end < start || end > nper || ![0, 1].includes(type)) return err('#NUM!');
+  const pmt = pmtOf(rate, nper, pv, 0, type);
+  let bal = pv;
+  let interest = 0;
+  let paid = 0;
+  for (let k = 1; k <= end; k++) {
+    const i = type === 1 && k === 1 ? 0 : -bal * rate;
+    const pr = pmt - i;
+    if (k >= start) { interest += i; paid += pr; }
+    bal += pr;
+  }
+  return principal ? paid : interest;
+}
+def('CUMIPMT', { args: 'rate, nper, pv, start_period, end_period, type', desc: 'Interest paid between two periods', fn: (a, ctx) => cumulative(a, ctx, false) });
+def('CUMPRINC', { args: 'rate, nper, pv, start_period, end_period, type', desc: 'Principal paid between two periods', fn: (a, ctx) => cumulative(a, ctx, true) });
+def('SYD', { args: 'cost, salvage, life, period', desc: "Sum-of-years'-digits depreciation", fn: N((c, s, l, p) => (l <= 0 || p < 1 || p > l ? err('#NUM!') : ((c - s) * (l - p + 1) * 2) / (l * (l + 1)))) });
+def('DDB', { args: 'cost, salvage, life, period, [factor]', desc: 'Double-declining balance depreciation', fn: (a, ctx) => {
+  const [c, s, l, p] = a.slice(0, 4).map((x) => num(scalar(x, ctx)));
+  const f = a[4] !== undefined ? num(scalar(a[4], ctx)) : 2;
+  const e = firstErr(c, s, l, p, f);
+  if (e) return e;
+  if (l <= 0 || p <= 0 || p > l || f <= 0 || c < 0 || s < 0) return err('#NUM!');
+  let book = c;
+  let dep = 0;
+  for (let k = 1; k <= Math.ceil(p); k++) { dep = Math.max(0, Math.min(book * (f / l), book - s)); book -= dep; }
+  return dep;
+} });
+def('DB', { args: 'cost, salvage, life, period, [month]', desc: 'Fixed-declining balance depreciation', fn: (a, ctx) => {
+  const [c, s, l, p] = a.slice(0, 4).map((x) => num(scalar(x, ctx)));
+  const m = a[4] !== undefined ? num(scalar(a[4], ctx)) : 12;
+  const e = firstErr(c, s, l, p, m);
+  if (e) return e;
+  if (c <= 0 || l <= 0 || p <= 0 || m < 1 || m > 12 || p > l + 1) return err('#NUM!');
+  const rate = Math.round((1 - (s / c) ** (1 / l)) * 1000) / 1000;
+  let total = 0;
+  let dep = (c * rate * m) / 12;
+  if (p === 1) return dep;
+  total = dep;
+  for (let k = 2; k <= p; k++) {
+    dep = k === l + 1 ? ((c - total) * rate * (12 - m)) / 12 : (c - total) * rate;
+    total += dep;
+  }
+  return dep;
+} });
+
+// ---- working days with any weekend ----
+function weekendMask(w) {
+  if (w === undefined || w === null) return [6, 0];
+  if (typeof w === 'string' && /^[01]{7}$/.test(w)) return [...w].map((ch, i) => (ch === '1' ? (i + 1) % 7 : -1)).filter((x) => x >= 0);
+  const n = Number(w);
+  const pairs = { 1: [6, 0], 2: [0, 1], 3: [1, 2], 4: [2, 3], 5: [3, 4], 6: [4, 5], 7: [5, 6], 11: [0], 12: [1], 13: [2], 14: [3], 15: [4], 16: [5], 17: [6] };
+  return pairs[n] || null;
+}
+def('NETWORKDAYS.INTL', { args: 'start_date, end_date, [weekend], [holidays]', desc: 'Working days between dates, with your own weekend', fn: (a, ctx) => {
+  const s = num(scalar(a[0], ctx));
+  const e = num(scalar(a[1], ctx));
+  if (firstErr(s, e)) return firstErr(s, e);
+  const wk = weekendMask(a[2] === undefined ? undefined : scalar(a[2], ctx));
+  if (!wk) return err('#NUM!');
+  const hol = new Set(a[3] ? flat(a[3], ctx).filter((v) => typeof v === 'number').map(Math.floor) : []);
+  const step = e >= s ? 1 : -1;
+  let n = 0;
+  for (let d = Math.floor(s); step > 0 ? d <= e : d >= e; d += step) if (!wk.includes(parts(d).wd) && !hol.has(d)) n += step;
+  return n;
+} });
+def('WORKDAY.INTL', { args: 'start_date, days, [weekend], [holidays]', desc: 'The date some working days away, with your own weekend', fn: (a, ctx) => {
+  let d = Math.floor(num(scalar(a[0], ctx)));
+  let n = Math.trunc(num(scalar(a[1], ctx)));
+  if (firstErr(d, n)) return firstErr(d, n);
+  const wk = weekendMask(a[2] === undefined ? undefined : scalar(a[2], ctx));
+  if (!wk || wk.length >= 7) return err('#NUM!');
+  const hol = new Set(a[3] ? flat(a[3], ctx).filter((v) => typeof v === 'number').map(Math.floor) : []);
+  const step = n >= 0 ? 1 : -1;
+  while (n !== 0) { d += step; if (!wk.includes(parts(d).wd) && !hol.has(d)) n -= step; }
+  return d;
+} });
+
+// ---- regular expressions ----
+function regex(p, flags, ctx) {
+  try { return new RegExp(str(scalar(p, ctx)), flags); } catch { return err('#VALUE!', 'That pattern is not a valid regular expression'); }
+}
+def('REGEXTEST REGEXMATCH', { args: 'text, pattern, [case_sensitivity]', desc: 'Whether text matches a pattern', fn: lift(([t, p, cs]) => { const re = regex(p, cs === 1 ? 'i' : '', null); return isErr(re) ? re : re.test(str(t)); }) });
+def('REGEXEXTRACT', { args: 'text, pattern, [return_mode], [case_sensitivity]', desc: 'The part of text that matches a pattern', fn: (a, ctx) => {
+  const t = str(scalar(a[0], ctx));
+  const mode = a[2] !== undefined ? num(scalar(a[2], ctx)) : 0;
+  const ci = a[3] !== undefined && num(scalar(a[3], ctx)) === 1;
+  const re = regex(a[1], ci ? 'gi' : 'g', ctx);
+  if (isErr(re)) return re;
+  const ms = [...t.matchAll(re)];
+  if (!ms.length) return err('#N/A');
+  if (mode === 1) return new Arr(ms.map((m) => [m[0]]));
+  if (mode === 2) return ms[0].length > 1 ? new Arr([ms[0].slice(1).map((x) => x ?? '')]) : ms[0][0];
+  return ms[0].length > 1 && a[2] === undefined ? ms[0][1] ?? '' : ms[0][0];
+} });
+def('REGEXREPLACE', { args: 'text, pattern, replacement, [occurrence], [case_sensitivity]', desc: 'Replaces the parts of text that match a pattern', fn: (a, ctx) => {
+  const t = str(scalar(a[0], ctx));
+  const rep = str(scalar(a[2], ctx)).replace(/\$(\d)/g, '$$$1');
+  const occ = a[3] !== undefined ? num(scalar(a[3], ctx)) : 0;
+  const ci = a[4] !== undefined && num(scalar(a[4], ctx)) === 1;
+  const re = regex(a[1], ci ? 'gi' : 'g', ctx);
+  if (isErr(re)) return re;
+  if (!occ) return t.replace(re, rep);
+  const ms = [...t.matchAll(re)];
+  const m = occ > 0 ? ms[occ - 1] : ms[ms.length + occ];
+  if (!m) return t;
+  return t.slice(0, m.index) + m[0].replace(new RegExp(re.source, re.flags.replace('g', '')), rep) + t.slice(m.index + m[0].length);
+} });
+
+// ---- reshaping arrays ----
+const pick = (list, idx) => idx.map((i) => (i > 0 ? list[i - 1] : list[list.length + i]));
+def('CHOOSECOLS', { args: 'array, col_num1, [col_num2], …', desc: 'Some columns of an array', fn: (a, ctx) => {
+  const g = grid(a[0], ctx);
+  const idx = flat(new Arr([a.slice(1).flatMap((x) => flat(x, ctx))]), ctx).map((x) => Math.trunc(num(x)));
+  if (idx.some((i) => !i || Math.abs(i) > g[0].length)) return err('#VALUE!');
+  return new Arr(g.map((row) => pick(row, idx)));
+} });
+def('CHOOSEROWS', { args: 'array, row_num1, [row_num2], …', desc: 'Some rows of an array', fn: (a, ctx) => {
+  const g = grid(a[0], ctx);
+  const idx = a.slice(1).flatMap((x) => flat(x, ctx)).map((x) => Math.trunc(num(x)));
+  if (idx.some((i) => !i || Math.abs(i) > g.length)) return err('#VALUE!');
+  return new Arr(pick(g, idx).map((r) => r.slice()));
+} });
+function line(a, ctx) {
+  const g = grid(a[0], ctx);
+  const ignore = a[1] !== undefined ? num(scalar(a[1], ctx)) : 0;
+  const byCol = a[2] !== undefined && bool(scalar(a[2], ctx)) === true;
+  const out = [];
+  const keep = (v) => !((ignore === 1 || ignore === 3) && (v === null || v === '')) && !((ignore === 2 || ignore === 3) && isErr(v));
+  if (byCol) { for (let c = 0; c < g[0].length; c++) for (const row of g) if (keep(row[c])) out.push(row[c]); } else for (const row of g) for (const v of row) if (keep(v)) out.push(v);
+  return out;
+}
+def('TOCOL', { args: 'array, [ignore], [scan_by_column]', desc: 'An array as one column', fn: (a, ctx) => { const v = line(a, ctx); return v.length ? new Arr(v.map((x) => [x])) : err('#CALC!'); } });
+def('TOROW', { args: 'array, [ignore], [scan_by_column]', desc: 'An array as one row', fn: (a, ctx) => { const v = line(a, ctx); return v.length ? new Arr([v]) : err('#CALC!'); } });
+function wrap(a, ctx, rows) {
+  const v = flat(a[0], ctx);
+  const n = Math.trunc(num(scalar(a[1], ctx)));
+  const pad = a[2] !== undefined ? scalar(a[2], ctx) : err('#N/A');
+  if (!(n >= 1)) return err('#NUM!');
+  const lines = [];
+  for (let i = 0; i < v.length; i += n) { const l = v.slice(i, i + n); while (l.length < n) l.push(pad); lines.push(l); }
+  return new Arr(rows ? lines : lines[0].map((_, c) => lines.map((l) => l[c])));
+}
+def('WRAPROWS', { args: 'vector, wrap_count, [pad_with]', desc: 'A list wrapped into rows', fn: (a, ctx) => wrap(a, ctx, true) });
+def('WRAPCOLS', { args: 'vector, wrap_count, [pad_with]', desc: 'A list wrapped into columns', fn: (a, ctx) => wrap(a, ctx, false) });
+def('EXPAND', { args: 'array, rows, [columns], [pad_with]', desc: 'An array made bigger', fn: (a, ctx) => {
+  const g = grid(a[0], ctx);
+  const r = a[1] !== undefined && a[1] !== null ? Math.trunc(num(scalar(a[1], ctx))) : g.length;
+  const c = a[2] !== undefined && a[2] !== null ? Math.trunc(num(scalar(a[2], ctx))) : g[0].length;
+  const pad = a[3] !== undefined ? scalar(a[3], ctx) : err('#N/A');
+  if (r < g.length || c < g[0].length) return err('#VALUE!');
+  return new Arr(Array.from({ length: r }, (_, i) => Array.from({ length: c }, (__, j) => (g[i] && j < g[i].length ? g[i][j] : pad))));
+} });
+def('FREQUENCY', { args: 'data_array, bins_array', desc: 'How many values fall in each bin', fn: (a, ctx) => {
+  const data = flat(a[0], ctx).filter((v) => typeof v === 'number');
+  const bins = flat(a[1], ctx).filter((v) => typeof v === 'number');
+  const order = bins.map((b, i) => [b, i]).sort((x, y) => x[0] - y[0]);
+  const counts = Array(bins.length + 1).fill(0);
+  for (const x of data) { const k = order.find(([b]) => x <= b); counts[k ? k[1] : bins.length]++; }
+  return new Arr(counts.map((n) => [n]));
+} });
+
+// ---- statistics ----
+function gammaln(x) {
+  const g = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+  let y = x;
+  let tmp = x + 5.5;
+  tmp -= (x + 0.5) * Math.log(tmp);
+  let ser = 1.000000000190015;
+  for (const c of g) ser += c / ++y;
+  return -tmp + Math.log((2.5066282746310005 * ser) / x);
+}
+function betacf(a, b, x) {
+  let qab = a + b; let qap = a + 1; let qam = a - 1; let c = 1; let d = 1 - (qab * x) / qap;
+  if (Math.abs(d) < 1e-30) d = 1e-30;
+  d = 1 / d;
+  let hh = d;
+  for (let m = 1; m <= 300; m++) {
+    const m2 = 2 * m;
+    let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < 1e-30) d = 1e-30; c = 1 + aa / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d; hh *= d * c;
+    aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < 1e-30) d = 1e-30; c = 1 + aa / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d;
+    const del = d * c;
+    hh *= del;
+    if (Math.abs(del - 1) < 3e-14) break;
+  }
+  void qab; void qap; void qam;
+  return hh;
+}
+/** The regularised incomplete beta function I_x(a, b). */
+function ibeta(x, a, b) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const bt = Math.exp(gammaln(a + b) - gammaln(a) - gammaln(b) + a * Math.log(x) + b * Math.log(1 - x));
+  return x < (a + 1) / (a + b + 2) ? (bt * betacf(a, b, x)) / a : 1 - (bt * betacf(b, a, 1 - x)) / b;
+}
+/** The regularised lower incomplete gamma function P(a, x). */
+function igamma(a, x) {
+  if (x <= 0) return 0;
+  if (x < a + 1) {
+    let sum0 = 1 / a; let del = sum0; let ap = a;
+    for (let n = 0; n < 500; n++) { ap++; del *= x / ap; sum0 += del; if (Math.abs(del) < Math.abs(sum0) * 3e-15) break; }
+    return sum0 * Math.exp(-x + a * Math.log(x) - gammaln(a));
+  }
+  let b = x + 1 - a; let c = 1e300; let d = 1 / b; let hh = d;
+  for (let i = 1; i < 500; i++) {
+    const an = -i * (i - a); b += 2;
+    d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300; c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300; d = 1 / d;
+    const del = d * c; hh *= del; if (Math.abs(del - 1) < 3e-15) break;
+  }
+  return 1 - Math.exp(-x + a * Math.log(x) - gammaln(a)) * hh;
+}
+const tcdf = (t, df) => { const x = df / (df + t * t); const p = 0.5 * ibeta(x, df / 2, 0.5); return t >= 0 ? 1 - p : p; };
+const tpdf = (t, df) => Math.exp(gammaln((df + 1) / 2) - gammaln(df / 2)) / Math.sqrt(df * Math.PI) * (1 + (t * t) / df) ** (-(df + 1) / 2);
+/** Inverse of a rising function on [lo, hi] by bisection. */
+function invert(f, p, lo, hi) {
+  for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (f(m) < p) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+// The standard normal's inverse (Acklam's approximation, then one Newton step).
+function normsinv(p) {
+  if (p <= 0 || p >= 1) return err('#NUM!');
+  const A = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
+  const B = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const C = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const D = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  let x;
+  if (p < 0.02425) { const q = Math.sqrt(-2 * Math.log(p)); x = (((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5]) / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1); } else if (p > 1 - 0.02425) { const q = Math.sqrt(-2 * Math.log(1 - p)); x = -(((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5]) / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1); } else {
+    const q = p - 0.5; const r = q * q;
+    x = ((((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5]) * q) / (((((B[0] * r + B[1]) * r + B[2]) * r + B[3]) * r + B[4]) * r + 1);
+  }
+  const e = 0.5 * (1 + erfFine(x / Math.SQRT2)) - p;
+  const u = e * Math.sqrt(2 * Math.PI) * Math.exp((x * x) / 2);
+  return x - u / (1 + (x * u) / 2);
+}
+// erf to near machine precision (for the inverse above and the standard normal).
+function erfFine(x) {
+  const t = Math.abs(x);
+  if (t < 2.5) { let s = 0; let term = t; for (let n = 0; n < 60; n++) { s += term / (2 * n + 1); term *= (-t * t) / (n + 1); } const v = (2 / Math.sqrt(Math.PI)) * s; return x < 0 ? -v : v; }
+  const v = 1 - Math.exp(-t * t) / (t * Math.sqrt(Math.PI)) * (1 - 1 / (2 * t * t) + 3 / (4 * t ** 4) - 15 / (8 * t ** 6));
+  return x < 0 ? -v : v;
+}
+const phi = (z) => 0.5 * (1 + erfFine(z / Math.SQRT2));
+def('NORM.S.DIST', { args: 'z, cumulative', desc: 'Standard normal distribution', fn: (a, ctx) => { const z = num(scalar(a[0], ctx)); if (isErr(z)) return z; return bool(scalar(a[1], ctx)) === true ? phi(z) : Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI); } });
+def('NORMSDIST', { args: 'z', desc: 'Cumulative standard normal distribution', fn: N((z) => phi(z)) });
+def('NORM.S.INV NORMSINV', { args: 'probability', desc: 'Inverse of the standard normal distribution', fn: N((p) => normsinv(p)) });
+def('NORM.INV NORMINV', { args: 'probability, mean, standard_dev', desc: 'Inverse of the normal distribution', fn: N((p, m, s) => { if (s <= 0) return err('#NUM!'); const z = normsinv(p); return isErr(z) ? z : m + s * z; }) });
+def('T.DIST', { args: 'x, deg_freedom, cumulative', desc: "Student's t distribution", fn: (a, ctx) => { const x = num(scalar(a[0], ctx)); const df = num(scalar(a[1], ctx)); if (firstErr(x, df)) return firstErr(x, df); if (df < 1) return err('#NUM!'); return bool(scalar(a[2], ctx)) === true ? tcdf(x, df) : tpdf(x, df); } });
+def('T.DIST.2T', { args: 'x, deg_freedom', desc: "Two-tailed Student's t distribution", fn: N((x, df) => (x < 0 || df < 1 ? err('#NUM!') : 2 * (1 - tcdf(x, df)))) });
+def('T.DIST.RT', { args: 'x, deg_freedom', desc: "Right-tailed Student's t distribution", fn: N((x, df) => (df < 1 ? err('#NUM!') : 1 - tcdf(x, df))) });
+def('TDIST', { args: 'x, deg_freedom, tails', desc: "Student's t distribution (older)", fn: N((x, df, tails) => (x < 0 || df < 1 || ![1, 2].includes(tails) ? err('#NUM!') : tails * (1 - tcdf(x, df)))) });
+def('T.INV', { args: 'probability, deg_freedom', desc: "Inverse of Student's t distribution", fn: N((p, df) => (p <= 0 || p >= 1 || df < 1 ? err('#NUM!') : invert((t) => tcdf(t, df), p, -1e4, 1e4))) });
+def('T.INV.2T TINV', { args: 'probability, deg_freedom', desc: "Two-tailed inverse of Student's t distribution", fn: N((p, df) => (p <= 0 || p > 1 || df < 1 ? err('#NUM!') : invert((t) => tcdf(t, df), 1 - p / 2, -1e4, 1e4))) });
+def('T.TEST TTEST', { args: 'array1, array2, tails, type', desc: "Student's t-test probability", fn: (a, ctx) => {
+  const x = flat(a[0], ctx);
+  const y = flat(a[1], ctx);
+  const tails = num(scalar(a[2], ctx));
+  const type = num(scalar(a[3], ctx));
+  if (![1, 2].includes(tails) || ![1, 2, 3].includes(type)) return err('#NUM!');
+  let t;
+  let df;
+  if (type === 1) {
+    if (x.length !== y.length) return err('#N/A');
+    const d = x.map((v, i) => [v, y[i]]).filter(([p, q]) => typeof p === 'number' && typeof q === 'number').map(([p, q]) => p - q);
+    if (d.length < 2) return err('#DIV/0!');
+    const m = mean(d); const sd = Math.sqrt(variance(d, true));
+    t = m / (sd / Math.sqrt(d.length)); df = d.length - 1;
+  } else {
+    const xs = x.filter((v) => typeof v === 'number'); const ys = y.filter((v) => typeof v === 'number');
+    if (xs.length < 2 || ys.length < 2) return err('#DIV/0!');
+    const v1 = variance(xs, true); const v2 = variance(ys, true);
+    if (type === 2) {
+      df = xs.length + ys.length - 2;
+      const sp = ((xs.length - 1) * v1 + (ys.length - 1) * v2) / df;
+      t = (mean(xs) - mean(ys)) / Math.sqrt(sp * (1 / xs.length + 1 / ys.length));
+    } else {
+      const a1 = v1 / xs.length; const a2 = v2 / ys.length;
+      t = (mean(xs) - mean(ys)) / Math.sqrt(a1 + a2);
+      df = (a1 + a2) ** 2 / (a1 ** 2 / (xs.length - 1) + a2 ** 2 / (ys.length - 1));
+    }
+  }
+  return tails * (1 - tcdf(Math.abs(t), df));
+} });
+def('CHISQ.DIST', { args: 'x, deg_freedom, cumulative', desc: 'Chi-squared distribution', fn: (a, ctx) => { const x = num(scalar(a[0], ctx)); const k = num(scalar(a[1], ctx)); if (firstErr(x, k)) return firstErr(x, k); if (x < 0 || k < 1) return err('#NUM!'); return bool(scalar(a[2], ctx)) === true ? igamma(k / 2, x / 2) : x === 0 ? (k === 2 ? 0.5 : 0) : Math.exp((k / 2 - 1) * Math.log(x) - x / 2 - (k / 2) * Math.LN2 - gammaln(k / 2)); } });
+def('CHISQ.DIST.RT CHIDIST', { args: 'x, deg_freedom', desc: 'Right-tailed chi-squared distribution', fn: N((x, k) => (x < 0 || k < 1 ? err('#NUM!') : 1 - igamma(k / 2, x / 2))) });
+def('CHISQ.INV.RT CHIINV', { args: 'probability, deg_freedom', desc: 'Inverse of the right-tailed chi-squared distribution', fn: N((p, k) => (p <= 0 || p > 1 || k < 1 ? err('#NUM!') : invert((x) => -(1 - igamma(k / 2, x / 2)), -p, 0, 1e5))) });
+def('F.DIST.RT FDIST', { args: 'x, deg_freedom1, deg_freedom2', desc: 'Right-tailed F distribution', fn: N((x, d1, d2) => (x < 0 || d1 < 1 || d2 < 1 ? err('#NUM!') : 1 - ibeta((d1 * x) / (d1 * x + d2), d1 / 2, d2 / 2))) });
+def('BINOM.DIST BINOMDIST', { args: 'number_s, trials, probability_s, cumulative', desc: 'Binomial distribution', fn: (a, ctx) => {
+  const [k0, n0, p] = a.slice(0, 3).map((x) => num(scalar(x, ctx)));
+  if (firstErr(k0, n0, p)) return firstErr(k0, n0, p);
+  const k = Math.floor(k0); const n = Math.floor(n0);
+  if (k < 0 || k > n || p < 0 || p > 1) return err('#NUM!');
+  const pmf = (i) => Math.exp(gammaln(n + 1) - gammaln(i + 1) - gammaln(n - i + 1) + (i ? i * Math.log(p) : 0) + (n - i ? (n - i) * Math.log(1 - p) : 0));
+  if (bool(scalar(a[3], ctx)) !== true) return pmf(k);
+  let s = 0; for (let i = 0; i <= k; i++) s += pmf(i); return Math.min(1, s);
+} });
+def('POISSON.DIST POISSON', { args: 'x, mean, cumulative', desc: 'Poisson distribution', fn: (a, ctx) => {
+  const k = Math.floor(num(scalar(a[0], ctx))); const m = num(scalar(a[1], ctx));
+  if (firstErr(k, m)) return firstErr(k, m);
+  if (k < 0 || m < 0) return err('#NUM!');
+  const pmf = (i) => Math.exp(-m + i * Math.log(m || 1e-300) - gammaln(i + 1));
+  if (bool(scalar(a[2], ctx)) !== true) return m === 0 ? (k === 0 ? 1 : 0) : pmf(k);
+  return m === 0 ? 1 : 1 - igamma(k + 1, m);
+} });
+def('EXPON.DIST EXPONDIST', { args: 'x, lambda, cumulative', desc: 'Exponential distribution', fn: (a, ctx) => { const x = num(scalar(a[0], ctx)); const l = num(scalar(a[1], ctx)); if (firstErr(x, l)) return firstErr(x, l); if (x < 0 || l <= 0) return err('#NUM!'); return bool(scalar(a[2], ctx)) === true ? 1 - Math.exp(-l * x) : l * Math.exp(-l * x); } });
+def('CONFIDENCE.NORM CONFIDENCE', { args: 'alpha, standard_dev, size', desc: 'Confidence interval of a mean (normal)', fn: N((al, s, n) => (al <= 0 || al >= 1 || s <= 0 || n < 1 ? err('#NUM!') : (normsinv(1 - al / 2) * s) / Math.sqrt(Math.floor(n)))) });
+def('CONFIDENCE.T', { args: 'alpha, standard_dev, size', desc: "Confidence interval of a mean (Student's t)", fn: N((al, s, n) => (al <= 0 || al >= 1 || s <= 0 || n < 2 ? err('#NUM!') : (invert((t) => tcdf(t, n - 1), 1 - al / 2, -1e4, 1e4) * s) / Math.sqrt(Math.floor(n)))) });
+def('GAMMALN GAMMALN.PRECISE', { args: 'x', desc: 'Natural log of the gamma function', fn: N((x) => (x <= 0 ? err('#NUM!') : gammaln(x))) });
+def('GAMMA', { args: 'x', desc: 'The gamma function', fn: N((x) => (x <= 0 && Number.isInteger(x) ? err('#NUM!') : x > 0 ? Math.exp(gammaln(x)) : Math.PI / (Math.sin(Math.PI * x) * Math.exp(gammaln(1 - x))))) });
+def('SKEW', { args: 'number1, [number2], …', desc: 'Skewness of a distribution', fn: (a, ctx) => { const x = nums(a, ctx); if (isErr(x)) return x; const n = x.length; if (n < 3) return err('#DIV/0!'); const m = mean(x); const s = Math.sqrt(variance(x, true)); if (!s) return err('#DIV/0!'); return (n / ((n - 1) * (n - 2))) * x.reduce((t, v) => t + ((v - m) / s) ** 3, 0); } });
+def('KURT', { args: 'number1, [number2], …', desc: 'Kurtosis of a distribution', fn: (a, ctx) => { const x = nums(a, ctx); if (isErr(x)) return x; const n = x.length; if (n < 4) return err('#DIV/0!'); const m = mean(x); const s = Math.sqrt(variance(x, true)); if (!s) return err('#DIV/0!'); return ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3))) * x.reduce((t, v) => t + ((v - m) / s) ** 4, 0) - (3 * (n - 1) ** 2) / ((n - 2) * (n - 3)); } });
+def('MODE.MULT', { args: 'number1, [number2], …', desc: 'All the most common values', fn: (a, ctx) => {
+  const x = nums(a, ctx); if (isErr(x)) return x;
+  const counts = new Map(); for (const v of x) counts.set(v, (counts.get(v) || 0) + 1);
+  const top = Math.max(0, ...counts.values()); if (top < 2) return err('#N/A');
+  return new Arr([...counts].filter(([, n]) => n === top).map(([v]) => [v]));
+} });
+function prank(a, ctx, exclusive) {
+  const xs = sorted(nums([a[0]], ctx));
+  const x = num(scalar(a[1], ctx));
+  const sig = a[2] !== undefined ? Math.trunc(num(scalar(a[2], ctx))) : 3;
+  if (isErr(xs)) return xs;
+  if (isErr(x)) return x;
+  const n = xs.length;
+  if (!n || x < xs[0] || x > xs[n - 1] || sig < 1) return err('#N/A');
+  let i = xs.findIndex((v) => v >= x);
+  let rank;
+  if (xs[i] === x) rank = i;
+  else rank = i - 1 + (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
+  const r = exclusive ? (rank + 1) / (n + 1) : n > 1 ? rank / (n - 1) : 1;
+  const f = 10 ** sig;
+  return Math.floor(r * f) / f;
+}
+def('PERCENTRANK PERCENTRANK.INC', { args: 'array, x, [significance]', desc: 'Rank of a value as a percentage of the list', fn: (a, ctx) => prank(a, ctx, false) });
+def('PERCENTRANK.EXC', { args: 'array, x, [significance]', desc: 'Rank of a value as a percentage, exclusive', fn: (a, ctx) => prank(a, ctx, true) });
+
+// ---- numbers in other bases, Roman numerals ----
+const ROMAN = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+def('ROMAN', { args: 'number', desc: 'A number in Roman numerals', fn: N((n) => { n = Math.trunc(n); if (n < 0 || n > 3999) return err('#VALUE!'); let s = ''; for (const [v, r] of ROMAN) while (n >= v) { s += r; n -= v; } return s; }) });
+def('ARABIC', { args: 'text', desc: 'A Roman numeral as a number', fn: lift(([t]) => {
+  const s = str(t).trim().toUpperCase(); const neg = s.startsWith('-'); const body = neg ? s.slice(1) : s;
+  if (!/^[MDCLXVI]*$/.test(body)) return err('#VALUE!');
+  const val = { M: 1000, D: 500, C: 100, L: 50, X: 10, V: 5, I: 1 };
+  let n = 0; for (let i = 0; i < body.length; i++) { const v = val[body[i]]; n += i + 1 < body.length && val[body[i + 1]] > v ? -v : v; }
+  return neg ? -n : n;
+}) });
+function toBase(n, base, places, bits = 40) {
+  n = Math.trunc(n);
+  const lim = 2 ** (bits - 1);
+  if (n < -lim || n >= lim) return err('#NUM!');
+  let s = (n < 0 ? 2 ** bits + n : n).toString(base).toUpperCase();
+  if (places !== undefined && places !== null && n >= 0) { if (s.length > places) return err('#NUM!'); s = s.padStart(places, '0'); }
+  return s;
+}
+function fromBase(t, base, bits = 40) {
+  const s = str(t).trim();
+  if (!s || s.length > 10 || !new RegExp(`^[${'0123456789ABCDEF'.slice(0, base)}]+$`, 'i').test(s)) return err('#NUM!');
+  const n = parseInt(s, base);
+  return s.length === 10 && n >= 2 ** (bits - 1) ? n - 2 ** bits : n;
+}
+for (const [name, base, bits] of [['BIN', 2, 10], ['OCT', 8, 30], ['HEX', 16, 40]]) {
+  def(`DEC2${name}`, { args: 'number, [places]', desc: `A number in base ${base}`, fn: (a, ctx) => { const n = num(scalar(a[0], ctx)); if (isErr(n)) return n; return toBase(n, base, a[1] !== undefined ? num(scalar(a[1], ctx)) : undefined, bits); } });
+  def(`${name}2DEC`, { args: 'number', desc: `A base-${base} number as a decimal`, fn: lift(([t]) => fromBase(t, base, bits)) });
+}
+def('BASE', { args: 'number, radix, [min_length]', desc: 'A number in any base (2–36)', fn: (a, ctx) => { const n = num(scalar(a[0], ctx)); const r = num(scalar(a[1], ctx)); if (firstErr(n, r)) return firstErr(n, r); if (n < 0 || r < 2 || r > 36) return err('#NUM!'); const s = Math.trunc(n).toString(r).toUpperCase(); return a[2] !== undefined ? s.padStart(num(scalar(a[2], ctx)), '0') : s; } });
+def('DECIMAL', { args: 'text, radix', desc: 'A number in any base (2–36) as a decimal', fn: (a, ctx) => { const t = str(scalar(a[0], ctx)).trim(); const r = num(scalar(a[1], ctx)); if (isErr(r)) return r; if (r < 2 || r > 36) return err('#NUM!'); const n = parseInt(t, r); return Number.isNaN(n) || n.toString(r).toUpperCase() !== t.toUpperCase().replace(/^0+(?=.)/, '') ? err('#NUM!') : n; } });
+
+// ---- Google Sheets' own (so its files and habits work here) ----
+def('COUNTUNIQUE', { args: 'value1, [value2], …', desc: 'How many different values', fn: (a, ctx) => { const seen = new Set(); for (const [v] of each(a, ctx)) if (v !== null && v !== '') seen.add(typeof v === 'string' ? v.toLowerCase() : v); return seen.size; } });
+def('SPLIT', { args: 'text, delimiter, [split_by_each], [remove_empty_text]', desc: 'Splits text into cells', fn: (a, ctx) => {
+  const t = str(scalar(a[0], ctx)); const d = str(scalar(a[1], ctx));
+  const each0 = a[2] === undefined ? true : bool(scalar(a[2], ctx)) === true;
+  const drop = a[3] === undefined ? true : bool(scalar(a[3], ctx)) === true;
+  let parts0 = each0 && d.length > 1 ? t.split(new RegExp(`[${d.replace(/[\]\\^-]/g, '\\$&')}]`)) : t.split(d);
+  if (drop) parts0 = parts0.filter((x) => x !== '');
+  return new Arr([parts0.map((x) => parseNumber(x) ?? x)]);
+} });
+def('JOIN', { args: 'delimiter, value_or_array1, [value_or_array2], …', desc: 'Joins values with a delimiter', fn: (a, ctx) => { const d = str(scalar(a[0], ctx)); const out = []; for (const [v] of each(a.slice(1), ctx)) out.push(str(v)); return out.join(d); } });
+def('ARRAYFORMULA', { args: 'array_formula', desc: 'Calculates over whole ranges (every formula here already can)', fn: (a) => a[0] });
+
+// ---- LAMBDA and the functions that use one ----
+export class Lambda {
+  constructor(params, body, locals) { this.params = params; this.body = body; this.locals = locals; }
+  toString() { return ''; }
+}
+/** Run a LAMBDA with these argument values. */
+export function callLambda(f, args, ctx, ev) {
+  if (!(f instanceof Lambda)) return err('#VALUE!', 'That is not a LAMBDA');
+  if (args.length > f.params.length) return err('#VALUE!', 'Too many values for this LAMBDA');
+  const saved = ctx.locals;
+  const savedOmitted = ctx.omitted;
+  ctx.locals = new Map(f.locals || []);
+  ctx.omitted = new Set();
+  f.params.forEach((p, i) => { if (i < args.length && args[i] !== undefined) ctx.locals.set(p, args[i]); else { ctx.locals.set(p, null); ctx.omitted.add(p); } });
+  try { return ev(f.body); } finally { ctx.locals = saved; ctx.omitted = savedOmitted; }
+}
+def('LAMBDA', { args: 'parameter1, [parameter2], …, calculation', desc: 'A function of your own, for LET, MAP, REDUCE and named functions', lazy: true, fn: (asts, ctx) => {
+  if (!asts.length) return err('#VALUE!');
+  const params = asts.slice(0, -1);
+  if (params.some((p) => p.k !== 'nm')) return err('#VALUE!', 'LAMBDA parameters must be names');
+  return new Lambda(params.map((p) => p.v.toUpperCase()), asts[asts.length - 1], new Map(ctx.locals || []));
+} });
+def('ISOMITTED', { args: 'argument', desc: 'Whether a LAMBDA argument was left out', lazy: true, fn: (asts, ctx) => !!(asts[0] && asts[0].k === 'nm' && ctx.omitted && ctx.omitted.has(asts[0].v.toUpperCase())) });
+const one = (v, ctx) => (v instanceof Rng || v instanceof Arr ? scalar(v, ctx) : v);
+def('MAP', { args: 'array1, [array2], …, lambda', desc: 'Applies a LAMBDA to each value', lazy: true, fn: (asts, ctx, ev) => {
+  const vals = asts.map(ev);
+  const f = vals.pop();
+  const gs = vals.map((v) => grid(v, ctx));
+  if (!gs.length) return err('#VALUE!');
+  return new Arr(gs[0].map((row, i) => row.map((_, j) => one(callLambda(f, gs.map((g) => (g[i] ? g[i][j] : null)), ctx, ev), ctx))));
+} });
+def('REDUCE', { args: '[initial_value], array, lambda', desc: 'Folds an array into one value with a LAMBDA', lazy: true, fn: (asts, ctx, ev) => {
+  const [init, arr, f] = asts.length === 2 ? [{ k: 'missing' }, asts[0], asts[1]].map((x) => (x.k === 'missing' ? null : ev(x))) : asts.map((x) => (x.k === 'missing' ? null : ev(x)));
+  let acc = init;
+  for (const v of grid(arr, ctx).flat()) acc = one(callLambda(f, [acc, v], ctx, ev), ctx);
+  return acc;
+} });
+def('SCAN', { args: '[initial_value], array, lambda', desc: 'Each step of folding an array with a LAMBDA', lazy: true, fn: (asts, ctx, ev) => {
+  const [init, arr, f] = asts.map((x) => (x.k === 'missing' ? null : ev(x)));
+  let acc = init;
+  return new Arr(grid(arr, ctx).map((row) => row.map((v) => (acc = one(callLambda(f, [acc, v], ctx, ev), ctx)))));
+} });
+def('BYROW', { args: 'array, lambda', desc: 'A LAMBDA over each row', lazy: true, fn: (asts, ctx, ev) => { const [arr, f] = asts.map(ev); return new Arr(grid(arr, ctx).map((row) => [one(callLambda(f, [new Arr([row])], ctx, ev), ctx)])); } });
+def('BYCOL', { args: 'array, lambda', desc: 'A LAMBDA over each column', lazy: true, fn: (asts, ctx, ev) => { const [arr, f] = asts.map(ev); const g = grid(arr, ctx); return new Arr([g[0].map((_, c) => one(callLambda(f, [new Arr(g.map((row) => [row[c]]))], ctx, ev), ctx))]); } });
+def('MAKEARRAY', { args: 'rows, columns, lambda', desc: 'An array made by a LAMBDA of row and column', lazy: true, fn: (asts, ctx, ev) => {
+  const [r, c, f] = asts.map(ev);
+  const R = Math.trunc(num(scalar(r, ctx))); const C = Math.trunc(num(scalar(c, ctx)));
+  if (!(R >= 1 && C >= 1) || R * C > 1e6) return err('#VALUE!');
+  return new Arr(Array.from({ length: R }, (_, i) => Array.from({ length: C }, (__, j) => one(callLambda(f, [i + 1, j + 1], ctx, ev), ctx))));
+} });
 
 export const FN_NAMES = Object.keys(FN).sort();
 export { cmpValues, eqLoose, colName };

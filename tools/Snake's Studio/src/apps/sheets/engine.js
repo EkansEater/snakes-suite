@@ -4,7 +4,7 @@ import {
   parse, refsOf, namesOf, isVolatile, err, isErr, FormulaError, MAX_COLS, MAX_ROWS,
   shiftFormula, adjustForInsert, renameSheetRefs, parseRange, quoteSheet,
 } from './formula.js';
-import { FN, Rng, Arr, Spark, grid as toGrid, scalar, num, str, bool, parseNumber, cmpValues } from './functions.js';
+import { FN, Rng, Arr, Spark, Lambda, callLambda, grid as toGrid, scalar, num, str, bool, parseNumber, cmpValues } from './functions.js';
 import { formatValue } from './numfmt.js';
 
 export const DEF_W = 100; // default column width (px)
@@ -839,6 +839,16 @@ class Calc {
       isFormula: (n, rr, cc) => { const s = book.sheet(n); const cell = s && s.get(rr, cc); return !!(cell && cell.f); },
       formulaText: (n, rr, cc) => { const s = book.sheet(n); const cell = s && s.get(rr, cc); return cell && cell.f ? `=${cell.f}` : null; },
       formatValue: (v, fmt) => formatValue(v, fmt).text,
+      // Hidden rows for SUBTOTAL and AGGREGATE: any hidden row, or only rows a filter hides.
+      rowHidden: (sheetName, rr, any) => {
+        const s = sheetName === sh.name ? sh : book.sheet(sheetName);
+        if (!s || !s.hiddenR.has(rr)) return false;
+        if (any) return true;
+        const f = s.filter;
+        if (!f || !f.hidden || !f.hidden.length) return false;
+        if (!f._set || f._set.src !== f.hidden) f._set = Object.assign(new Set(f.hidden), { src: f.hidden });
+        return f._set.has(rr);
+      },
     };
     return ctx;
   }
@@ -876,7 +886,12 @@ class Calc {
         case 'o': return binary(n.op, ev(n.a), ev(n.b), ctx);
         case 'f': {
           const spec = FN[n.name];
-          if (!spec) return err('#NAME?', `There is no function called ${n.name}`);
+          if (!spec) {
+            // A LAMBDA named in LET, or a named function of the workbook.
+            const lam = this.lambdaNamed(n.name, ctx, ev);
+            if (lam) return callLambda(lam, n.args.map((x) => (x.k === 'missing' ? undefined : ev(x))), ctx, ev);
+            return err('#NAME?', `There is no function called ${n.name}`);
+          }
           if (spec.lazy) return spec.fn(n.args, ctx, ev);
           const args = n.args.map((x) => (x.k === 'missing' ? undefined : ev(x)));
           if (!spec.acceptsErrors) {
@@ -888,7 +903,24 @@ class Calc {
         default: return err('#VALUE!');
       }
     };
-    return ev(ast);
+    const v = ev(ast);
+    // A LAMBDA on its own is not a value a cell can show.
+    return v instanceof Lambda ? err('#CALC!', 'A LAMBDA needs values: call it, or use it in MAP, REDUCE or LET') : v;
+  }
+
+  lambdaNamed(name, ctx, ev) {
+    const up = String(name).toUpperCase();
+    if (ctx.locals && ctx.locals.get(up) instanceof Lambda) return ctx.locals.get(up);
+    const d = this.book.names.get(up);
+    if (!d || !/^=?\s*LAMBDA\s*\(/i.test(d.ref)) return null;
+    if (!this.lambdaCache) this.lambdaCache = new Map();
+    let ast = this.lambdaCache.get(d.ref);
+    if (!ast) {
+      try { ast = parse(d.ref.replace(/^=/, '')); } catch { return null; }
+      this.lambdaCache.set(d.ref, ast);
+    }
+    const v = ev(ast);
+    return v instanceof Lambda ? v : null;
   }
 }
 

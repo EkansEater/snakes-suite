@@ -16,6 +16,7 @@ import { FN, FN_NAMES, cmpValues, parseNumber, Spark } from './functions.js';
 import { formatValue, FORMATS, changeDecimals } from './numfmt.js';
 import { Grid } from './grid.js';
 import { parseCSV, toCSV, bookFromCSV, toSnake, fromSnake, readXlsx, writeXlsx } from './io.js';
+import { splitRef } from './xlsxparts.js';
 import { TEMPLATES, templateThumb } from './templates.js';
 
 const FILTERS = [
@@ -53,7 +54,7 @@ const shell = await createShell({
     { label: '&Data', items: () => dataMenu() },
     { label: '&Help', items: () => [I('app.palette'), I('app.shortcuts'), I('fn.insert', { label: 'Function reference…' }), { type: 'separator' }, I('app.about')] },
   ],
-  about: 'A spreadsheet with about 250 functions (including XLOOKUP, FILTER, SORT, UNIQUE and LET), charts, filters and conditional formatting. Reads and writes Excel (.xlsx) and CSV.',
+  about: 'A spreadsheet with over 300 functions (including XLOOKUP, FILTER, LET, LAMBDA, SUBTOTAL and XIRR), charts, filters and conditional formatting. Reads and writes Excel (.xlsx) with its charts, notes and rules, and CSV.',
 });
 const settings = host.settings;
 
@@ -946,6 +947,7 @@ function applyFilter() {
   }
   for (const r of hidden) sheet().hiddenR.add(r);
   f.hidden = hidden;
+  book.calc.recalc(); // SUBTOTAL and AGGREGATE leave filtered rows out
   grid.geoStamp = null;
   grid.drawSoon();
   toast(hidden.length ? `${(last - f.r0 - hidden.length).toLocaleString()} of ${(last - f.r0).toLocaleString()} rows shown` : 'Showing every row', { timeout: 1800 });
@@ -1253,7 +1255,7 @@ function manageCf() {
     sheet().cf.forEach((rule, i) => {
       const x = h('button.tb', { html: icon('trash', 14), 'data-tip': 'Delete rule' });
       x.addEventListener('click', () => { book.edit('Delete rule', () => { book.touchProps(sheet()); sheet().cf.splice(i, 1); }); grid.cfCache = null; grid.drawSoon(); render(); });
-      const desc = { gt: `Greater than ${rule.a}`, lt: `Less than ${rule.a}`, between: `Between ${rule.a} and ${rule.b}`, eq: `Equal to ${rule.a}`, text: `Contains “${rule.a}”`, dup: 'Duplicates', unique: 'Unique values', blank: 'Empty', error: 'Errors', top: `Top ${rule.n}${rule.percent ? '%' : ''}`, bottom: `Bottom ${rule.n}`, above: 'Above average', below: 'Below average', scale: 'Colour scale', bar: 'Data bars' }[rule.type] || rule.type;
+      const desc = { gt: `Greater than ${rule.a}`, lt: `Less than ${rule.a}`, between: `Between ${rule.a} and ${rule.b}`, eq: `Equal to ${rule.a}`, ne: `Not equal to ${rule.a}`, ge: `${rule.a} or more`, le: `${rule.a} or less`, nb: `Not between ${rule.a} and ${rule.b}`, raw: 'Excel rule (kept as it is)', text: `Contains “${rule.a}”`, dup: 'Duplicates', unique: 'Unique values', blank: 'Empty', error: 'Errors', top: `Top ${rule.n}${rule.percent ? '%' : ''}`, bottom: `Bottom ${rule.n}`, above: 'Above average', below: 'Below average', scale: 'Colour scale', bar: 'Data bars' }[rule.type] || rule.type;
       list.append(h('div.row.list-item', h('span', { style: { width: '14px', height: '14px', borderRadius: '3px', background: rule.style ? rule.style.fill || rule.style.color : rule.color || (rule.colors || ['#888'])[0] } }), h('span.grow', desc), h('span.muted', rangeText(rule.range)), x));
     });
   };
@@ -1319,6 +1321,25 @@ const charts = (() => {
   const boxes = new Map();
   let selected = null;
   const dataOf = (ch) => {
+    // A chart from an Excel file names its own cells, perhaps on other sheets.
+    if (ch.refs) {
+      const valuesOf = (ref) => {
+        const p = splitRef(ref);
+        if (!p) return [];
+        const sh = p.sheet ? book.sheets.find((x) => x.name === p.sheet) : sheet();
+        if (!sh) return [];
+        const out = [];
+        for (let r = p.g.r0; r <= Math.min(p.g.r1, p.g.r0 + 5000); r++) for (let c = p.g.c0; c <= Math.min(p.g.c1, p.g.c0 + 200); c++) { if (!sh.hiddenR.has(r)) out.push(book.value(sh, r, c)); }
+        return out;
+      };
+      const cats = ch.refs.cats ? valuesOf(ch.refs.cats).map((v) => (v === null || v === undefined ? '' : String(typeof v === 'object' ? v.text ?? '' : v))) : null;
+      const series = ch.refs.series.map((x, i) => {
+        const values = valuesOf(x.values).map((v) => (typeof v === 'number' ? v : Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : null));
+        const name = x.nameRef ? String(valuesOf(x.nameRef)[0] ?? x.name ?? '') : x.name || `Series ${i + 1}`;
+        return { name, values };
+      });
+      return { categories: cats || (series[0] ? series[0].values.map((_, i) => String(i + 1)) : []), series };
+    }
     const g = parseRange(ch.range);
     if (!g) return { categories: [], series: [] };
     const sh = ch.sheet ? book.sheet(ch.sheet) || sheet() : sheet();

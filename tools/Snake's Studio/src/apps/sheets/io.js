@@ -5,6 +5,7 @@ import { esc, parseXml, all, first, kids, kid, attr, XML_HEAD } from '../../kit/
 import { Book, key, rowOf, colOf, DEF_W, DEF_H } from './engine.js';
 import { parseAddr, colName, shiftFormula, err, isErr, MAX_COLS } from './formula.js';
 import { formatValue } from './numfmt.js';
+import { relsMap, resolvePath, readCharts, readNotes, readDxfs, readCf, readValidation, chartRefs, chartXml, drawingXml, notesXml, cfXml, validationXml, dxfXml, CT, REL } from './xlsxparts.js';
 
 // ===========================================================================
 // CSV
@@ -190,6 +191,7 @@ export async function readXlsx(bytes) {
 
   // Styles.
   const xfStyle = [];
+  let dxfs = [];
   const stylesXml = await text('xl/styles.xml');
   if (stylesXml) {
     const sd = parseXml(stylesXml);
@@ -217,6 +219,7 @@ export async function readXlsx(bytes) {
       }
       return Object.keys(out).length ? out : null;
     });
+    dxfs = readDxfs(sd, colorOf);
     const defaultFont = fonts[0] || {};
     for (const xf of all(first(sd, 'cellXfs'), 'xf')) {
       const st = {};
@@ -323,38 +326,37 @@ export async function readXlsx(bytes) {
       const B = parseAddr(b || a);
       if (A && B) sh.filter = { r0: A.r, c0: A.c, r1: B.r, c1: B.c, crit: {} };
     }
-    for (const dv of all(first(doc, 'dataValidations'), 'dataValidation')) {
-      if (attr(dv, 'type') !== 'list') continue;
-      const f1 = kid(dv, 'formula1') ? kid(dv, 'formula1').textContent : '';
-      for (const ref of (attr(dv, 'sqref') || '').split(' ')) {
-        const [a, b] = ref.split(':');
-        const A = parseAddr(a);
-        const B = parseAddr(b || a);
-        if (!A || !B) continue;
-        const list = /^".*"$/.test(f1) ? f1.slice(1, -1).split(',') : null;
-        sh.valid.push({ range: { r0: A.r, c0: A.c, r1: B.r, c1: B.c }, type: 'list', list, source: list ? null : f1 });
-      }
+    sh.valid = readValidation(doc);
+    sh.cf = readCf(doc, colorOf, dxfs);
+    // The sheet's links, notes and charts, through its relationships.
+    const srels = relsMap(await text(resolvePath(path, `_rels/${path.split('/').pop()}.rels`)));
+    for (const hl of all(first(doc, 'hyperlinks'), 'hyperlink')) {
+      const rel = srels[attr(hl, 'id')];
+      const url = rel && rel.external ? rel.target : null;
+      const p = parseAddr(String(attr(hl, 'ref') || '').split(':')[0]);
+      if (!url || !p || !/^(https?:|mailto:)/i.test(url)) continue;
+      const k = key(p.r, p.c);
+      const cell = sh.cells.get(k) || { v: null, f: null, s: 0 };
+      if (cell.f) continue;
+      const shown = String(cell.v ?? attr(hl, 'display') ?? url);
+      const q = (x) => `"${String(x).replace(/"/g, '""')}"`;
+      cell.f = `HYPERLINK(${q(url)},${q(shown)})`;
+      cell.v = null;
+      sh.cells.set(k, cell);
     }
-    for (const cf of all(doc, 'conditionalFormatting')) {
-      const ref = (attr(cf, 'sqref') || '').split(' ')[0];
-      const [a, b] = ref.split(':');
-      const A = parseAddr(a);
-      const B = parseAddr(b || a);
-      if (!A || !B) continue;
-      const range = { r0: A.r, c0: A.c, r1: B.r, c1: B.c };
-      for (const rule of kids(cf, 'cfRule')) {
-        const type = attr(rule, 'type');
-        if (type === 'colorScale') {
-          const colors = all(rule, 'color').map(colorOf).filter(Boolean);
-          if (colors.length >= 2) sh.cf.push({ range, type: 'scale', colors });
-        } else if (type === 'dataBar') sh.cf.push({ range, type: 'bar', color: colorOf(first(rule, 'color')) || '#3fb950' });
-        else if (type === 'duplicateValues') sh.cf.push({ range, type: 'dup', style: { fill: '#fde8e8', color: '#9c0006' } });
-        else if (type === 'cellIs') {
-          const op = attr(rule, 'operator');
-          const fs = all(rule, 'formula').map((x) => Number(x.textContent));
-          const map = { greaterThan: 'gt', lessThan: 'lt', between: 'between', equal: 'eq' };
-          if (map[op]) sh.cf.push({ range, type: map[op], a: fs[0], b: fs[1], style: { fill: '#fde8e8', color: '#9c0006' } });
+    for (const rel of Object.values(srels)) {
+      if (rel.type === REL.comments) {
+        const notes = readNotes(await text(resolvePath(path, rel.target)));
+        for (const [ref, note] of Object.entries(notes)) {
+          const p = parseAddr(ref);
+          if (!p || !note) continue;
+          const k = key(p.r, p.c);
+          const cell = sh.cells.get(k) || { v: null, f: null, s: 0 };
+          cell.note = note;
+          sh.cells.set(k, cell);
         }
+      } else if (rel.type === REL.drawing) {
+        sh.charts.push(...(await readCharts(text, resolvePath(path, rel.target), sh, name)));
       }
     }
   }
@@ -419,6 +421,10 @@ export async function writeXlsx(book) {
   };
 
   const sheetFiles = [];
+  const extraTypes = [];
+  const dxfList = [];
+  const dxfIndex = (st) => { const x = dxfXml(st); let i = dxfList.indexOf(x); if (i < 0) { i = dxfList.length; dxfList.push(x); } return i; };
+  let chartSeq = 0;
   book.sheets.forEach((sh, si) => {
     const u = sh.used();
     const rows = new Map();
@@ -467,27 +473,57 @@ export async function writeXlsx(book) {
     const merges = sh.merges.length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map((m) => `<mergeCell ref="${colName(m.c0)}${m.r0 + 1}:${colName(m.c1)}${m.r1 + 1}"/>`).join('')}</mergeCells>` : '';
     const filter = sh.filter ? `<autoFilter ref="${colName(sh.filter.c0)}${sh.filter.r0 + 1}:${colName(sh.filter.c1)}${sh.filter.r1 + 1}"/>` : '';
     const rng = (g) => `${colName(g.c0)}${g.r0 + 1}:${colName(g.c1)}${g.r1 + 1}`;
-    let dvs = '';
-    const lists = sh.valid.filter((v) => v.type === 'list');
-    if (lists.length) {
-      dvs = `<dataValidations count="${lists.length}">${lists.map((v) => `<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="${rng(v.range)}"><formula1>${esc(v.list ? `"${v.list.join(',')}"` : v.source || '')}</formula1></dataValidation>`).join('')}</dataValidations>`;
+    void rng;
+    const dvs = validationXml(sh.valid);
+    const cfs = cfXml(sh.cf, dxfIndex);
+    // Charts (a drawing with chart parts) and notes (comments with their VML boxes).
+    const srels = [];
+    let drawing = '';
+    let legacy = '';
+    const charts = sh.charts.map((ch) => ({ ch, refs: chartRefs(book, sh, ch) })).filter((x) => x.refs && x.refs.series.length);
+    if (charts.length) {
+      const dn = si + 1;
+      const drels = charts.map((x, i) => {
+        const n = ++chartSeq;
+        sheetFiles.push({ name: `xl/charts/chart${n}.xml`, data: chartXml(book, x.ch, x.refs) });
+        extraTypes.push([`/xl/charts/chart${n}.xml`, CT.chart]);
+        return `<Relationship Id="rId${i + 1}" Type="${REL.chart}" Target="../charts/chart${n}.xml"/>`;
+      });
+      sheetFiles.push({ name: `xl/drawings/drawing${dn}.xml`, data: drawingXml(sh, charts.map((x) => x.ch)) });
+      sheetFiles.push({ name: `xl/drawings/_rels/drawing${dn}.xml.rels`, data: `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${drels.join('')}</Relationships>` });
+      extraTypes.push([`/xl/drawings/drawing${dn}.xml`, CT.drawing]);
+      srels.push(`<Relationship Id="rId${srels.length + 1}" Type="${REL.drawing}" Target="../drawings/drawing${dn}.xml"/>`);
+      drawing = `<drawing r:id="rId${srels.length}"/>`;
     }
+    const notes = [];
+    for (const [k, cell] of sh.cells) if (cell.note) notes.push({ r: rowOf(k), c: colOf(k), text: String(cell.note) });
+    if (notes.length) {
+      notes.sort((a, b) => a.r - b.r || a.c - b.c);
+      const { comments, vml } = notesXml(notes, si + 1);
+      sheetFiles.push({ name: `xl/comments${si + 1}.xml`, data: comments });
+      sheetFiles.push({ name: `xl/drawings/vmlDrawing${si + 1}.vml`, data: vml });
+      extraTypes.push([`/xl/comments${si + 1}.xml`, CT.comments]);
+      srels.push(`<Relationship Id="rId${srels.length + 1}" Type="${REL.comments}" Target="../comments${si + 1}.xml"/>`);
+      srels.push(`<Relationship Id="rId${srels.length + 1}" Type="${REL.vml}" Target="../drawings/vmlDrawing${si + 1}.vml"/>`);
+      legacy = `<legacyDrawing r:id="rId${srels.length}"/>`;
+    }
+    if (srels.length) sheetFiles.push({ name: `xl/worksheets/_rels/sheet${si + 1}.xml.rels`, data: `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${srels.join('')}</Relationships>` });
     const dim = `<dimension ref="A1${u.r >= 0 ? `:${colName(Math.max(0, u.c))}${u.r + 1}` : ''}"/>`;
     const tabColor = sh.tab ? `<sheetPr><tabColor rgb="${hex(sh.tab)}"/></sheetPr>` : '';
     sheetFiles.push({
       name: `xl/worksheets/sheet${si + 1}.xml`,
-      data: `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${tabColor}${dim}${view}${colKeys.length ? `<sheetFormatPr defaultRowHeight="${(DEF_H * 0.75).toFixed(1)}"/>${cols}` : cols}<sheetData>${data}</sheetData>${filter}${merges}${dvs}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>`,
+      data: `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${tabColor}${dim}${view}${colKeys.length ? `<sheetFormatPr defaultRowHeight="${(DEF_H * 0.75).toFixed(1)}"/>${cols}` : cols}<sheetData>${data}</sheetData>${filter}${merges}${cfs}${dvs}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>${drawing}${legacy}</worksheet>`,
     });
   });
 
   const fmtXml = numFmts.size ? `<numFmts count="${numFmts.size}">${[...numFmts].map(([code, id]) => `<numFmt numFmtId="${id}" formatCode="${esc(code)}"/>`).join('')}</numFmts>` : '';
-  const styles = `${XML_HEAD}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${fmtXml}<fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="${borders.length}">${borders.join('')}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const styles = `${XML_HEAD}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${fmtXml}<fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="${borders.length}">${borders.join('')}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>${dxfList.length ? `<dxfs count="${dxfList.length}">${dxfList.join('')}</dxfs>` : ''}</styleSheet>`;
   const shared = `${XML_HEAD}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">${strings.map((s) => `<si><t xml:space="preserve">${esc(s)}</t></si>`).join('')}</sst>`;
   const names = [...book.names.values()];
   const wb = `${XML_HEAD}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${book.sheets.map((sh, i) => `<sheet name="${esc(sh.name)}" sheetId="${i + 1}"${sh.hidden ? ' state="hidden"' : ''} r:id="rId${i + 1}"/>`).join('')}</sheets>${names.length ? `<definedNames>${names.map((n) => `<definedName name="${esc(n.name)}">${esc(n.ref.replace(/^=/, ''))}</definedName>`).join('')}</definedNames>` : ''}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`;
   const n = book.sheets.length;
   const wbRels = `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${book.sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId${n + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`;
-  const ct = `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${book.sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
+  const ct = `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="vml" ContentType="${CT.vml}"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${book.sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}${extraTypes.map(([part, type]) => `<Override PartName="${part}" ContentType="${type}"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
   const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
   return writeZip([
     { name: '[Content_Types].xml', data: ct },

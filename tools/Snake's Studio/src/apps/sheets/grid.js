@@ -718,6 +718,10 @@ export class Grid {
         case 'gt': hit = n !== null && n > rule.a; break;
         case 'lt': hit = n !== null && n < rule.a; break;
         case 'between': hit = n !== null && n >= rule.a && n <= rule.b; break;
+        case 'nb': hit = n !== null && (n < rule.a || n > rule.b); break;
+        case 'ge': hit = n !== null && n >= rule.a; break;
+        case 'le': hit = n !== null && n <= rule.a; break;
+        case 'ne': hit = val !== null && val !== '' && String(val).toLowerCase() !== String(rule.a).toLowerCase() && n !== Number(rule.a); break;
         case 'eq': hit = String(val ?? '').toLowerCase() === String(rule.a).toLowerCase() || n === Number(rule.a); break;
         case 'text': hit = typeof val === 'string' && val.toLowerCase().includes(String(rule.a).toLowerCase()); break;
         case 'blank': hit = val === null || val === ''; break;

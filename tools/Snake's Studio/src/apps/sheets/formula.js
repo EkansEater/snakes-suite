@@ -268,7 +268,7 @@ export function namesOf(ast, out = new Set()) {
 
 export const isVolatile = (ast) => {
   if (!ast || typeof ast !== 'object') return false;
-  if (ast.k === 'f' && ['NOW', 'TODAY', 'RAND', 'RANDBETWEEN', 'RANDARRAY', 'OFFSET', 'INDIRECT'].includes(ast.name)) return true;
+  if (ast.k === 'f' && ['NOW', 'TODAY', 'RAND', 'RANDBETWEEN', 'RANDARRAY', 'OFFSET', 'INDIRECT', 'SUBTOTAL', 'AGGREGATE'].includes(ast.name)) return true;
   return isVolatile(ast.a) || isVolatile(ast.b) || (ast.args || []).some(isVolatile);
 };
 
