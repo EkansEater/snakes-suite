@@ -213,7 +213,8 @@ class Player:
         self.procs: list[subprocess.Popen] = []
 
     @staticmethod
-    def _spawn(path: str, device: str | None, volume: int) -> subprocess.Popen:
+    def _spawn(path: str, device: str | None, volume: int, start: float = 0.0, end: float = 0.0,
+               loop: bool = False) -> subprocess.Popen:
         cmd = [
             "mpv", "--no-video", "--no-terminal", "--really-quiet",
             "--ao=pulse", f"--volume={volume}", "--volume-max=200",
@@ -221,18 +222,27 @@ class Player:
         ]
         if device:
             cmd.append(f"--audio-device=pulse/{device}")
+        if start > 0:
+            cmd.append(f"--start={start:.3f}")
+        if loop and end > start:
+            # mpv's own file loop restarts at 0, its A-B loop at the trimmed start.
+            cmd += [f"--ab-loop-a={start:.3f}", f"--ab-loop-b={end:.3f}"]
+        elif loop:
+            cmd.append("--loop-file=inf")
+        elif end > start:
+            cmd.append(f"--end={end:.3f}")
         cmd += ["--", path]
         return subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def play(self, path: str, mic_volume: int, monitor_volume: int,
-             monitor: bool, overlap: bool = False) -> None:
+             monitor: bool, overlap: bool = False, start: float = 0.0, end: float = 0.0, loop: bool = False) -> None:
         if not overlap:
             self.stop()
         self.reap()
-        self.procs.append(self._spawn(path, SINK_NAME, mic_volume))
+        self.procs.append(self._spawn(path, SINK_NAME, mic_volume, start, end, loop))
         if monitor:
-            self.procs.append(self._spawn(path, None, monitor_volume))
+            self.procs.append(self._spawn(path, None, monitor_volume, start, end, loop))
 
     def reap(self) -> None:
         self.procs = [p for p in self.procs if p.poll() is None]

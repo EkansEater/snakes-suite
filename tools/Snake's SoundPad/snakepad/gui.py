@@ -17,9 +17,10 @@ from PySide6.QtWidgets import (
 from . import snake_theme
 from .audio import AudioError
 from .ipc import CommandServer
-from .library import AUDIO_EXTS, Library, is_audio_file
+from .library import AUDIO_EXTS, Library, Sound, is_audio_file
+from .trim import TrimDialog, clock
 
-COL_NUM, COL_NAME, COL_VOL, COL_PATH = range(4)
+COL_NUM, COL_NAME, COL_VOL, COL_CLIP, COL_PATH = range(5)
 ICON_PATH = Path(__file__).resolve().parent / "assets" / "icon.svg"
 
 
@@ -99,8 +100,8 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(10)
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["#", "Name", "Vol %", "File"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["#", "Name", "Vol %", "Plays", "File"])
         self.table.verticalHeader().hide()
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -110,8 +111,13 @@ class MainWindow(QMainWindow):
         h.setSectionResizeMode(COL_NUM, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)
         h.setSectionResizeMode(COL_VOL, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(COL_CLIP, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(COL_PATH, QHeaderView.Stretch)
-        self.table.cellDoubleClicked.connect(lambda r, c: self.play_index(r))
+        self.table.cellDoubleClicked.connect(lambda r, c: self.trim(r) if c == COL_CLIP else self.play_index(r))
+        trim = QAction(self.table, shortcut=QKeySequence("Ctrl+T"))
+        trim.setShortcutContext(Qt.WidgetShortcut)
+        trim.triggered.connect(lambda: self.selected_rows() and self.trim(self.selected_rows()[0]))
+        self.table.addAction(trim)
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
@@ -251,13 +257,17 @@ class MainWindow(QMainWindow):
             name = QTableWidgetItem(snd.name)
             vol = QTableWidgetItem(str(snd.volume))
             vol.setTextAlignment(Qt.AlignCenter)
+            clip = QTableWidgetItem(_clip_text(snd))
+            clip.setFlags(clip.flags() & ~Qt.ItemIsEditable)
+            clip.setTextAlignment(Qt.AlignCenter)
+            clip.setToolTip("Double-click (or Ctrl+T) to trim it or make it loop")
             path = QTableWidgetItem(snd.path)
             path.setFlags(path.flags() & ~Qt.ItemIsEditable)
             path.setToolTip(snd.path)
             if not Path(snd.path).exists():
                 path.setForeground(snake_theme.color(snake_theme.ERROR_SOFT))
                 path.setToolTip("File not found: " + snd.path)
-            for c, it in enumerate((num, name, vol, path)):
+            for c, it in enumerate((num, name, vol, clip, path)):
                 self.table.setItem(i, c, it)
         self._populating = False
         self.apply_filter(self.search.text())
@@ -292,6 +302,7 @@ class MainWindow(QMainWindow):
         m.addAction("Play", lambda: self.play_index(row))
         m.addAction("Rename", lambda: self.table.editItem(self.table.item(row, COL_NAME)))
         m.addAction("Set volume", lambda: self.table.editItem(self.table.item(row, COL_VOL)))
+        m.addAction("Trim and loop…", lambda: self.trim(row))
         m.addAction("Copy hotkey command",
                     lambda: QApplication.clipboard().setText(f"snakepad play {row + 1}"))
         m.addSeparator()
@@ -358,6 +369,20 @@ class MainWindow(QMainWindow):
         n = self.add_paths(paths)
         self.status.setText(f"Added {n} sound(s)")
 
+    def trim(self, row: int) -> None:
+        if not 0 <= row < len(self.lib.sounds):
+            return
+        snd = self.lib.sounds[row]
+        if not Path(snd.path).exists():
+            self.status.setText(f"Missing file: {snd.path}")
+            return
+        dialog = TrimDialog(snd, self)
+        if dialog.exec():
+            dialog.apply_to(snd)
+            self.lib.save()
+            self.refresh_table()
+            self.table.selectRow(row)
+
     # ---------- playback ----------
 
     def play_index(self, i: int) -> bool:
@@ -373,9 +398,10 @@ class MainWindow(QMainWindow):
             monitor_volume=round(self.s.monitor_volume * snd.volume / 100),
             monitor=self.s.monitor_enabled,
             overlap=self.s.overlap,
+            **snd.clip(),
         )
         self._now = snd.name
-        self.status.setText(f"▶ {snd.name}")
+        self.status.setText(f"▶ {snd.name}" + ("  (loops until you stop it)" if snd.loop else ""))
         return True
 
     def play_selected(self) -> None:
@@ -549,3 +575,9 @@ class MainWindow(QMainWindow):
             return
         e.accept()
         QApplication.quit()
+
+
+def _clip_text(snd: Sound) -> str:
+    """What the Plays column says: the part played, and ⟳ when it loops."""
+    text = f"{clock(snd.start)}–{clock(snd.end) if snd.end else 'end'}" if snd.trimmed else ""
+    return f"{text} ⟳".strip() if snd.loop else text

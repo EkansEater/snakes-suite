@@ -47,6 +47,7 @@ Turn off Discord's *Noise Suppression* and *Echo Cancellation*, and consider set
 - **Play:** double-click, Enter, or type in search and press Enter to play the first match
 - **Stop:** Esc
 - **Rename / per-sound volume:** F2 on a cell, or right-click
+- **Trim and loop:** double-click a sound's *Plays* cell, press Ctrl+T, or right-click → *Trim and loop…*: drag the marks on its waveform to choose where it starts and ends, listen to the result, and tick *Loop* to repeat it until you press Esc
 - **Volume others hear / Hear sounds myself:** global sliders (per-sound volume multiplies them)
 - **Pass my mic through:** mixes your real mic into the virtual mic. Turn it off to send only the sounds.
 - Closing the window keeps the app in the tray. Quit from the tray menu.

@@ -126,31 +126,58 @@ class QtPlayer:
         self.devices = devices
         self.playing: list[tuple[QMediaPlayer, QAudioOutput]] = []
 
-    def _spawn(self, path: str, device: QAudioDevice | None, volume: int) -> None:
+    def _spawn(self, path: str, device: QAudioDevice | None, volume: int, start: float = 0.0, end: float = 0.0,
+               loop: bool = False) -> None:
         player = QMediaPlayer()
         out = QAudioOutput(device) if device is not None else QAudioOutput()
         # Qt's volume stops at 100%; louder than that is the clip's own level.
         out.setVolume(max(0.0, min(1.0, volume / 100)))
         player.setAudioOutput(out)
+        start_ms, end_ms = round(start * 1000), round(end * 1000)
+        player.finished = False
+
+        def again() -> None:
+            player.setPosition(start_ms)
+            player.play()
+
+        def done() -> None:
+            player.finished = True
+            player.stop()
+
+        def status(s) -> None:
+            if s in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia) and start_ms and player.position() < start_ms - 50:
+                player.setPosition(start_ms)
+            elif s == QMediaPlayer.MediaStatus.EndOfMedia and loop:
+                again()
+
+        def position(ms: int) -> None:
+            if end_ms > start_ms and ms >= end_ms:
+                again() if loop else done()
+
+        player.mediaStatusChanged.connect(status)
+        player.positionChanged.connect(position)
         player.setSource(QUrl.fromLocalFile(path))
+        if start_ms:
+            player.setPosition(start_ms)
         player.play()
         self.playing.append((player, out))
 
-    def play(self, path: str, mic_volume: int, monitor_volume: int, monitor: bool, overlap: bool = False) -> None:
+    def play(self, path: str, mic_volume: int, monitor_volume: int, monitor: bool, overlap: bool = False,
+             start: float = 0.0, end: float = 0.0, loop: bool = False) -> None:
         if not overlap:
             self.stop()
         self.reap()
         target = next((d for d in QMediaDevices.audioOutputs() if _id(d) == self.devices.target), None)
         if target is not None:
-            self._spawn(path, target, mic_volume)
+            self._spawn(path, target, mic_volume, start, end, loop)
         if monitor or target is None:
-            self._spawn(path, None, monitor_volume)
+            self._spawn(path, None, monitor_volume, start, end, loop)
 
     def reap(self) -> None:
         keep = []
         for player, out in self.playing:
-            if player.playbackState() == QMediaPlayer.PlaybackState.StoppedState and player.mediaStatus() in (
-                    QMediaPlayer.MediaStatus.EndOfMedia, QMediaPlayer.MediaStatus.InvalidMedia):
+            if player.playbackState() == QMediaPlayer.PlaybackState.StoppedState and (player.finished or player.mediaStatus() in (
+                    QMediaPlayer.MediaStatus.EndOfMedia, QMediaPlayer.MediaStatus.InvalidMedia)):
                 player.deleteLater()
                 out.deleteLater()
             else:

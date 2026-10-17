@@ -21,6 +21,21 @@ class Sound:
     path: str
     name: str = ""
     volume: int = 100  # per-sound gain, percent
+    start: float = 0.0  # seconds into the file where the sound begins
+    end: float = 0.0  # where it stops; 0 = the end of the file
+    loop: bool = False  # repeat from start to end until stopped
+    length: float = 0.0  # the file's length in seconds, once known
+
+    @property
+    def trimmed(self) -> bool:
+        return self.start > 0 or self.end > 0
+
+    def clip(self) -> dict:
+        """Where to play: start, end (0 = to the file's end) and loop, for the players."""
+        end = self.end
+        if self.loop and not end:
+            end = self.length  # a loop needs to know where to jump back from
+        return {"start": self.start, "end": end, "loop": self.loop}
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -50,7 +65,8 @@ class Library:
             data = json.loads(CONFIG_FILE.read_text())
         except (OSError, ValueError):
             return cls()
-        sounds = [Sound(**s) for s in data.get("sounds", [])]
+        fields = Sound.__dataclass_fields__
+        sounds = [Sound(**{k: v for k, v in s.items() if k in fields}) for s in data.get("sounds", []) if "path" in s]
         known = Settings.__dataclass_fields__
         settings = Settings(**{k: v for k, v in data.get("settings", {}).items() if k in known})
         return cls(sounds, settings)
