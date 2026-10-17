@@ -9,7 +9,7 @@ import { createShell, tb, sep, select, refresh } from '../../kit/shell.js';
 import { contextMenu, closeMenus } from '../../kit/menu.js';
 import { toast, errorToast, modal, promptBox } from '../../kit/dialogs.js';
 import { writeZip } from '../../kit/zip.js';
-import { pack, read, LEVELS } from './engine.js';
+import { pack, readAny as read, LEVELS } from './engine.js';
 
 const settings = host.settings;
 const shell = await createShell({
@@ -110,7 +110,7 @@ commands.register(
 );
 function pickArchive() {
   return new Promise((done) => {
-    const input = h('input', { type: 'file', accept: '.snake', style: { display: 'none' } });
+    const input = h('input', { type: 'file', accept: '.snake,.zip', style: { display: 'none' } });
     input.addEventListener('change', () => { done([...input.files]); input.remove(); });
     input.addEventListener('cancel', () => { done([]); input.remove(); });
     document.body.append(input);
@@ -124,8 +124,8 @@ const bar = h('div.sc-progress.hidden', h('div.progress', h('div')), h('span.mut
 const welcome = h('div.sc-welcome',
   h('div.sc-cards',
     h('button.sc-card', { onclick: () => commands.run('sc.addFiles') }, h('span', { html: icon('plus', 34) }), h('b', 'Make an archive'), h('span.muted', 'Add files or folders, then Compress')),
-    h('button.sc-card', { onclick: () => commands.run('sc.openArchive') }, h('span', { html: icon('open', 34) }), h('b', 'Open an archive'), h('span.muted', 'See, check and extract a .snake file'))),
-  h('p.muted', 'Or drop files, folders or a .snake archive here. Archives work both ways with the desktop and Android Compressors.'));
+    h('button.sc-card', { onclick: () => commands.run('sc.openArchive') }, h('span', { html: icon('open', 34) }), h('b', 'Open an archive'), h('span.muted', 'See, check and extract a .snake or ZIP file'))),
+  h('p.muted', 'Or drop files, folders or an archive (.snake or ZIP) here. .snake archives work both ways with the desktop and Android Compressors.'));
 shell.main.append(h('div.sc-root', welcome, head, bar, list));
 shell.showStatus(true);
 const status = h('span.item');
@@ -343,7 +343,7 @@ async function extractZip() {
       for (const p of f.parts) { data.set(p, o); o += p.length; }
       return { name: f.name, data };
     }));
-    const f = await host.saveAs({ name: opened.file.name.replace(/\.snake$/i, '.zip'), filters: [{ name: 'ZIP', exts: ['zip'] }] }, zipped);
+    const f = await host.saveAs({ name: opened.file.name.replace(/\.(snake|zip)$/i, '') + '.zip', filters: [{ name: 'ZIP', exts: ['zip'] }] }, zipped);
     if (f) toast(`Saved ${f.name}`, { timeout: 2500 });
   } catch (err) {
     if (err.name !== 'AbortError') errorToast(err.message || String(err));
@@ -375,14 +375,14 @@ window.addEventListener('drop', async (e) => {
   e.preventDefault();
   const got = await dropped(e.dataTransfer);
   const real = got.filter((f) => !f.emptyDir);
-  if (real.length === 1 && /\.snake$/i.test(real[0].name) && !items.length) { openArchive(real[0]); return; }
+  if (real.length === 1 && /\.(snake|zip)$/i.test(real[0].name) && !items.length) { openArchive(real[0]); return; }
   for (const d of got.filter((f) => f.emptyDir)) if (!items.some((i) => i.path === d.emptyDir)) items.push({ path: d.emptyDir, kind: 'dir', mtime: Math.floor(Date.now() / 1000) });
   addFiles(real);
 });
 
-// A .snake file opened with the app (the iPhone's Files app, "Open in…").
+// A .snake or ZIP file opened with the app (the iPhone's Files app, "Open in…").
 async function openGiven(files) {
-  const f = files.find((x) => /\.snake$/i.test(x.name));
+  const f = files.find((x) => /\.(snake|zip)$/i.test(x.name));
   if (!f || busy) return;
   try {
     openArchive(f instanceof Blob ? f : new File([await host.read(f)], f.name));

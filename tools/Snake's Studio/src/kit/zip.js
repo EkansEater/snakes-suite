@@ -42,7 +42,12 @@ export function readZip(bytes) {
   const entries = new Map();
   for (let n = 0; n < count; n++) {
     if (view.getUint32(p, true) !== 0x02014b50) throw new Error('The file is damaged (bad central directory).');
+    const flags = view.getUint16(p + 8, true);
     const method = view.getUint16(p + 10, true);
+    const dosTime = view.getUint16(p + 12, true);
+    const dosDate = view.getUint16(p + 14, true);
+    const crcStored = view.getUint32(p + 16, true);
+    const unixMode = view.getUint8(p + 5) === 3 ? view.getUint32(p + 38, true) >>> 16 : 0; // made on Unix: mode in the high half
     const csize = view.getUint32(p + 20, true);
     const size = view.getUint32(p + 24, true);
     const nameLen = view.getUint16(p + 28, true);
@@ -52,8 +57,10 @@ export function readZip(bytes) {
     const name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
     p += 46 + nameLen + extraLen + commentLen;
     if (name.endsWith('/')) continue;
+    // DOS date and time (as written: no time zone) as Unix seconds.
+    const mtime = Date.UTC(((dosDate >> 9) & 127) + 1980, ((dosDate >> 5) & 15) - 1, dosDate & 31, dosTime >> 11, (dosTime >> 5) & 63, (dosTime & 31) * 2) / 1000;
     const entry = {
-      name, size, method,
+      name, size, method, crc: crcStored, mtime: Number.isFinite(mtime) ? mtime : 0, encrypted: (flags & 1) === 1, unixMode,
       async read() {
         if (view.getUint32(local, true) !== 0x04034b50) throw new Error(`The file is damaged (${name}).`);
         const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);

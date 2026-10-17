@@ -11,6 +11,7 @@
 // zstd and BLAKE3 are the desktop's own code compiled to WebAssembly (snake.wasm, made by
 // tools/Snake's Compressor/wasm/build.sh). Everything streams: files of any size.
 import wasmPath from './snake.wasm';
+import { readZip, crc32 } from '../../kit/zip.js';
 
 const MAGIC = [0x53, 0x4e, 0x41, 0x4b, 0x45, 0x00];
 const VERSION = 1;
@@ -259,4 +260,68 @@ export async function read(blob, { entry = () => null, finished = () => {}, prog
   }
   progress(blob.size, blob.size);
   return { files, bytes, damaged };
+}
+
+/** Is this blob a ZIP archive (by its first bytes)? */
+export async function isZip(blob) {
+  const h = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+  return h[0] === 0x50 && h[1] === 0x4b && (h[2] === 3 || h[2] === 5) && (h[3] === 4 || h[3] === 6);
+}
+
+/**
+ * A ZIP archive read through the same interface as read(): entries, each file's data,
+ * and whether it is intact (its CRC). Encrypted ZIPs are for the desktop and Android apps.
+ */
+export async function readZipArchive(blob, { entry = () => null, finished = () => {}, progress = () => {}, signal = null } = {}) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let zip;
+  try { zip = readZip(bytes); } catch { throw new Error('This ZIP archive is damaged (or bigger than 4 GB, which needs the desktop app).'); }
+  let files = 0;
+  let total = 0;
+  const damaged = [];
+  const list = [...zip.values()];
+  if (list.some((z) => z.encrypted)) throw new Error('This ZIP archive is protected by a password: open it with Snake\'s Compressor on a computer or Android phone.');
+  const dirs = new Set();
+  for (const z of list) {
+    const parts = z.name.replace(/\\/g, '/').split('/');
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'));
+  }
+  for (const d of [...dirs].sort()) {
+    if (!d) continue;
+    await entry({ path: d, kind: 'dir', mode: 0o40755, mtime: 0, safe: safePath(d) });
+  }
+  let done = 0;
+  for (const z of list) {
+    if (signal && signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const path = z.name.replace(/\\/g, '/').replace(/^\/+/, '');
+    const link = (z.unixMode & 0o170000) === 0o120000;
+    const e = { path, kind: link ? 'symlink' : 'file', mode: z.unixMode || 0o100644, mtime: z.mtime, safe: safePath(path) };
+    if (link) {
+      e.target = new TextDecoder().decode(await z.read());
+      await entry(e);
+      continue;
+    }
+    const sink = await entry(e);
+    let ok = true;
+    let size = 0;
+    try {
+      const data = await z.read();
+      size = data.length;
+      ok = crc32(data) >>> 0 === z.crc >>> 0 && size === z.size;
+      if (sink) await sink(data);
+    } catch { ok = false; }
+    if (!ok) damaged.push(path);
+    files++;
+    total += size;
+    done += z.size;
+    progress(Math.min(blob.size, Math.round((done / Math.max(1, list.reduce((a, x) => a + x.size, 0))) * blob.size)), blob.size);
+    await finished(e, { size, ok });
+  }
+  progress(blob.size, blob.size);
+  return { files, bytes: total, damaged };
+}
+
+/** read() for a .snake archive, readZipArchive() for a ZIP. */
+export async function readAny(blob, opts) {
+  return (await isZip(blob)) ? readZipArchive(blob, opts) : read(blob, opts);
 }
