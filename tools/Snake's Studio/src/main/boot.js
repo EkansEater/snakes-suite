@@ -19,6 +19,14 @@ const HOSTED = {
 
 const id = (process.argv.find((a) => a.startsWith('--app=')) || '').slice(6);
 const hosted = Object.hasOwn(HOSTED, id) ? HOSTED[id] : null;
+
+// The Wayland app id names the taskbar entry and finds its icon: it has to be the app's own
+// menu entry (snakes-word.desktop, snakes-code.desktop…), which the hub and install.py create.
+// Electron takes it from CHROME_DESKTOP (else the package's name, which would be Studio's for all).
+if (process.platform === 'linux') {
+  const { APPS } = require('./apps');
+  process.env.CHROME_DESKTOP = `${hosted || Object.hasOwn(APPS, id) ? `snakes-${id}` : 'snakes-studio'}.desktop`;
+}
 const entry = hosted && path.join(__dirname, '..', '..', 'hosted', id, 'src', 'main', 'main.js');
 
 if (entry && fs.existsSync(entry)) {

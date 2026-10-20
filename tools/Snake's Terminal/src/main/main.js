@@ -425,7 +425,9 @@ ipcMain.handle('pty:create', (e, opts = {}) => {
   const file = opts.file || defaultShell();
   const args = Array.isArray(opts.args) ? opts.args.map(String) : [];
   const cwd = opts.cwd && fs.existsSync(opts.cwd) && fs.statSync(opts.cwd).isDirectory() ? opts.cwd : os.homedir();
-  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'SnakesTerminal', TERM_PROGRAM_VERSION: VERSION, LC_TERMINAL: 'SnakesTerminal' };
+  // CHROME_DESKTOP names this app's taskbar entry; programs started from the shell must not inherit it.
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'CHROME_DESKTOP'));
+  const env = { ...inherited, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'SnakesTerminal', TERM_PROGRAM_VERSION: VERSION, LC_TERMINAL: 'SnakesTerminal' };
   for (const k of ['ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ATTACH_CONSOLE', 'CHROME_DESKTOP', 'GDK_BACKEND', 'NO_AT_BRIDGE']) delete env[k];
   for (const [k, v] of Object.entries(opts.env || {})) if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) env[k] = String(v);
   if (!env.LANG && process.platform !== 'win32') env.LANG = 'en_US.UTF-8';

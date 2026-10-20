@@ -526,7 +526,8 @@ ipcMain.handle('pty:create', (e, opts = {}) => {
     cols: opts.cols || 80,
     rows: opts.rows || 24,
     cwd: opts.cwd && fs.existsSync(opts.cwd) ? opts.cwd : os.homedir(),
-    env: { ...process.env, TERM_PROGRAM: 'snakes-code', COLORTERM: 'truecolor', ...(opts.env || {}) },
+    // (CHROME_DESKTOP names this app's taskbar entry; programs started from the shell must not inherit it.)
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'CHROME_DESKTOP')), TERM_PROGRAM: 'snakes-code', COLORTERM: 'truecolor', ...(opts.env || {}) },
   });
   win.snakePtys.set(id, proc);
   proc.onData((data) => { if (!win.isDestroyed()) win.webContents.send('pty:data', id, data); });

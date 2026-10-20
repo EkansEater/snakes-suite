@@ -1,6 +1,6 @@
 {
   "name": "snakes-terminal",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Snake's Terminal: tabs, split panes, profiles and easy SSH between your devices",
   "main": "src/main/main.js",
   "scripts": {
