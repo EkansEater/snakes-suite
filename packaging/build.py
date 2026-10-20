@@ -608,6 +608,9 @@ def make_index(folder: Path) -> Path:
             # On Android the Studio APK holds only the seven Studio apps (Code and Terminal have APKs of their own).
             for app in (t for t in data["tools"] if (t.get("studio_app") if android else in_studio(t))):
                 e = index["tools"].setdefault(app["id"], {"version": app.get("version", meta["version"]), "packages": {}})
+                if not android:
+                    # The tool's version is its desktop build's (a hosted app's own APK may have come first, older).
+                    e["version"] = app.get("version", meta["version"])
                 # On Android each app has its own launcher activity, so no switch is needed.
                 args = {} if android else {"args": [f"--app={studio_switch(app)}"]}
                 e["packages"][meta["platform"]] = {**package, **args}
