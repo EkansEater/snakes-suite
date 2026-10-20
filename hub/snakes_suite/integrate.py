@@ -268,8 +268,8 @@ def _integrate_windows(meta: dict, launch: dict, icons: dict, desktop: bool, fil
     target, *args = launch["launch"]
     cwd = launch.get("cwd") or str(Path(target).parent)
     # A packaged .exe carries the icon itself; a tool run by Python points at the .ico.
-    # (The Studio apps share one program, so each takes its own icon file instead.)
-    packaged_exe = target.lower().endswith(".exe") and "python" not in Path(target).name.lower() and not meta.get("studio_app")
+    # (The Studio apps, Code and Terminal share one program, so each takes its own icon file instead.)
+    packaged_exe = target.lower().endswith(".exe") and "python" not in Path(target).name.lower() and not (meta.get("studio_app") or meta.get("hosted"))
     icon = target if packaged_exe else icons.get("ico")
     menu = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Snake's Master Suite"
     links = [menu / f"{meta['name']}.lnk"]

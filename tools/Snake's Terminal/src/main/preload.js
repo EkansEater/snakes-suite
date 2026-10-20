@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('snake', {
   editNative: send('edit:native'),
   notify: send('notify'),
   openScheme: invoke('dialog:openScheme'),
+  saveText: invoke('dialog:saveText'),
   confirm: invoke('dialog:confirm'),
 
   devices: {

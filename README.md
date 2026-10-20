@@ -22,6 +22,9 @@ that puts each one on your computer as a normal app, alone or as a whole kit.
 | Snake's DAW | Amp, effects, looper, recording | ✓ | ✓ | ✓ |
 | Snake's Screen Recorder | Screen to MP4 / GIF, audio to MP3 | ✓ | ✓ | ✓ |
 
+On the desktop Snake's Code and Snake's Terminal also come in the Snake's Studio package
+(one Electron for all nine, one download), each still with its own window, icon and settings.
+
 The first seven are one program, Snake's Studio (tools/Snake's Studio), which
 also runs as a website: the online mirror at
 [ekanseater.github.io/snakes-suite](https://ekanseater.github.io/snakes-suite/),

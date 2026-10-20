@@ -1,0 +1,22 @@
+name: Idea
+description: Something to add or change. Claude picks these up with /ideas.
+title: "[app] "
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: A sentence is enough. Put the app in the title, like "[terminal] highlighting copies".
+    validations:
+      required: true
+  - type: dropdown
+    id: when
+    attributes:
+      label: When
+      options:
+        - Whenever
+        - Next (do this first)
+        - Think about it, don't build yet
+    validations:
+      required: false

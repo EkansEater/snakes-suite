@@ -110,6 +110,20 @@ def plan(tag: str | None) -> tuple[dict, list[dict], list[str]]:
             entry["version"] = bump(now)
         changes.append({"id": entry["id"], "name": entry["name"], "from": before, "to": entry["version"],
                         "files": len(mine), "hub": entry is data["hub"], "entry": entry})
+    # The Studio package carries the seven Studio apps and the apps it hosts (Code, Terminal) on
+    # the desktop: one download, so one version. A change in any of them raises all of them.
+    group = [e for e in data["tools"] if e.get("studio_app") or e.get("hosted")]
+    if any(c["entry"] in group for c in changes):
+        top = max((e["version"] for e in group), key=lambda v: [int(x) for x in v.split(".") if x.isdigit()])
+        listed = {c["id"] for c in changes}
+        for e in group:
+            if e["id"] not in listed:
+                changes.append({"id": e["id"], "name": e["name"], "from": version_of(old, e["id"], e.get("formerly", [])),
+                                "to": top, "files": 0, "hub": False, "entry": e})
+            e["version"] = top
+        for c in changes:
+            if c["entry"] in group:
+                c["to"] = top
     others = [f for f in files if f not in claimed and f not in NOT_HUB and f not in VERSIONS_ONLY]
     if (changes or others) and data["version"] == old.get("version"):
         data["version"] = bump(data["version"])
@@ -122,6 +136,12 @@ def write_versions(data: dict) -> None:
     for path, pattern in ((HUB_INIT, r'(__version__ = ")[^"]*(")'), (HUB_PYPROJECT, r'(?m)(^version = ")[^"]*(")')):
         text = path.read_text(encoding="utf-8")
         path.write_text(re.sub(pattern, rf"\g<1>{hub}\g<2>", text, count=1), encoding="utf-8")
+    # The apps of the Studio package say their version in their own package.json too (build.py checks).
+    for entry in data["tools"]:
+        if entry.get("studio_app") or entry.get("hosted"):
+            manifest = SUITE / entry["folder"] / "package.json"
+            text = manifest.read_text(encoding="utf-8")
+            manifest.write_text(re.sub(r'("version": ")[^"]*(")', rf"\g<1>{entry['version']}\g<2>", text, count=1), encoding="utf-8")
     subprocess.run([sys.executable, str(SUITE / "shared" / "sync.py")], cwd=SUITE, check=True, capture_output=True)
 
 

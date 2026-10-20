@@ -1,6 +1,6 @@
 // Preferences: General, Profiles, Colours and Keys.
 import { el, icon, platform } from './util.js';
-import { settings, saveSettings, allSchemes, newProfile, defaultProfile } from './settings.js';
+import { settings, saveSettings, allSchemes, newProfile, defaultProfile, DEFAULT_WORD_SEPARATORS } from './settings.js';
 import { BUILT_IN, parseItermColors, parseJsonSchemes } from './themes.js';
 import { DEFAULT_KEYS, keysFor, eventKey, rebuild } from './keys.js';
 import { modal, field, toast, confirmDialog } from './ui.js';
@@ -68,8 +68,18 @@ function general(page) {
     field('When Snake\'s Terminal opens', select(settings.startup, [['restore', 'Bring back the tabs of last time'], ['new', 'Open one new tab']], (v) => { settings.startup = v; save(); }),
       'Connections come back paused: press Enter in one to reconnect.'),
     field('Hotkey window', hotkey, 'A key combination that brings Snake\'s Terminal forward from any app, and puts it away again. Backspace clears it.'),
+    check('Show the menu bar', 'menuBar', 'Shell, Edit, View, Session, Window and Help under the tabs. The ☰ button has the same menus either way.'),
+    el('h3', { text: 'Selecting and copying' }),
+    check('Copy text when you select it', 'copyOnSelect', 'Drag or double-click over text and it is on the clipboard, ready to paste anywhere.'),
+    check('Show "Copied" when it does', 'copyNotice'),
+    check('Drop spaces at the ends of copied lines', 'copyTrim'),
+    field('Right-click', select(settings.rightClick, [['menu', 'Opens the menu'], ['paste', 'Pastes'], ['smart', 'Copies the selection, or pastes when nothing is selected']], (v) => { settings.rightClick = v; save(); }),
+      'Shift+right-click always opens the menu.'),
+    field('A double-click selects a word up to', el('div.row-inline', {},
+      el('input.input.mono', { value: settings.wordSeparators, spellcheck: 'false', on: { change: (e) => { settings.wordSeparators = e.target.value; save(); } } }),
+      el('button.btn.small', { on: { click: (e) => { settings.wordSeparators = DEFAULT_WORD_SEPARATORS; e.target.previousSibling.value = DEFAULT_WORD_SEPARATORS; save(); } } }, 'Default')),
+      'These characters end a word. Take out / and . to select whole paths with one double-click. A triple-click selects the line; Alt+drag selects a block.'),
     el('h3', { text: 'Working' }),
-    check('Copy text when you select it', 'copyOnSelect'),
     check('Ask before pasting several lines', 'pasteWarning', 'Each line of a multi-line paste runs as a command.'),
     check('Ask before closing a pane where something is still running', 'confirmClose'),
     platform.mac ? check('Option key works as Meta (Esc+)', 'optionAsMeta', 'For Alt shortcuts in the shell; off lets Option type special characters.') : '',

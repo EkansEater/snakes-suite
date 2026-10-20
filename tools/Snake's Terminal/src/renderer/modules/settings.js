@@ -30,6 +30,10 @@ const DEFAULTS = () => ({
   startup: 'restore', // 'restore' the tabs of last time, or 'new'
   confirmClose: true,
   copyOnSelect: true,
+  copyNotice: true, // a small "Copied" sign when selecting copies
+  copyTrim: true, // no spaces at the ends of copied lines
+  rightClick: 'menu', // 'menu', 'paste', or 'smart' (copy the selection if there is one, else paste)
+  wordSeparators: ` ()[]{}',"\`│`, // what a double-click word stops at
   pasteWarning: true,
   bell: 'visual', // 'visual', 'sound', 'none'
   hotkey: '',
@@ -37,7 +41,10 @@ const DEFAULTS = () => ({
   optionAsMeta: false,
   keys: {},
   devicesOpen: false,
+  menuBar: false, // the full menu bar under the title bar, besides the ☰ button
 });
+
+export const DEFAULT_WORD_SEPARATORS = DEFAULTS().wordSeparators;
 
 export let settings = DEFAULTS();
 

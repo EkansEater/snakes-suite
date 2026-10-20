@@ -85,6 +85,17 @@ def catalogue() -> tuple[dict, dict]:
     return data, tools
 
 
+def in_studio(tool: dict) -> bool:
+    """Ships in the Snake's Studio package on the desktop: the seven Studio apps, and the apps it
+    hosts (Snake's Code and Snake's Terminal: their own main process and pages, Studio's Electron)."""
+    return bool(tool.get("studio_app") or tool.get("hosted"))
+
+
+def studio_switch(tool: dict) -> str:
+    """The --app= value that starts this app from the Studio package."""
+    return tool.get("studio_app") or tool["hosted"]
+
+
 def vkey(version: str) -> list[int]:
     return [int(x) for x in version.split(".") if x.isdigit()]
 
@@ -107,11 +118,11 @@ def check_versions(tools: dict, wanted: list[str]) -> None:
     change), so a tool that changed needs a new version there, and the app should then say
     the same version as the package it comes in.
     """
-    studio = max((t["version"] for t in tools.values() if t.get("studio_app")), key=vkey, default=None)
+    studio = max((t["version"] for t in tools.values() if in_studio(t)), key=vkey, default=None)
     wrong = []
     for tool_id in wanted:
         tool = tools[tool_id]
-        expected = studio if tool.get("studio_app") else tool["version"]
+        expected = studio if in_studio(tool) else tool["version"]
         found = own_version(tool)
         if found and found != expected:
             wrong.append(f"  {tool['name']}: suite.json says {expected}, {tool['folder']} says {found}")
@@ -319,10 +330,15 @@ def build_studio(tool: dict, install: bool) -> Path:
     if _studio_built is not None:
         return _studio_built
     npm = shutil.which("npm") or "npm"
+    _, tools = catalogue()
+    # The Studio's own folder, whichever of its apps asked (a hosted app's folder is its own).
+    studio_root = next(t["root"] for t in tools.values() if t.get("studio_app"))
     root = Path(tempfile.mkdtemp(prefix="snake-build-studio-")) / "snakes-studio"
-    shutil.copytree(tool["root"], root, ignore=shutil.ignore_patterns("node_modules", "release", "dist"))
+    shutil.copytree(studio_root, root, ignore=shutil.ignore_patterns("node_modules", "release", "dist", "hosted"))
     run([npm, "ci" if (root / "package-lock.json").exists() else "install"], cwd=root)
     run([npm, "run", "build"], cwd=root)
+    for guest in (t for t in tools.values() if t.get("hosted") and OS in t.get("platforms", [])):
+        host_app(guest, root / "hosted" / guest["hosted"])
     flag = {"linux": "--linux", "windows": "--win", "macos": "--mac"}[OS]
     npx = shutil.which("npx") or "npx"
     run([npx, "--yes", "electron-builder", flag, "dir", "--publish", "never"], cwd=root,
@@ -348,8 +364,7 @@ def build_studio(tool: dict, install: bool) -> Path:
             run(["codesign", "--force", "--deep", "--sign", "-", app])
     else:
         say("(no SNAKE_FFMPEG_DIR: Player and Movie Maker will use an ffmpeg installed on the system)")
-    _, tools = catalogue()
-    apps = [t for t in tools.values() if t.get("studio_app")]
+    apps = [t for t in tools.values() if in_studio(t)]
     shared = {"id": "studio", "name": "Snake's Studio", "version": max((t["version"] for t in apps), key=vkey)}
     if app:
         meta = {"app_bundle": app.name, "cli": None, "shared": "studio"}
@@ -358,6 +373,27 @@ def build_studio(tool: dict, install: bool) -> Path:
         meta = {"launch": exe, "cli": None, "shared": "studio"}
     _studio_built = archive(shared, unpacked, meta)
     return _studio_built
+
+
+def host_app(tool: dict, dest: Path) -> None:
+    """Put an Electron app (Snake's Code, Snake's Terminal) into the Studio package at `dest`.
+
+    It brings its built pages and its main process; its main-process modules (node-pty,
+    multicast-dns) are Studio's own dependencies, so they are built once, for Studio's Electron.
+    Studio's src/main/boot.js starts it for --app=<id>.
+    """
+    npm = shutil.which("npm") or "npm"
+    work = Path(tempfile.mkdtemp(prefix=f"snake-build-{tool['id']}-")) / tool["id"]  # a plain path (see build_electron)
+    shutil.copytree(tool["root"], work, ignore=shutil.ignore_patterns("node_modules", "release", "dist"))
+    # Only what building the pages needs: no Electron download, no native rebuild.
+    run([npm, "ci" if (work / "package-lock.json").exists() else "install", "--ignore-scripts"], cwd=work)
+    run([npm, "run", "build"], cwd=work)
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(work / "package.json", dest / "package.json")
+    for folder in ("src/main", "dist", "assets"):
+        if (work / folder).exists():
+            shutil.copytree(work / folder, dest / folder)
+    say(f"{tool['name']} {tool['version']}: hosted in the Studio package")
 
 
 def build_source(tool: dict, install: bool) -> Path:
@@ -389,7 +425,7 @@ def build_tool(tool: dict, install: bool) -> Path | None:
     say(f"\n=== {tool['name']} ({PLATFORM}) ===")
     if tool["package"].get("source"):
         return build_source(tool, install)
-    if tool.get("studio_app"):
+    if in_studio(tool):
         return build_studio(tool, install)
     return BUILDERS[tool["kind"]](tool, install)
 
@@ -568,10 +604,12 @@ def make_index(folder: Path) -> Path:
         if meta["id"] == "studio":
             # One Studio package, listed under each of its apps with the switch that starts it.
             package["shared"] = "studio"
-            for app in (t for t in data["tools"] if t.get("studio_app")):
+            android = meta["platform"].startswith("android")
+            # On Android the Studio APK holds only the seven Studio apps (Code and Terminal have APKs of their own).
+            for app in (t for t in data["tools"] if (t.get("studio_app") if android else in_studio(t))):
                 e = index["tools"].setdefault(app["id"], {"version": app.get("version", meta["version"]), "packages": {}})
                 # On Android each app has its own launcher activity, so no switch is needed.
-                args = {} if meta["platform"].startswith("android") else {"args": [f"--app={app['studio_app']}"]}
+                args = {} if android else {"args": [f"--app={studio_switch(app)}"]}
                 e["packages"][meta["platform"]] = {**package, **args}
             continue
         entry = index["tools"].setdefault(meta["id"], {"version": meta["version"], "packages": {}})

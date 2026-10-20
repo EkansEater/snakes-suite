@@ -1,9 +1,13 @@
 {
   "name": "snakes-studio",
-  "version": "1.1.0",
-  "description": "Snake's Studio: one hardened runtime for Snake's Word, Spreadsheets, Slides, Paint, Photo, Player and Movie Maker",
-  "main": "src/main/main.js",
+  "version": "1.2.0",
+  "description": "Snake's Studio: one hardened runtime for Snake's Word, Spreadsheets, Slides, Paint, Photo, Player and Movie Maker, and on the desktop also Snake's Code and Snake's Terminal",
+  "main": "src/main/boot.js",
   "type": "commonjs",
+  "dependencies": {
+    "multicast-dns": "7.2.5",
+    "node-pty": "1.1.0"
+  },
   "scripts": {
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
@@ -17,7 +21,8 @@
   },
   "allowScripts": {
     "esbuild": true,
-    "electron": true
+    "electron": true,
+    "node-pty": true
   },
   "productName": "Snake's Studio",
   "author": "Snake",
@@ -28,7 +33,7 @@
     "appId": "com.snake.suite.studio",
     "productName": "Snake's Studio",
     "directories": { "output": "release" },
-    "files": ["package.json", "src/main/**", "dist/**", "assets/**"],
+    "files": ["package.json", "src/main/**", "dist/**", "assets/**", "hosted/**"],
     "asar": true,
     "icon": "assets/icon.png",
     "electronFuses": {
@@ -39,7 +44,7 @@
       "enableEmbeddedAsarIntegrityValidation": true,
       "onlyLoadAppFromAsar": true,
       "loadBrowserProcessSpecificV8Snapshot": false,
-      "grantFileProtocolExtraPrivileges": false
+      "grantFileProtocolExtraPrivileges": true
     },
     "linux": { "target": "dir", "executableName": "snakes-studio", "category": "Office" },
     "win": { "target": "dir" },

@@ -29,6 +29,7 @@ export function el(spec, attrs = {}, ...children) {
 // Icons: simple strokes in a 16-unit box, drawn for this app.
 const PATHS = {
   plus: 'M8 3v10M3 8h10',
+  menu: 'M2.5 4h11M2.5 8h11M2.5 12h11',
   close: 'M4 4l8 8M12 4l-8 8',
   chevron: 'M4 6l4 4 4-4',
   right: 'M6 4l4 4-4 4',

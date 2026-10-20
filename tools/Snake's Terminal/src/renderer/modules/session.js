@@ -30,6 +30,9 @@ window.snake.pty.onExit((id, code, signal) => {
   else early.set(id, { data: early.get(id)?.data || '', exit: [code, signal] });
 });
 
+/** The last text selected in any pane (for "Paste selection" where there is no primary selection). */
+export let lastSelection = '';
+
 export let fontZoom = 0; // window-wide font size change (Ctrl/Cmd + and -)
 export function setFontZoom(z) {
   fontZoom = Math.max(-8, Math.min(30, z));
@@ -78,12 +81,20 @@ export class Session {
 
     this.term.onTitleChange((t) => { this.oscTitle = t; this.emit('title'); });
     this.term.onBell(() => this.emit('bell'));
-    this.term.onSelectionChange(() => {
+    // Selecting copies once the selection settles, not on every step of a drag.
+    const settle = debounce(() => {
       if (!this.term.hasSelection()) return;
-      const text = this.term.getSelection();
+      const text = this.selectedText();
+      if (!text) return;
+      lastSelection = text;
       if (platform.os === 'linux') window.snake.clipboard.write(text, 'selection');
-      if (settings.copyOnSelect) window.snake.clipboard.write(text);
-    });
+      if (settings.copyOnSelect && text !== this.copiedText) {
+        this.copiedText = text;
+        window.snake.clipboard.write(text);
+        if (settings.copyNotice) this.notice(text.includes('\n') ? `Copied ${text.split('\n').length} lines` : 'Copied');
+      }
+    }, 180);
+    this.term.onSelectionChange(() => { if (!this.term.hasSelection()) this.copiedText = null; settle(); });
     this.term.onData((d) => this.input(d));
     this.term.onBinary((d) => this.input(d));
     this.term.onResize(({ cols, rows }) => { if (this.id) window.snake.pty.resize(this.id, cols, rows); });
@@ -131,6 +142,7 @@ export class Session {
       theme: xtermTheme(schemeById(this.host?.scheme || p.scheme)),
       macOptionIsMeta: !!settings.optionAsMeta,
       macOptionClickForcesSelection: true,
+      wordSeparator: settings.wordSeparators || ' ()[]{}\',"`',
       rightClickSelectsWord: false,
       drawBoldTextInBrightColors: true,
       minimumContrastRatio: 1,
@@ -142,7 +154,7 @@ export class Session {
 
   applyOptions() {
     const o = this.options();
-    for (const k of ['fontFamily', 'fontSize', 'lineHeight', 'cursorStyle', 'cursorBlink', 'scrollback', 'theme', 'macOptionIsMeta']) {
+    for (const k of ['fontFamily', 'fontSize', 'lineHeight', 'cursorStyle', 'cursorBlink', 'scrollback', 'theme', 'macOptionIsMeta', 'wordSeparator']) {
       if (JSON.stringify(this.term.options[k]) !== JSON.stringify(o[k])) this.term.options[k] = o[k];
     }
     this.el.style.background = this.scheme.bg;
@@ -318,8 +330,49 @@ export class Session {
     return !!this.procName && !SHELLS.has(this.procName.toLowerCase()) && this.procName.toLowerCase() !== this.shellName.toLowerCase();
   }
 
-  copy() {
-    if (this.term.hasSelection()) window.snake.clipboard.write(this.term.getSelection());
+  /** The selection as text, with the spaces at the ends of lines dropped when set to. */
+  selectedText() {
+    const t = this.term.getSelection();
+    return settings.copyTrim ? t.replace(/[ \t]+$/gm, '') : t;
+  }
+
+  /** A short sign in the corner of the pane ("Copied"). */
+  notice(text) {
+    this.noticeEl?.remove();
+    clearTimeout(this.noticeTimer);
+    const n = el('div.pane-notice', { text });
+    (this.paneEl || this.el).append(n);
+    this.noticeEl = n;
+    this.noticeTimer = setTimeout(() => { n.classList.add('closing'); setTimeout(() => n.remove(), 200); }, 1100);
+  }
+
+  /** Copy the selection; oneLine joins its lines with spaces (for a command broken over lines). */
+  copy({ oneLine = false } = {}) {
+    if (!this.term.hasSelection()) return false;
+    let text = this.selectedText();
+    if (oneLine) text = text.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+    window.snake.clipboard.write(text);
+    this.copiedText = text;
+    if (settings.copyNotice) this.notice(oneLine ? 'Copied as one line' : 'Copied');
+    return true;
+  }
+
+  /** The whole scrollback and screen as text. */
+  allText() {
+    const b = this.term.buffer.active;
+    const out = [];
+    let line = '';
+    for (let i = 0; i < b.length; i++) {
+      const l = b.getLine(i);
+      if (!l) continue;
+      line += l.translateToString(true);
+      const next = b.getLine(i + 1);
+      if (next?.isWrapped) continue;
+      out.push(line);
+      line = '';
+    }
+    while (out.length && !out[out.length - 1].trim()) out.pop();
+    return out.join('\n') + '\n';
   }
 
   async paste(text) {

@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "tools": [
     {
       "id": "word",
@@ -33,7 +33,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "sheets",
@@ -66,7 +66,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "slides",
@@ -97,7 +97,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "paint",
@@ -131,7 +131,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "photo",
@@ -169,7 +169,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "player",
@@ -217,7 +217,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "movie",
@@ -246,7 +246,7 @@
         "electron": true,
         "studio": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "code",
@@ -255,6 +255,7 @@
       "description": "A full code editor with Monaco, a terminal, git and search.",
       "folder": "tools/Snake's Code",
       "kind": "electron",
+      "hosted": "code",
       "platforms": [
         "linux",
         "windows",
@@ -274,7 +275,7 @@
       "package": {
         "electron": true
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "terminal",
@@ -283,6 +284,7 @@
       "description": "Tabs, split panes, profiles and colour schemes, and SSH between your devices: it finds them, connects, and sets up key login.",
       "folder": "tools/Snake's Terminal",
       "kind": "electron",
+      "hosted": "terminal",
       "platforms": [
         "linux",
         "windows",
@@ -300,7 +302,7 @@
       "package": {
         "electron": true
       },
-      "version": "1.0.0"
+      "version": "1.2.0"
     },
     {
       "id": "compressor",
@@ -716,7 +718,7 @@
         "PySide6.Qt3DCore"
       ]
     },
-    "version": "1.1.5"
+    "version": "1.1.6"
   },
   "release": {
     "repo": "EkansEater/snakes-suite",

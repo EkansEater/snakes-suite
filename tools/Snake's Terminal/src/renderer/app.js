@@ -3,14 +3,15 @@ import '@xterm/xterm/css/xterm.css';
 import './styles.css';
 import { el, icon, bus, setPlatform, platform } from './modules/util.js';
 import { env } from './modules/env.js';
-import { settings, loadSettings, profileById } from './modules/settings.js';
+import { settings, loadSettings, saveSettings, profileById } from './modules/settings.js';
 import { commandFor, rebuild as rebuildKeys, keyLabel } from './modules/keys.js';
 import { handlers, run } from './modules/commands.js';
 import {
   initLayout, newTab, split, closeSession, closeTab, activeSession, activeTab, allSessions, tabs, cycleTab, gotoTab, moveTab,
   toggleMaximize, focusPane, cyclePane, toggleBroadcast, renameTab, snapshot, restore, updateTitles,
 } from './modules/layout.js';
-import { fontZoom, setFontZoom } from './modules/session.js';
+import { fontZoom, setFontZoom, lastSelection } from './modules/session.js';
+import { menuButton, menuBar, openBurger, selectionItems } from './modules/menubar.js';
 import { initDevices, onOpen as devicesOpened, onClose as devicesClosed, editHost } from './modules/devices.js';
 import { openPrefs } from './modules/prefs.js';
 import { openPalette } from './modules/palette.js';
@@ -40,6 +41,7 @@ async function boot() {
     el('button.win-btn.close', { title: 'Close', on: { click: () => window.snake.win.close() } }, icon('close')));
   const bar = el('header.tabbar', {},
     platform.mac ? el('div.traffic-space') : '',
+    menuButton(),
     tabsEl, newBtn, newMenu,
     el('div.drag-space', { on: { dblclick: () => platform.mac || window.snake.win.toggleMaximize() } }),
     devBtn,
@@ -47,7 +49,7 @@ async function boot() {
     winCtl);
   devicesPanel = el('aside.devices', { hidden: true });
   const bodies = el('div.bodies');
-  document.getElementById('app').append(bar, el('div.main', {}, devicesPanel, bodies));
+  document.getElementById('app').append(bar, menuBar(), el('div.main', {}, devicesPanel, bodies));
   if (platform.android) initTouchKeys(document.getElementById('app'));
   window.snake.win.onMaximized((m) => {
     document.body.classList.toggle('maximized', m);
@@ -111,8 +113,33 @@ function registerCommands() {
     'tab.close': () => activeTab && closeTab(activeTab),
     ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`tab.goto${n}`, () => gotoTab(n)])),
     'edit.copy': () => s()?.copy(),
+    'edit.copyOneLine': () => s()?.copy({ oneLine: true }),
     'edit.paste': () => s()?.paste(),
+    'edit.pasteSelection': async () => {
+      const text = (platform.os === 'linux' ? await window.snake.clipboard.read('selection') : '') || lastSelection;
+      if (text) s()?.paste(text);
+    },
     'edit.selectAll': () => s()?.term.selectAll(),
+    'edit.clearSelection': () => s()?.term.clearSelection(),
+    'edit.copyOnSelect': () => {
+      settings.copyOnSelect = !settings.copyOnSelect;
+      saveSettings();
+      toast(settings.copyOnSelect ? 'Selecting text now copies it.' : `Selecting no longer copies; use ${keyLabel('edit.copy') || 'Copy'}.`);
+    },
+    'edit.copyNotice': () => { settings.copyNotice = !settings.copyNotice; saveSettings(); },
+    'term.copyAll': () => {
+      if (!s()) return;
+      window.snake.clipboard.write(s().allText());
+      s().notice('Copied all the output');
+    },
+    'term.export': async () => {
+      const ses = s();
+      if (!ses) return;
+      if (!window.snake.saveText) { run('term.copyAll'); toast('Saving to a file is not on this device yet, so the output is on the clipboard instead.'); return; }
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.');
+      const file = await window.snake.saveText({ text: ses.allText(), name: `${ses.title()} ${stamp}.txt` });
+      if (file) toast(`Saved to ${file}`, { type: 'success' });
+    },
     'find.open': openFind,
     'term.clear': () => { s()?.term.clear(); },
     'term.reset': () => { s()?.term.reset(); },
@@ -126,6 +153,10 @@ function registerCommands() {
     'devices.toggle': () => toggleDevices(),
     'devices.add': () => editHost(),
     'palette.open': () => openPalette(),
+    'menu.open': () => openBurger(),
+    'view.menuBar': () => { settings.menuBar = !settings.menuBar; saveSettings(); },
+    'help.keys': () => openPrefs('keys'),
+    'help.about': () => toast(`Snake's Terminal ${env.versions.app} · Electron ${env.versions.electron}. Part of Snake's Master Suite.`),
     'prefs.open': () => openPrefs('general'),
     'prefs.profiles': () => openPrefs('profiles'),
     'prefs.colours': () => openPrefs('colours'),
@@ -183,20 +214,33 @@ function newTabMenu(anchor) {
 
 function paneMenu(session, e) {
   const has = session.term.hasSelection();
+  // Right-click may paste (PuTTY and Windows Terminal style); Shift+right-click always opens the menu.
+  if (!e.shiftKey && settings.rightClick !== 'menu') {
+    if (settings.rightClick === 'smart' && has) { session.copy(); session.term.clearSelection(); }
+    else session.paste();
+    session.focus();
+    return;
+  }
+  const multi = (activeTab?.sessions().length || 0) > 1;
   showMenu([
     { label: 'Copy', icon: 'copy', key: keyLabel('edit.copy'), disabled: !has, run: () => session.copy() },
+    { label: 'Copy as one line', key: keyLabel('edit.copyOneLine'), disabled: !has, run: () => session.copy({ oneLine: true }) },
     { label: 'Paste', key: keyLabel('edit.paste'), run: () => session.paste() },
+    lastSelection || platform.os === 'linux' ? { label: 'Paste the last selection', key: keyLabel('edit.pasteSelection'), run: () => run('edit.pasteSelection') } : null,
     { label: 'Select all', key: keyLabel('edit.selectAll'), run: () => session.term.selectAll() },
+    { label: 'Selecting and copying', submenu: selectionItems },
     { separator: true },
     { label: 'Split right', icon: 'splitRight', key: keyLabel('pane.splitRight'), run: () => split('right') },
     { label: 'Split down', icon: 'splitDown', key: keyLabel('pane.splitDown'), run: () => split('down') },
-    { label: 'Maximize pane', icon: 'maximize', key: keyLabel('pane.maximize'), disabled: (activeTab?.sessions().length || 0) < 2, run: toggleMaximize },
-    { label: 'Broadcast typing to all panes', icon: 'broadcast', checked: !!activeTab?.broadcast, disabled: (activeTab?.sessions().length || 0) < 2, run: () => run('pane.broadcast') },
+    { label: 'Maximize pane', icon: 'maximize', key: keyLabel('pane.maximize'), checked: !!activeTab?.maximized, disabled: !multi, run: toggleMaximize },
+    { label: 'Broadcast typing to all panes', icon: 'broadcast', checked: !!activeTab?.broadcast, disabled: !multi, run: () => run('pane.broadcast') },
     { separator: true },
     { label: 'Find…', icon: 'search', key: keyLabel('find.open'), run: openFind },
+    { label: 'Copy all the output', run: () => run('term.copyAll') },
+    { label: 'Save the output as text…', key: keyLabel('term.export'), run: () => run('term.export') },
     { label: 'Clear', key: keyLabel('term.clear'), run: () => session.term.clear() },
     { separator: true },
-    { label: 'Close pane', icon: 'close', key: keyLabel('pane.close'), run: () => closeSession(session) },
+    { label: multi ? 'Close pane' : 'Close tab', icon: 'close', key: keyLabel('pane.close'), run: () => closeSession(session) },
   ], { x: e.clientX, y: e.clientY }, { onClose: () => session.focus() });
 }
 
@@ -223,7 +267,7 @@ async function closeWindow(empty) {
 }
 
 // For automated tests (and curious people in the developer tools).
-window.snakeTerminal = { tabs, activeSession, allSessions, run, settings, env, parseItermColors };
+window.snakeTerminal = { tabs, activeSession, allSessions, run, get settings() { return settings; }, env, parseItermColors };
 
 boot().catch((err) => {
   console.error(err);

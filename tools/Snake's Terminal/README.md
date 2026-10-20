@@ -15,9 +15,17 @@ profiles and colour schemes, and SSH between your own devices without the fuss.
 - 12 colour schemes (Snake, Solarized, Dracula, Nord, Gruvbox, One Dark, Tokyo Night,
   Catppuccin, Monokai, a classic iTerm look…) and **import your own**: iTerm2
   `.itermcolors` files and Windows Terminal schemes
+- Menus: Shell, Edit, View, Session, Window and Help behind the ☰ button (Ctrl+Shift+M,
+  Cmd+Shift+M), or as a menu bar under the tabs (View → Menu bar); submenus open on hover
+  or with the arrow keys, a letter jumps to an item, and every toggle shows its state
+- Selecting copies: drag, double-click a word or triple-click a line and it is on the
+  clipboard (a small "Copied" shows it). Copy as one line, copy all the output, paste the
+  last selection, middle-click paste on Linux. Right-click can open the menu, paste, or copy
+  the selection and otherwise paste (Shift+right-click always opens the menu). The characters
+  a double-click stops at can be changed, to grab whole paths or URLs in one go
+- Save the output as text (Ctrl+Shift+S, ⌘S)
 - Find in the scrollback (case, whole word, regular expressions), clickable links
-  (Ctrl/Cmd+click), copy on select, middle-click paste on Linux, a warning before pasting
-  several lines
+  (Ctrl/Cmd+click), a warning before pasting several lines
 - Pictures in the terminal: iTerm2's protocol (`imgcat`) and Sixel
 - Programs may copy to your clipboard (OSC 52: tmux, vim, also over SSH) but never read it
 - Notifications from programs (OSC 9 and 777), bell as a flash or a beep
@@ -61,6 +69,9 @@ ever stored.
 | Find | Ctrl+Shift+F | ⌘F |
 | Devices | Ctrl+Shift+O | ⇧⌘O |
 | Command palette | Ctrl+Shift+P | ⇧⌘P |
+| Menu | Ctrl+Shift+M | ⇧⌘M |
+| Copy as one line | Ctrl+Alt+C | ⌥⌘C |
+| Save the output as text | Ctrl+Shift+S | ⌘S |
 
 Plain Ctrl+letter keys always go to the shell (Ctrl+C, Ctrl+D, Ctrl+R…).
 
@@ -77,6 +88,7 @@ running, opens a window in that folder, runs that command, or shows and hides it
 ## Files
 
 ```
+src/renderer/modules/menubar.js  the menus (☰ button, menu bar)
 src/main/main.js      windows, terminals (node-pty), settings, the hotkey, the Mac menu
 src/main/devices.js   SSH helpers: ~/.ssh/config, keys, this computer, Tailscale, the scan,
                       mDNS (finding devices and announcing this one)

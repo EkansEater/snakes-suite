@@ -311,7 +311,7 @@ def clean_up_after_update() -> None:
 
 
 def shared_dir(name: str) -> Path:
-    """Where a package several apps share is unpacked (Snake's Studio holds seven apps)."""
+    """Where a package several apps share is unpacked (Snake's Studio holds nine apps on the desktop)."""
     return ig.APPS / f"_{name}"
 
 
@@ -337,7 +337,8 @@ def _install_shared(tool: dict, pkg: dict, archive: Path | None) -> dict:
         if archive is None or not archive.exists():
             raise InstallError("the download is missing. Please try again.")
         if any(tool_in_use(i, ig.read_manifest(i)) for i in _shared_users(pkg["shared"])):
-            raise InstallError("close the other Snake's Studio apps first, then try again.")
+            raise InstallError("close the other apps that come with Snake's Studio first "
+                               "(Word, Spreadsheets, Slides, Paint, Photo, Player, Movie Maker, Code, Terminal), then try again.")
         staging = Path(tempfile.mkdtemp(prefix=f"{pkg['shared']}-", dir=ig.DATA if ig.DATA.exists() else None))
         try:
             _extract(archive, staging)
@@ -423,9 +424,15 @@ def _install_shared_app(tool: dict, pkg: dict, archive: Path | None, *, desktop:
     """One app of a shared package: the package once, then this app's own launcher and icon."""
     tool_id = tool["id"]
     old = ig.read_manifest(tool_id)
+    standalone = bool(old) and not old.get("shared")  # Snake's Code and Terminal used to be programs of their own
+    if standalone and tool_in_use(tool_id, old):
+        raise InstallError(f"close {tool['name']} first, then try again.")
     if old:
         ig.remove_integration(old)
     meta = _install_shared(tool, pkg, archive)
+    if standalone:
+        # Its own copy of Electron is no longer needed (its settings live elsewhere and stay).
+        shutil.rmtree(ig.APPS / tool_id, ignore_errors=True)
     dest = shared_dir(pkg["shared"])
     args = [a for a in pkg.get("args", []) if isinstance(a, str) and a.startswith("--app=")]
     if ig.OS == "macos" and meta.get("app_bundle"):

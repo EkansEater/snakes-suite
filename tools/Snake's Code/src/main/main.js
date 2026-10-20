@@ -31,6 +31,8 @@ function clean(exe, args) {
 
 const ROOT = path.join(__dirname, '..', '..');
 const DIST = path.join(ROOT, 'dist');
+// Its own version, also when it runs inside the Snake's Studio package (where Electron's own app version is Studio's).
+const VERSION = require(path.join(ROOT, 'package.json')).version;
 const isDev = process.argv.includes('--dev');
 
 app.setName("Snake's Code");
@@ -234,7 +236,7 @@ ipcMain.handle('app:init', (e) => {
     sep: path.sep,
     userDir,
     storePaths,
-    versions: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node, app: app.getVersion() },
+    versions: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node, app: VERSION },
     ptyAvailable: !!pty,
     shell: process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash'),
   };

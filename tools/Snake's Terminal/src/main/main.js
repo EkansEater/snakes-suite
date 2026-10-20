@@ -27,6 +27,8 @@ function clean(exe, args) {
 }
 
 const ROOT = path.join(__dirname, '..', '..');
+// Its own version, also when it runs inside the Snake's Studio package (where Electron's own app version is Studio's).
+const VERSION = require(path.join(ROOT, 'package.json')).version;
 const DIST = path.join(ROOT, 'dist');
 const isDev = process.argv.includes('--dev');
 const IS_MAC = process.platform === 'darwin';
@@ -258,12 +260,15 @@ function buildMacMenu() {
     { label: 'Shell', submenu: [
       cmd('New Window', 'window.new', 'Cmd+N'), cmd('New Tab', 'tab.new', 'Cmd+T'),
       cmd('Split Right', 'pane.splitRight', 'Cmd+D'), cmd('Split Down', 'pane.splitDown', 'Cmd+Shift+D'),
+      { type: 'separator' }, cmd('Save Output as Text…', 'term.export', 'Cmd+S'),
       { type: 'separator' }, cmd('Connect to a Device…', 'devices.toggle', 'Cmd+Shift+O'),
       { type: 'separator' }, cmd('Close', 'pane.close', 'Cmd+W'),
     ] },
     { label: 'Edit', submenu: [
       { role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' },
-      cmd('Copy', 'edit.copy', 'Cmd+C'), cmd('Paste', 'edit.paste', 'Cmd+V'), cmd('Select All', 'edit.selectAll', 'Cmd+A'),
+      cmd('Copy', 'edit.copy', 'Cmd+C'), cmd('Copy as One Line', 'edit.copyOneLine', 'Cmd+Alt+C'),
+      cmd('Paste', 'edit.paste', 'Cmd+V'), cmd('Paste Selection', 'edit.pasteSelection', 'Cmd+Shift+V'),
+      cmd('Select All', 'edit.selectAll', 'Cmd+A'), cmd('Copy on Select (toggle)', 'edit.copyOnSelect'),
       { type: 'separator' }, cmd('Find…', 'find.open', 'Cmd+F'), cmd('Clear Buffer', 'term.clear', 'Cmd+K'),
       { type: 'separator' }, cmd('Broadcast Input to All Panes', 'pane.broadcast', 'Cmd+Alt+I'),
     ] },
@@ -334,7 +339,7 @@ ipcMain.handle('app:init', (e) => {
     state: readJson(files.state, {}),
     first,
     ptyAvailable: !!pty,
-    versions: { app: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+    versions: { app: VERSION, electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
   };
 });
 
@@ -394,6 +399,17 @@ ipcMain.handle('dialog:openScheme', async (e) => {
   }
   return out;
 });
+// The page hands over text; only the file the user picks here is written.
+ipcMain.handle('dialog:saveText', async (e, { text, name }) => {
+  const r = await dialog.showSaveDialog(winOf(e), {
+    title: 'Save the output as text',
+    defaultPath: path.join(app.getPath('documents'), String(name || 'terminal.txt').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120)),
+    filters: [{ name: 'Text', extensions: ['txt', 'log'] }, { name: 'All files', extensions: ['*'] }],
+  });
+  if (r.canceled || !r.filePath) return null;
+  await fsp.writeFile(r.filePath, String(text ?? ''), 'utf8');
+  return r.filePath;
+});
 ipcMain.handle('dialog:confirm', async (e, { message, detail, buttons = ['OK', 'Cancel'], defaultId = 0, cancelId = 1, checkbox }) => {
   const r = await dialog.showMessageBox(winOf(e), { type: 'question', message, detail, buttons, defaultId, cancelId, checkboxLabel: checkbox, noLink: true });
   return { response: r.response, checked: r.checkboxChecked };
@@ -409,7 +425,7 @@ ipcMain.handle('pty:create', (e, opts = {}) => {
   const file = opts.file || defaultShell();
   const args = Array.isArray(opts.args) ? opts.args.map(String) : [];
   const cwd = opts.cwd && fs.existsSync(opts.cwd) && fs.statSync(opts.cwd).isDirectory() ? opts.cwd : os.homedir();
-  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'SnakesTerminal', TERM_PROGRAM_VERSION: app.getVersion(), LC_TERMINAL: 'SnakesTerminal' };
+  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'SnakesTerminal', TERM_PROGRAM_VERSION: VERSION, LC_TERMINAL: 'SnakesTerminal' };
   for (const k of ['ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ATTACH_CONSOLE', 'CHROME_DESKTOP', 'GDK_BACKEND', 'NO_AT_BRIDGE']) delete env[k];
   for (const [k, v] of Object.entries(opts.env || {})) if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) env[k] = String(v);
   if (!env.LANG && process.platform !== 'win32') env.LANG = 'en_US.UTF-8';
