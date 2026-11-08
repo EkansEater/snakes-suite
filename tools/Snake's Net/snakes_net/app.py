@@ -1,25 +1,25 @@
-"""Snake's Net: a btop-style live network monitor for Linux.
+"""Snake's Net: a btop-style live network monitor for Linux, Windows and macOS.
 
-No extra packages needed. Run as a normal user to see interface speeds and
-per-connection TCP speeds for your own apps. Run with sudo to also capture
-UDP/QUIC traffic and see every process.
+No extra packages needed on Linux (psutil on Windows and macOS). As a normal user
+it shows interface speeds and connections; per-app speeds need sudo/administrator
+on some systems (press R). `w` (or --serve) shares a live web page of the same
+numbers with your other devices over Tailscale.
 """
 
 import argparse
 import curses
-import json
 import locale
 import os
 import queue
 import socket
-import struct
-import subprocess
 import sys
 import threading
 import time
 from collections import deque, defaultdict
 
 from . import __version__ as VERSION
+from . import sources, system, web
+from .sources.common import is_loopback, norm_addr
 
 APP = "Snake's Net"
 HIST = 2000  # samples kept per graph
@@ -166,228 +166,8 @@ CATEGORY_ORDER = ["Web", "Streaming", "Calls", "Gaming", "P2P", "Sync", "Files",
                   "Local net", "System", "Other"]
 
 # --------------------------------------------------------------------------
-# Kernel readers
-# --------------------------------------------------------------------------
-
-TCP_STATES = {1: "ESTAB", 2: "SYN-S", 3: "SYN-R", 4: "FIN-W1", 5: "FIN-W2",
-              6: "T-WAIT", 7: "CLOSE", 8: "C-WAIT", 9: "L-ACK", 10: "LISTEN",
-              11: "CLOSNG"}
-
-
-def read_file(path, default=""):
-    try:
-        with open(path) as f:
-            return f.read().strip()
-    except OSError:
-        return default
-
-
-def read_net_dev():
-    out = {}
-    try:
-        with open("/proc/net/dev") as f:
-            lines = f.readlines()[2:]
-    except OSError:
-        return out
-    for line in lines:
-        name, _, rest = line.partition(":")
-        v = rest.split()
-        if len(v) >= 16:
-            out[name.strip()] = (int(v[0]), int(v[8]), int(v[1]), int(v[9]))
-    return out
-
-
-def iface_kind(name):
-    p = f"/sys/class/net/{name}"
-    if os.path.isdir(p + "/wireless") or os.path.exists(p + "/phy80211"):
-        return "Wi-Fi"
-    t = read_file(p + "/type", "0")
-    if t == "772":
-        return "Loopback"
-    if t == "65534" or name.startswith(("tun", "tailscale", "wg", "tap", "ppp", "zt")):
-        return "VPN"
-    if name.startswith(("docker", "br-", "virbr", "veth", "vnet", "lxc", "podman")):
-        return "Virtual"
-    if os.path.exists(p + "/device"):
-        return "Ethernet"
-    return "Virtual"
-
-
-def norm_addr(b):
-    if len(b) == 4:
-        return socket.inet_ntop(socket.AF_INET, b)
-    if b[:12] == b"\0" * 10 + b"\xff\xff":
-        return socket.inet_ntop(socket.AF_INET, b[12:16])
-    return socket.inet_ntop(socket.AF_INET6, b)
-
-
-def tcp_sockets():
-    """All TCP sockets with byte counters, read from the kernel via netlink."""
-    out = []
-    for fam in (socket.AF_INET, socket.AF_INET6):
-        s = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 4)  # NETLINK_SOCK_DIAG
-        try:
-            # inet_diag_req_v2: family, protocol, ext (INET_DIAG_INFO), pad, states, sockid
-            req = struct.pack("=BBBxI", fam, socket.IPPROTO_TCP, 1 << 1, 0xFFFFFFFF) + b"\0" * 48
-            # nlmsghdr: len, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST|NLM_F_DUMP, seq, pid
-            s.send(struct.pack("=IHHII", 16 + len(req), 20, 0x301, 1, 0) + req)
-            done = False
-            while not done:
-                data = s.recv(1 << 20)
-                if not data:
-                    break
-                off = 0
-                while off + 16 <= len(data):
-                    ln, typ = struct.unpack_from("=IH", data, off)
-                    if ln < 16 or typ == 3:  # NLMSG_DONE
-                        done = True
-                        break
-                    if typ == 2:  # NLMSG_ERROR
-                        raise OSError("sock_diag error")
-                    out.append(_parse_diag(data, off + 16, off + ln, fam))
-                    off += (ln + 3) & ~3
-        finally:
-            s.close()
-    return out
-
-
-def _parse_diag(data, p, end, fam):
-    state = data[p + 1]
-    sport, dport = struct.unpack_from(">HH", data, p + 4)
-    alen = 4 if fam == socket.AF_INET else 16
-    src = norm_addr(bytes(data[p + 8:p + 8 + alen]))
-    dst = norm_addr(bytes(data[p + 24:p + 24 + alen]))
-    cookie = bytes(data[p + 44:p + 52])
-    uid, inode = struct.unpack_from("=II", data, p + 64)
-    acked = received = None
-    a = p + 72
-    while a + 4 <= end:
-        l, t = struct.unpack_from("=HH", data, a)
-        if l < 4:
-            break
-        if t == 2 and l - 4 >= 136:  # INET_DIAG_INFO -> struct tcp_info
-            acked, received = struct.unpack_from("=QQ", data, a + 4 + 120)
-        a += (l + 3) & ~3
-    return {"state": state, "laddr": src, "lport": sport, "raddr": dst, "rport": dport,
-            "cookie": cookie, "uid": uid, "inode": inode, "sent": acked, "recv": received}
-
-
-def _hex_addr(h):
-    ip, port = h.split(":")
-    b = bytes.fromhex(ip)
-    if len(b) == 4:
-        b = b[::-1]
-    else:
-        b = b"".join(b[i:i + 4][::-1] for i in range(0, 16, 4))
-    return norm_addr(b), int(port, 16)
-
-
-def proc_net_sockets(proto):
-    """Parse /proc/net/{udp,udp6,tcp,tcp6}."""
-    out = []
-    for path in (f"/proc/net/{proto}", f"/proc/net/{proto}6"):
-        try:
-            with open(path) as f:
-                lines = f.readlines()[1:]
-        except OSError:
-            continue
-        for line in lines:
-            v = line.split()
-            if len(v) < 10:
-                continue
-            laddr, lport = _hex_addr(v[1])
-            raddr, rport = _hex_addr(v[2])
-            out.append({"state": int(v[3], 16), "laddr": laddr, "lport": lport,
-                        "raddr": raddr, "rport": rport, "inode": int(v[9]),
-                        "cookie": None, "sent": None, "recv": None})
-    return out
-
-
-def inode_owners():
-    """Map socket inode -> (pid, process name). Without root, only your own."""
-    m = {}
-    for pid in os.listdir("/proc"):
-        if not pid.isdigit():
-            continue
-        fdd = f"/proc/{pid}/fd"
-        try:
-            fds = os.listdir(fdd)
-        except OSError:
-            continue
-        name = None
-        for fd in fds:
-            try:
-                link = os.readlink(f"{fdd}/{fd}")
-            except OSError:
-                continue
-            if link.startswith("socket:["):
-                if name is None:
-                    name = read_file(f"/proc/{pid}/comm", "?")
-                m[int(link[8:-1])] = (int(pid), name)
-    return m
-
-
-def is_loopback(addr):
-    return addr.startswith("127.") or addr == "::1"
-
-
-# --------------------------------------------------------------------------
 # Background workers
 # --------------------------------------------------------------------------
-
-
-class Sniffer(threading.Thread):
-    """Counts bytes per flow from raw packets (needs root). Sees TCP and UDP."""
-
-    def __init__(self):
-        super().__init__(daemon=True)
-        self.sock = socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(3))
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 << 20)
-        self.flows = {}
-        self.error = None
-
-    def take(self):
-        d, self.flows = self.flows, {}
-        return d
-
-    def run(self):
-        buf = bytearray(80)
-        recv = self.sock.recvfrom_into
-        trunc_flag = socket.MSG_TRUNC
-        try:
-            while True:
-                n, addr = recv(buf, 80, trunc_flag)
-                if addr[0] == "lo" or addr[2] == 3:  # loopback / not for us
-                    continue
-                out = addr[2] == 4  # PACKET_OUTGOING
-                eth = addr[1]
-                if eth == 0x0800:
-                    ihl = (buf[0] & 15) * 4
-                    proto = buf[9]
-                    src, dst = bytes(buf[12:16]), bytes(buf[16:20])
-                    ph = ihl
-                elif eth == 0x86DD:
-                    proto = buf[6]
-                    src, dst = bytes(buf[8:24]), bytes(buf[24:40])
-                    ph = 40
-                else:
-                    continue
-                if proto in (6, 17) and ph + 4 <= 80:
-                    sp = (buf[ph] << 8) | buf[ph + 1]
-                    dp = (buf[ph + 2] << 8) | buf[ph + 3]
-                else:
-                    sp = dp = 0
-                if out:
-                    key = (proto, src, sp, dst, dp)
-                else:
-                    key = (proto, dst, dp, src, sp)
-                d = self.flows
-                f = d.get(key)
-                if f is None:
-                    d[key] = f = [0, 0]
-                f[out] += n
-        except Exception as e:  # keep the UI alive, report the problem
-            self.error = str(e)
 
 
 class Resolver:
@@ -422,55 +202,19 @@ class Resolver:
 class SlowPoller(threading.Thread):
     """Wi-Fi link details and IP addresses, every few seconds."""
 
-    def __init__(self):
+    def __init__(self, source):
         super().__init__(daemon=True)
+        self.src = source
         self.wifi = {}
         self.addrs = {}
 
     def run(self):
         while True:
             try:
-                self.poll()
+                self.wifi, self.addrs = self.src.slow()
             except Exception:
                 pass
             time.sleep(3)
-
-    def poll(self):
-        try:
-            r = subprocess.run(["ip", "-j", "addr"], capture_output=True, text=True, timeout=3)
-            addrs = {}
-            for d in json.loads(r.stdout or "[]"):
-                ips = [a["local"] for a in d.get("addr_info", [])
-                       if a.get("scope") == "global" and "local" in a]
-                addrs[d["ifname"]] = ips
-            self.addrs = addrs
-        except Exception:
-            pass
-        wifi = {}
-        for name in os.listdir("/sys/class/net"):
-            if iface_kind(name) != "Wi-Fi":
-                continue
-            info = {}
-            try:
-                r = subprocess.run(["iw", "dev", name, "link"], capture_output=True,
-                                   text=True, timeout=3)
-                for line in r.stdout.splitlines():
-                    k, _, v = line.strip().partition(":")
-                    v = v.strip()
-                    if k == "SSID":
-                        info["ssid"] = v
-                    elif k == "signal":
-                        info["signal"] = int(v.split()[0])
-                    elif k == "freq":
-                        info["freq"] = float(v.split()[0])
-                    elif k == "rx bitrate":
-                        info["rx_bitrate"] = float(v.split()[0])
-                    elif k == "tx bitrate":
-                        info["tx_bitrate"] = float(v.split()[0])
-            except Exception:
-                pass
-            wifi[name] = info
-        self.wifi = wifi
 
 
 # --------------------------------------------------------------------------
@@ -479,9 +223,9 @@ class SlowPoller(threading.Thread):
 
 
 class Iface:
-    def __init__(self, name):
+    def __init__(self, name, kind):
         self.name = name
-        self.kind = iface_kind(name)
+        self.kind = kind
         self.rx = self.tx = 0.0  # bytes/s now
         self.rx_tot = self.tx_tot = 0  # since start
         self.rx_peak = self.tx_peak = 0.0
@@ -496,37 +240,41 @@ class Iface:
 
 
 class Collector:
-    def __init__(self, capture, resolver):
+    def __init__(self, source, capture, resolver):
+        self.src = source
         self.resolver = resolver
         self.sniffer = None
         self.capture_error = None
-        if capture:
+        if capture and source.can_capture:
             try:
-                self.sniffer = Sniffer()
+                self.sniffer = source.sniffer()
                 self.sniffer.start()
             except PermissionError:
                 self.capture_error = "packet capture needs root"
             except OSError as e:
                 self.capture_error = str(e)
-        self.slow = SlowPoller()
+        self.slow = SlowPoller(source)
         self.slow.start()
         self.t_prev = None
         self.first = True
         self.dev_prev = {}
         self.ifaces = {}
-        self.all = Iface("all")
-        self.all.kind = "All"
-        self.tcp_prev = {}
+        self.all = Iface("all", "All")
+        self.sock_prev = {}
         self.cap = {}  # flow key -> record
         self.flows = []
         self.listening = []
         self.cat_tot = defaultdict(lambda: [0, 0])
         self.cat_rate = defaultdict(lambda: [0.0, 0.0])
-        self.diag_ok = True
 
     @property
     def capturing(self):
         return self.sniffer is not None and self.sniffer.error is None
+
+    @property
+    def per_app(self):
+        """Per-app speeds are being measured (for TCP at least)."""
+        return self.capturing or self.src.counts_tcp
 
     def update(self):
         now = time.monotonic()
@@ -538,14 +286,16 @@ class Collector:
 
     # ---- interfaces
     def _update_ifaces(self, dt):
-        dev = read_net_dev()
+        dev = self.src.counters()
         tot_rx = tot_tx = 0.0
-        for name, (rx, tx, _, _) in dev.items():
-            if name == "lo":
+        for name, (rx, tx) in dev.items():
+            kind, up, speed = self.src.iface_state(name)
+            if kind == "Loopback":
                 continue
             it = self.ifaces.get(name)
             if it is None:
-                it = self.ifaces[name] = Iface(name)
+                it = self.ifaces[name] = Iface(name, kind)
+            it.kind = kind
             prev = self.dev_prev.get(name)
             if prev and dt > 0:
                 drx, dtx = max(0, rx - prev[0]), max(0, tx - prev[1])
@@ -556,10 +306,8 @@ class Collector:
             it.tx_peak = max(it.tx_peak, it.tx)
             it.hist_rx.append(it.rx)
             it.hist_tx.append(it.tx)
-            it.up = read_file(f"/sys/class/net/{name}/operstate") in ("up", "unknown")
-            if it.kind == "Ethernet":
-                sp = read_file(f"/sys/class/net/{name}/speed", "-1")
-                it.speed = int(sp) if sp.lstrip("-").isdigit() and int(sp) > 0 else None
+            it.up = up
+            it.speed = speed
             if it.physical:
                 tot_rx += it.rx
                 tot_tx += it.tx
@@ -579,45 +327,29 @@ class Collector:
 
     # ---- sockets, flows, listening ports
     def _update_sockets(self, dt, now):
-        owners = inode_owners()
-        try:
-            tcp = tcp_sockets()
-            self.diag_ok = True
-        except OSError:
-            tcp = proc_net_sockets("tcp")
-            self.diag_ok = False
-        udp = proc_net_sockets("udp")
-
-        def owner(inode):
-            return owners.get(inode, (None, None)) if inode else (None, None)
+        tcp, udp = self.src.sockets()
 
         # Listening ports
         listening = {}
         lports = set()
         for s in tcp:
-            if s["state"] == 10:
+            if s["state"] == "LISTEN":
                 lports.add(("tcp", s["lport"]))
-                key = ("tcp", s["lport"], s["laddr"])
-                listening[key] = ("tcp", s, owner(s["inode"]))
+                listening[("tcp", s["lport"], s["laddr"])] = s
         for s in udp:
-            if s["state"] == 7 and s["rport"] == 0 and s["lport"]:
+            if not s["rport"] and not s["raddr"] and s["lport"]:
                 lports.add(("udp", s["lport"]))
-                key = ("udp", s["lport"], s["laddr"])
-                listening[key] = ("udp", s, owner(s["inode"]))
-        self.listening = self._merge_listening(listening.values(), lports)
-
-        # Indexes for matching captured packets to processes
-        tcp_idx = {}
-        for s in tcp:
-            if s["state"] != 10:
-                tcp_idx[(s["lport"], s["raddr"], s["rport"])] = s
-        udp_conn = {(s["lport"], s["raddr"], s["rport"]): s for s in udp if s["rport"]}
-        udp_port = {s["lport"]: s for s in udp if not s["rport"]}
-        tcp_listen = {s["lport"]: s for s in tcp if s["state"] == 10}
+                listening[("udp", s["lport"], s["laddr"])] = s
+        self.listening = self._merge_listening(listening.values())
 
         flows = []
         cat_delta = defaultdict(lambda: [0, 0])
         if self.capturing:
+            # Indexes for matching captured packets to processes
+            tcp_idx = {(s["lport"], s["raddr"], s["rport"]): s for s in tcp if s["state"] != "LISTEN"}
+            udp_conn = {(s["lport"], s["raddr"], s["rport"]): s for s in udp if s["rport"]}
+            udp_port = {s["lport"]: s for s in udp if not s["rport"]}
+            tcp_listen = {s["lport"]: s for s in tcp if s["state"] == "LISTEN"}
             delta = self.sniffer.take()
             seen = set()
             for (pn, lip, lport, rip, rport), (bin_, bout) in delta.items():
@@ -644,7 +376,7 @@ class Collector:
                         del self.cap[key]
             # Established TCP connections that sent nothing lately still appear.
             for s in tcp:
-                if s["state"] in (10, 6):
+                if s["state"] in ("LISTEN", "T-WAIT"):
                     continue
                 key = ("tcp", s["laddr"], s["lport"], s["raddr"], s["rport"])
                 if key not in self.cap:
@@ -658,18 +390,21 @@ class Collector:
                     sock = tcp_idx.get((lport, raddr, rport)) or tcp_listen.get(lport)
                 elif proto == "udp":
                     sock = udp_conn.get((lport, raddr, rport)) or udp_port.get(lport)
-                pid, name = owner(sock["inode"]) if sock else (None, None)
-                state = TCP_STATES.get(sock["state"], "") if (sock and proto == "tcp") else ""
+                pid, name = (sock["pid"], sock["proc"]) if sock else (None, None)
+                state = sock["state"] if (sock and proto == "tcp") else ""
                 flows.append(self._flow(rec, pid, name, state, lports))
         else:
             new_prev = {}
-            for s in tcp:
-                if s["state"] == 10 or s["state"] == 6:
+            for s in tcp + udp:
+                counted = s["recv"] is not None and s["key"] is not None
+                if s["proto"] == "tcp" and s["state"] in ("LISTEN", "T-WAIT"):
                     continue
+                if s["proto"] == "udp" and not s["rport"] and not (counted and (s["recv"] or s["sent"])):
+                    continue  # an unconnected UDP socket with nothing counted is just an open port
                 down = up = None
-                if s["recv"] is not None and s["cookie"]:
+                if counted:
                     down = up = 0.0
-                    prev = self.tcp_prev.get(s["cookie"])
+                    prev = self.sock_prev.get(s["key"])
                     if prev is not None:
                         drecv, dsent = s["recv"] - prev[0], s["sent"] - prev[1]
                     elif not self.first:
@@ -679,23 +414,15 @@ class Collector:
                     drecv, dsent = max(0, drecv), max(0, dsent)
                     if dt:
                         down, up = drecv / dt, dsent / dt
-                    new_prev[s["cookie"]] = (s["recv"], s["sent"])
-                    svc, cat = classify("tcp", s["lport"], s["rport"], lports)
+                    new_prev[s["key"]] = (s["recv"], s["sent"])
+                    svc, cat = classify(s["proto"], s["lport"], s["rport"], lports)
                     cat_delta[cat][0] += drecv
                     cat_delta[cat][1] += dsent
-                rec = {"proto": "tcp", "laddr": s["laddr"], "lport": s["lport"],
+                rec = {"proto": s["proto"], "laddr": s["laddr"], "lport": s["lport"],
                        "raddr": s["raddr"], "rport": s["rport"], "recv": s["recv"] or 0,
                        "sent": s["sent"] or 0, "down": down, "up": up}
-                pid, name = owner(s["inode"])
-                flows.append(self._flow(rec, pid, name, TCP_STATES.get(s["state"], ""), lports))
-            self.tcp_prev = new_prev
-            for s in udp:
-                if s["rport"]:  # connected UDP socket: no byte counters without root
-                    rec = {"proto": "udp", "laddr": s["laddr"], "lport": s["lport"],
-                           "raddr": s["raddr"], "rport": s["rport"], "recv": 0, "sent": 0,
-                           "down": None, "up": None}
-                    pid, name = owner(s["inode"])
-                    flows.append(self._flow(rec, pid, name, "", lports))
+                flows.append(self._flow(rec, s["pid"], s["proc"], s["state"], lports))
+            self.sock_prev = new_prev
         self.flows = flows
 
         for cat in list(self.cat_rate):
@@ -715,11 +442,11 @@ class Collector:
                 "loop": is_loopback(rec["raddr"]) or is_loopback(rec["laddr"])}
 
     @staticmethod
-    def _merge_listening(items, lports):
+    def _merge_listening(items):
         merged = {}
-        for proto, s, (pid, name) in items:
-            addr = s["laddr"]
-            if addr in ("0.0.0.0", "::"):
+        for s in items:
+            proto, addr, pid, name = s["proto"], s["laddr"], s["pid"], s["proc"]
+            if addr in ("0.0.0.0", "::", ""):
                 scope = "all"
             elif is_loopback(addr):
                 scope = "local"
@@ -735,6 +462,38 @@ class Collector:
                            "pid": pid, "proc": name, "svc": "" if svc == "—" else svc}
         rank = {"all": 0, "lan": 1, "tailnet": 2, "local": 3}
         return sorted(merged.values(), key=lambda r: (rank[r["scope"]], r["port"], r["proto"]))
+
+
+def group_by_process(flows, host):
+    """One row per app: its connections added up, and what it mostly talks to."""
+    g = {}
+    for f in flows:
+        key = (f["pid"], f["proc"]) if f["proc"] else (None, None)
+        r = g.get(key)
+        if r is None:
+            r = g[key] = {"pid": f["pid"], "proc": f["proc"], "conns": 0, "down": 0.0,
+                          "up": 0.0, "recv": 0, "sent": 0, "_svc": defaultdict(float),
+                          "_hosts": defaultdict(float), "na": True}
+        r["conns"] += 1
+        if f["down"] is not None:
+            r["na"] = False
+            r["down"] += f["down"]
+            r["up"] += f["up"]
+        r["recv"] += f["recv"]
+        r["sent"] += f["sent"]
+        weight = (f["down"] or 0) + (f["up"] or 0) + (f["recv"] + f["sent"]) * 1e-6 + 1e-9
+        r["_svc"][(f["svc"], f["cat"])] += weight
+        r["_hosts"][f["raddr"]] += weight
+    out = []
+    for r in g.values():
+        (svc, cat) = max(r.pop("_svc").items(), key=lambda kv: kv[1])[0]
+        top_ip = max(r.pop("_hosts").items(), key=lambda kv: kv[1])[0]
+        r["cat"] = cat
+        r["main"] = f"{svc} → {host(top_ip)}"
+        if r.pop("na"):
+            r["down"] = r["up"] = None
+        out.append(r)
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -762,9 +521,12 @@ CAT_COLORS = {"Web": 75, "Streaming": 213, "Calls": 141, "Gaming": 203, "P2P": 2
 
 
 class UI:
-    def __init__(self, scr, col, args):
+    def __init__(self, scr, col, args, resolver):
         self.scr = scr
         self.col = col
+        self.res = resolver
+        self.web = None  # the web view's server, when sharing
+        self.web_error = None
         self.bits = not args.bytes
         self.interval = args.interval
         self.view = "process"
@@ -782,6 +544,7 @@ class UI:
             self.want_iface = None
         self.colors = False
         self.restart_as_root = False
+        self.args = args
         self._init_colors()
 
     # ---- colours
@@ -940,14 +703,19 @@ class UI:
     def draw_header(self, c, W):
         self.put(0, 0, " " * W, self.cp(C_HEAD))
         up = int(time.time() - self.start)
-        mode = "capturing all traffic" if c.capturing else "TCP only, R for sudo"
+        mode = c.src.mode(c.capturing)
         left = f" {APP}  {socket.gethostname()}  {time.strftime('%H:%M:%S')}  up {up // 3600:d}:{up // 60 % 60:02d}:{up % 60:02d}  {mode}"
         if self.paused:
             left += "  [PAUSED]"
+        if self.web:
+            left += f"  web {self.web.urls[0]}" if self.web.urls else "  web on"
+        elif self.web_error:
+            left += f"  web: {self.web_error}"
         self.put(0, 0, left, self.cp(C_HEAD, curses.A_BOLD))
-        for keys in (f"tab iface  v view  s sort  b bits/bytes  n names  l loopback  p pause  +/- {self.interval:g}s  q quit ",
-                     f"tab iface  v view  s sort  b units  n names  l lo  p pause  +/- {self.interval:g}s  q quit ",
-                     "tab iface  v view  s sort  q quit "):
+        for keys in (f"tab iface  v view  s sort  b bits/bytes  n names  l loopback  w web  p pause  +/- {self.interval:g}s  q quit ",
+                     f"tab iface  v view  s sort  b units  n names  l lo  w web  p pause  +/- {self.interval:g}s  q quit ",
+                     "tab iface  v view  s sort  w web  q quit ",
+                     "v view  w web  q quit "):
             if len(left) + len(keys) + 2 <= W:
                 self.put(0, W - len(keys), keys, self.cp(C_HEAD))
                 break
@@ -1011,6 +779,8 @@ class UI:
                         if "signal" in wi:
                             q = min(100, max(0, 2 * (wi["signal"] + 100)))
                             extra += f" {wi['signal']}dBm {q}%"
+                        elif "quality" in wi:
+                            extra += f" signal {wi['quality']}%"
                         if "rx_bitrate" in wi:
                             extra += f" link {wi['rx_bitrate']:.0f}/{wi.get('tx_bitrate', 0):.0f}Mb"
                     elif it.up:
@@ -1052,7 +822,7 @@ class UI:
         flows = self.visible_flows(c)
         active = sum(1 for f in flows if (f["down"] or 0) >= 50_000 or (f["up"] or 0) >= 50_000)
         if self.view == "process":
-            rows = self.group_by_process(flows)
+            rows = group_by_process(flows, self.host)
             title = f"Apps using the network ({len(rows)})"
         else:
             rows = flows
@@ -1105,13 +875,9 @@ class UI:
             more = f" {self.scroll + 1}-{min(len(rows), self.scroll + body_h)} of {len(rows)} ↑↓ "
             self.put(y + h - 1, x + w - 2 - len(more), more, self.cp(C_DIM))
         if not c.capturing:
-            if not c.diag_ok:
-                note = " per-app speeds off: tcp_diag can't load (reboot?) · R: sudo "
-            elif c.capture_error:
-                note = f" {c.capture_error} "
-            else:
-                note = " UDP/QUIC speeds need sudo: press R "
-            self.put(y + h - 1, x + 2, note, self.cp(C_WARN))
+            note = c.src.note(c.capture_error)
+            if note:
+                self.put(y + h - 1, x + 2, trunc(f" {note} ", max(0, w - 30)), self.cp(C_WARN))
 
     def cell(self, n, r, cw):
         proc = r["proc"] or ("(system)" if r.get("pid") is None else "?")
@@ -1147,37 +913,9 @@ class UI:
         return "", 0
 
     def host(self, ip):
-        return c_resolver.name(ip) if self.names else ip
-
-    def group_by_process(self, flows):
-        g = {}
-        for f in flows:
-            key = (f["pid"], f["proc"]) if f["proc"] else (None, None)
-            r = g.get(key)
-            if r is None:
-                r = g[key] = {"pid": f["pid"], "proc": f["proc"], "conns": 0, "down": 0.0,
-                              "up": 0.0, "recv": 0, "sent": 0, "_svc": defaultdict(float),
-                              "_hosts": defaultdict(float), "na": True}
-            r["conns"] += 1
-            if f["down"] is not None:
-                r["na"] = False
-                r["down"] += f["down"]
-                r["up"] += f["up"]
-            r["recv"] += f["recv"]
-            r["sent"] += f["sent"]
-            weight = (f["down"] or 0) + (f["up"] or 0) + (f["recv"] + f["sent"]) * 1e-6 + 1e-9
-            r["_svc"][(f["svc"], f["cat"])] += weight
-            r["_hosts"][f["raddr"]] += weight
-        out = []
-        for r in g.values():
-            (svc, cat) = max(r["_svc"].items(), key=lambda kv: kv[1])[0]
-            top_ip = max(r["_hosts"].items(), key=lambda kv: kv[1])[0]
-            r["cat"] = cat
-            r["main"] = f"{svc} → {self.host(top_ip)}"
-            if r["na"]:
-                r["down"] = r["up"] = None
-            out.append(r)
-        return out
+        if not ip:
+            return "*"
+        return self.res.name(ip) if self.names else ip
 
     def draw_categories(self, c, y, x, h, w):
         self.box(y, x, h, w, "Traffic by type", "session")
@@ -1185,9 +923,10 @@ class UI:
         cats.sort(key=lambda k: -(sum(c.cat_rate[k]) * 1e6 + sum(c.cat_tot[k])))
         total = sum(sum(c.cat_tot[k]) for k in cats) or 1
         if not cats:
-            if not c.capturing and not c.diag_ok:
-                self.put(y + 1, x + 2, "Needs per-app speeds:", self.cp(C_DIM))
-                self.put(y + 2, x + 2, "reboot, or press R for sudo.", self.cp(C_DIM))
+            hint = None if c.capturing else c.src.no_types_hint()
+            if hint:
+                for i, line in enumerate(hint[: max(0, h - 2)]):
+                    self.put(y + 1 + i, x + 2, trunc(line, w - 4), self.cp(C_DIM))
             else:
                 self.put(y + 1, x + 2, "Measuring…", self.cp(C_DIM))
             return
@@ -1226,11 +965,27 @@ class UI:
         if len(rows) > h - 3:
             self.put(y + h - 1, x + 2, f" +{len(rows) - (h - 3)} more ", self.cp(C_DIM))
 
+    # ---- web view
+    def toggle_web(self):
+        if self.web:
+            self.web.close()
+            self.web = None
+            return
+        self.web_error = None
+        try:
+            self.web = start_web(self.col, self.args)
+        except OSError as e:
+            self.web_error = str(e)
+
+    def publish(self):
+        if self.web:
+            self.web.publish(web.export_state(self.col, self.host, self.interval, group_by_process, VERSION))
+
     # ---- input
     def key(self, k):
         if k in (ord("q"), ord("Q"), 27):
             return False
-        if k == ord("R") and os.geteuid() != 0:
+        if k == ord("R") and not self.col.src.elevated():
             self.restart_as_root = True
             return False
         n = len(self.order) or 1
@@ -1249,6 +1004,8 @@ class UI:
             self.names = not self.names
         elif k == ord("l"):
             self.show_loop = not self.show_loop
+        elif k == ord("w"):
+            self.toggle_web()
         elif k == ord("p"):
             self.paused = not self.paused
         elif k in (ord("+"), ord("=")):
@@ -1268,54 +1025,94 @@ class UI:
         return True
 
 
-c_resolver = None
+def start_web(col, args):
+    addrs = col.slow.addrs or col.src.slow()[1]
+    return web.WebView(addrs, on=args.serve_on, port=args.port)
 
 
 def run_tui(scr, args):
-    global c_resolver
     curses.curs_set(0)
     scr.keypad(True)
     scr.timeout(100)
-    c_resolver = Resolver()
-    col = Collector(capture=os.geteuid() == 0 and not args.no_capture, resolver=c_resolver)
-    ui = UI(scr, col, args)
+    res = Resolver()
+    col = Collector(sources.load(), capture=system_elevated() and not args.no_capture, resolver=res)
+    ui = UI(scr, col, args, res)
+    if args.serve:
+        ui.toggle_web()
     col.update()
     next_t = time.monotonic() + ui.interval
     ui.draw(col)
+    ui.publish()
     last_draw = time.monotonic()
-    while True:
-        k = scr.getch()
-        if k != -1:
-            if not ui.key(k):
-                return ui.restart_as_root
-            ui.draw(col)
-            last_draw = time.monotonic()
-        now = time.monotonic()
-        if now >= next_t:
-            if not ui.paused:
-                col.update()
-            next_t = now + ui.interval
-            ui.draw(col)
-            last_draw = now
-        elif now - last_draw > 1.0:  # pick up resolved names while paused
-            ui.draw(col)
-            last_draw = now
+    try:
+        while True:
+            k = scr.getch()
+            if k != -1:
+                if not ui.key(k):
+                    return ui.restart_as_root
+                ui.draw(col)
+                last_draw = time.monotonic()
+            now = time.monotonic()
+            if now >= next_t:
+                if not ui.paused:
+                    col.update()
+                    ui.publish()
+                next_t = now + ui.interval
+                ui.draw(col)
+                last_draw = now
+            elif now - last_draw > 1.0:  # pick up resolved names while paused
+                ui.draw(col)
+                last_draw = now
+    finally:
+        if ui.web:
+            ui.web.close()
+
+
+def system_elevated():
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
+    return os.geteuid() == 0
+
+
+def headless(args):
+    """Just the web view, no screen: for a computer you watch from elsewhere."""
+    res = Resolver()
+    col = Collector(sources.load(), capture=system_elevated() and not args.no_capture, resolver=res)
+    host = (lambda ip: "*" if not ip else res.name(ip)) if not args.no_dns else (lambda ip: ip or "*")
+    view = start_web(col, args)
+    print(f"Snake's Net is sharing its web view: {', '.join(view.urls)}" + (f" ({view.warning})" if view.warning else ""),
+          flush=True)
+    try:
+        while True:
+            col.update()
+            view.publish(web.export_state(col, host, args.interval, group_by_process, VERSION))
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        view.close()
 
 
 def snapshot(args):
     """Plain-text report, for scripts and testing."""
     res = Resolver()
-    col = Collector(capture=os.geteuid() == 0 and not args.no_capture, resolver=res)
+    src = sources.load()
+    col = Collector(src, capture=system_elevated() and not args.no_capture, resolver=res)
     col.update()
     steps = max(1, int(args.snapshot / args.interval))
     for _ in range(steps):
         time.sleep(args.interval)
         col.update()
     bits = not args.bytes
-    if not col.diag_ok and not col.capturing:
-        print("note: tcp_diag kernel module unavailable, so per-connection speeds are off")
-    print(f"mode: {'capture (all traffic)' if col.capturing else 'TCP only'}"
+    print(f"system: {src.os_name}   mode: {src.mode(col.capturing)}"
           f"{' - ' + col.capture_error if col.capture_error else ''}")
+    note = None if col.capturing else src.note(col.capture_error)
+    if note:
+        print(f"note: {note}")
     print("\nINTERFACES")
     for it in [col.all] + list(col.ifaces.values()):
         extra = ""
@@ -1329,7 +1126,7 @@ def snapshot(args):
     for f in flows[:25]:
         d = "n/a" if f["down"] is None else fmt_rate(f["down"], bits)
         u = "n/a" if f["up"] is None else fmt_rate(f["up"], bits)
-        print(f"  {(f['proc'] or '?'):15} {f['proto']:4} {res.name(f['raddr'])[:40]:40}:{f['rport']:<5}"
+        print(f"  {(f['proc'] or '?'):15} {f['proto']:4} {(res.name(f['raddr']) if f['raddr'] else '*')[:40]:40}:{f['rport']:<5}"
               f" {f['svc']:10} {f['state']:6} down {d:>11} up {u:>11}")
     print("\nTRAFFIC BY TYPE")
     for cat in CATEGORY_ORDER:
@@ -1338,53 +1135,6 @@ def snapshot(args):
     print("\nOPEN PORTS")
     for r in col.listening:
         print(f"  {r['proto']:3} {r['port']:<6} {r['scope']:8} {r['svc']:12} {r['proc'] or '(system)'}")
-
-
-def self_command():
-    """How to start this app again: the launcher script when there is one."""
-    launcher = os.environ.get("SNAKES_NET_LAUNCHER")
-    if launcher and os.path.isfile(launcher):
-        return [launcher]
-    pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return ["env", f"PYTHONPATH={pkg_parent}", sys.executable, "-m", "snakes_net"]
-
-
-def restart_with_sudo(argv):
-    print("Restarting Snake's Net with sudo, to capture all traffic (UDP/QUIC and every app)...")
-    try:
-        os.execvp("sudo", ["sudo", "--", *self_command(), *argv])
-    except OSError as e:
-        sys.exit(f"Could not run sudo: {e}")
-
-
-# Terminal apps and how each one runs a command.
-TERMINALS = [
-    ("konsole", ["--separate", "-e"]), ("kgx", ["--"]), ("gnome-terminal", ["--"]),
-    ("ptyxis", ["--"]), ("kitty", []), ("alacritty", ["-e"]), ("foot", []),
-    ("wezterm", ["start", "--"]), ("ghostty", ["-e"]), ("xfce4-terminal", ["-x"]),
-    ("mate-terminal", ["-x"]), ("tilix", ["-e"]), ("terminator", ["-x"]),
-    ("lxterminal", ["-e"]), ("x-terminal-emulator", ["-e"]), ("xterm", ["-e"]),
-]
-
-
-def open_in_terminal(argv):
-    import shutil
-    if os.environ.get("SNAKES_NET_SPAWNED"):
-        sys.exit("Snake's Net needs a terminal.")
-    cmd = self_command() + list(argv)
-    env = dict(os.environ, SNAKES_NET_SPAWNED="1")
-    wanted = os.environ.get("TERMINAL")
-    choices = ([(wanted, dict(TERMINALS).get(os.path.basename(wanted), ["-e"]))] if wanted else []) + TERMINALS
-    for name, flags in choices:
-        exe = shutil.which(name)
-        if exe:
-            subprocess.Popen([exe, *flags, *cmd], env=env, start_new_session=True,
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return
-    msg = "Snake's Net runs in a terminal, and no terminal app was found. Install Konsole or GNOME Terminal."
-    if shutil.which("notify-send"):
-        subprocess.run(["notify-send", "-i", "network-wired", "Snake's Net", msg])
-    sys.exit(msg)
 
 
 def main():
@@ -1396,27 +1146,35 @@ def main():
     ap.add_argument("--iface", help="interface to graph at start (e.g. wlan0)")
     ap.add_argument("--snapshot", type=float, metavar="SECS",
                     help="measure for SECS seconds, print a text report and exit")
+    ap.add_argument("--serve", action="store_true",
+                    help=f"share the web view at start (key w), on port {web.PORT} of your Tailscale address")
+    ap.add_argument("--serve-on", choices=["tailnet", "lan"], default="tailnet",
+                    help="who may open the web view: your tailnet (default) or also the local network")
+    ap.add_argument("--port", type=int, default=web.PORT, help=f"web view port (default {web.PORT})")
+    ap.add_argument("--headless", action="store_true", help="no screen, only the web view (implies --serve)")
     ap.add_argument("--version", action="version", version=f"{APP} {VERSION}")
     args = ap.parse_args()
     args.interval = min(5.0, max(0.25, args.interval))
     if args.snapshot:
         snapshot(args)
         return
+    if args.headless:
+        headless(args)
+        return
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         # Started from the menu or the hub: open a terminal window to run in.
-        open_in_terminal(sys.argv[1:])
+        system.open_in_terminal(sys.argv[1:])
         return
     locale.setlocale(locale.LC_ALL, "")
     os.environ.setdefault("ESCDELAY", "25")
-    sys.stdout.write("\033]0;Snake's Net\007")  # window title
-    sys.stdout.flush()
+    system.set_title("Snake's Net")
     restart = False
     try:
         restart = curses.wrapper(run_tui, args)
     except KeyboardInterrupt:
         pass
     if restart:
-        restart_with_sudo(sys.argv[1:])
+        system.restart_elevated(sys.argv[1:])
 
 
 if __name__ == "__main__":

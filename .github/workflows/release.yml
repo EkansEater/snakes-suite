@@ -57,7 +57,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pyinstaller \
             "./tools/Snake's Converter" "./tools/Snake's MP3 Converter" "./tools/Snake's Screen Recorder" \
-            "./tools/Snake's SoundPad" ./hub
+            "./tools/Snake's SoundPad" "./tools/Snake's Net" ./hub
           if [ "$RUNNER_OS" = "Linux" ]; then
             python -m pip install "PyGObject<3.51"
           fi

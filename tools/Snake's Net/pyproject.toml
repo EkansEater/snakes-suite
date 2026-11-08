@@ -4,17 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snakes-net"
-version = "1.0.0"
-description = "Snake's Net: live network speeds, apps, traffic types and open ports, in the terminal."
+version = "1.1.0"
+description = "Snake's Net: live network speeds, apps, traffic types and open ports, in the terminal and on your phone."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "psutil>=5.9; sys_platform != 'linux'",
+    "windows-curses>=2.3; sys_platform == 'win32'",
+]
 
 [project.scripts]
 snakes-net = "snakes_net.app:main"
 
 [tool.setuptools]
-packages = ["snakes_net"]
+packages = ["snakes_net", "snakes_net.sources"]
 
 [tool.setuptools.package-data]
-snakes_net = ["assets/*"]
+snakes_net = ["assets/*", "web.html"]

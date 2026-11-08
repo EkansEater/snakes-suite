@@ -675,20 +675,27 @@
       "id": "net",
       "name": "Snake's Net",
       "tagline": "Network monitor",
-      "description": "Live download and upload speeds for Wi-Fi and Ethernet, which apps use the network, traffic types and open ports. Runs in a terminal, like btop.",
+      "description": "Live download and upload speeds for Wi-Fi and Ethernet, which apps use the network, traffic types and open ports. Runs in a terminal, like btop, and can share a live web page with your phone over Tailscale.",
       "folder": "tools/Snake's Net",
       "kind": "script",
       "launch": {
         "linux": [
           "./snakes-net"
+        ],
+        "macos": [
+          "./snakes-net"
+        ],
+        "windows": [
+          "snakes-net.cmd"
         ]
       },
       "platforms": [
-        "linux"
+        "linux",
+        "windows",
+        "macos"
       ],
       "needs": [
-        "Python 3.10+",
-        "A terminal app (Konsole, GNOME Terminal, kitty, …)"
+        "Linux: Python 3.10+ and a terminal app (Konsole, GNOME Terminal, …)"
       ],
       "assets": {
         "dir": "snakes_net/assets"
@@ -699,9 +706,25 @@
       "accepts_files": false,
       "legacy_desktop": [],
       "package": {
-        "source": true
+        "source": [
+          "linux"
+        ],
+        "console": true,
+        "entry": "snakes_net.app:main",
+        "exe": "snakes-net",
+        "collect_data": [
+          "snakes_net"
+        ],
+        "hidden_imports_by_os": {
+          "windows": [
+            "snakes_net.sources.windows"
+          ],
+          "macos": [
+            "snakes_net.sources.macos"
+          ]
+        }
       },
-      "version": "1.0.0"
+      "version": "1.1.0"
     }
   ],
   "hub": {

@@ -415,6 +415,41 @@ def build_source(tool: dict, install: bool) -> Path:
     return archive(tool, stage, meta)
 
 
+def build_console(tool: dict, install: bool) -> Path:
+    """A terminal program (Snake's Net on Windows and macOS): one PyInstaller file that opens
+    in a console window, wrapped in an .app on macOS. No Python needed on the user's side."""
+    pkg = tool["package"]
+    if install:
+        run([sys.executable, "-m", "pip", "install", "--quiet", "pyinstaller", tool["root"]])
+    work = Path(tempfile.mkdtemp(prefix=f"snake-build-{tool['id']}-"))
+    module, func = pkg["entry"].split(":")
+    entry = work / "launch.py"
+    entry.write_text(f"import sys\nfrom {module} import {func}\nsys.exit({func}())\n", encoding="utf-8")
+    name = display_exe(tool)
+    args = [sys.executable, "-m", "PyInstaller", entry, "--name", name, "--onefile", "--console", "--noconfirm",
+            "--clean", "--distpath", work / "dist", "--workpath", work / "build", "--specpath", work,
+            "--exclude-module", "tkinter"]
+    icon = ICONS / f"{tool['icon']}.ico"
+    if OS == "windows" and icon.exists():
+        args += ["--icon", icon]
+    for mod in pkg.get("collect_data", []):
+        args += ["--collect-data", mod]
+    for mod in pkg.get("hidden_imports", []) + pkg.get("hidden_imports_by_os", {}).get(OS, []):
+        args += ["--hidden-import", mod]
+    run(args)
+    binary = work / "dist" / (name + EXE)
+    stage = work / "stage"
+    stage.mkdir()
+    if OS == "macos":
+        app = mac_bundle(tool, stage, binary)
+        meta = {"app_bundle": app.name, "cli": f"{app.name}/Contents/MacOS/{binary.name}"}
+    else:
+        shutil.copy2(binary, stage / binary.name)
+        icons_into(stage, tool)
+        meta = {"launch": binary.name, "cli": binary.name}
+    return archive(tool, stage, meta)
+
+
 BUILDERS = {"python": build_python, "cargo": build_cargo, "electron": build_electron}
 
 
@@ -423,8 +458,11 @@ def build_tool(tool: dict, install: bool) -> Path | None:
         say(f"{tool['name']}: not for {OS}, skipped")
         return None
     say(f"\n=== {tool['name']} ({PLATFORM}) ===")
-    if tool["package"].get("source"):
+    source = tool["package"].get("source")
+    if source is True or (isinstance(source, list) and OS in source):
         return build_source(tool, install)
+    if tool["package"].get("console"):
+        return build_console(tool, install)
     if in_studio(tool):
         return build_studio(tool, install)
     return BUILDERS[tool["kind"]](tool, install)
