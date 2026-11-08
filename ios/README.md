@@ -1,7 +1,7 @@
 # Snake's Master Suite for iPhone and iPad
 
 Every Snake app that can run on an iPhone, in one app: Word, Spreadsheets, Slides, Paint,
-Photo, Movie Maker, Player, Code, SoundPad, Screen Recorder, DAW, Converter and Compressor.
+Photo, Movie Maker, Player, Code, SoundPad, Screen Recorder, DAW, Converter, Compressor and Net.
 They are the suite's own pages (`tools/Snake's Studio/dist`, the same files as the website)
 in a web view, opened on the home page that lists them all. The MP3 Converter and the
 Recompiler need a computer (or Android, for the MP3 Converter); the home page says so.
@@ -13,7 +13,12 @@ Recompiler need a computer (or Android, for the MP3 Converter); the home page sa
 - Two fingers zoom what is under them; swiping in from the left edge goes back to the list of apps.
 - The microphone is used only while recording (DAW, Movie Maker, SoundPad, Screen Recorder).
   iPhones cannot record the screen from an app's page, so the Screen Recorder records sound there.
-- Nothing is uploaded: the app has no network use of its own.
+- **Snake's Net** is a native screen (`Sources/NetViewController.swift`), opened from the home page
+  like the others: this iPhone's live speeds (Wi-Fi and mobile data apart, from the network
+  interfaces' counters) and *Computers*, which opens a computer's Snake's Net web view (`w` on
+  the computer) over Tailscale. iOS doesn't let an app see other apps' traffic, so the per-app
+  list is on the computers and Android.
+- Nothing is uploaded: the app's only network use is opening your computers' pages in Snake's Net.
 
 The home-screen name is "Master Suite" (an iPhone shortens longer names under the icon).
 

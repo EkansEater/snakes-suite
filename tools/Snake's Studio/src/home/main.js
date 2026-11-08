@@ -30,13 +30,16 @@ const SUITE = [
     why: 'It runs programs on your computer and connects to your other devices, which a web page is not allowed to do.' },
   { id: 'converter', name: "Snake's Converter", tag: 'Audio, video, pictures, documents', group: 'Tools', kind: 'web', where: EVERYWHERE },
   { id: 'compressor', name: "Snake's Compressor", tag: 'Lossless .snake archives', group: 'Tools', kind: 'web', where: EVERYWHERE },
+  { id: 'net', name: "Snake's Net", tag: 'Live network speeds, apps and ports', group: 'Tools', kind: 'native', ios: true,
+    where: 'Windows, macOS, Linux, Android and iPhone', why: 'It reads your device’s network counters, which a web page is not allowed to do.' },
   { id: 'recompiler', name: "Snake's Recompiler", tag: 'Your N64 games as native programs', group: 'Tools', kind: 'native', where: 'Linux',
     why: 'It builds programs on your computer.' },
 ];
 
 // On the desktop this is the Studio's window; everywhere else, the whole suite.
 const asSuite = !inElectron && platform !== 'android'; // Android has each app on its own
-const runsHere = (a) => a.kind === 'studio' || (asSuite && a.kind === 'web');
+// `ios`: a native screen of the iPhone app (Snake's Net), opened like the others.
+const runsHere = (a) => a.kind === 'studio' || (asSuite && a.kind === 'web') || (platform === 'ios' && !!a.ios);
 const shown = asSuite ? SUITE : SUITE.filter((a) => a.kind === 'studio');
 const title = asSuite ? "Snake's Master Suite" : "Snake's Studio";
 

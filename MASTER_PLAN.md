@@ -26,7 +26,7 @@ the index the hub updates from).
 | Snake's DAW | daw | Rust egui | Amp, effects, looper, recording |
 | Snake's Screen Recorder | screen | PyQt6 | Screen to MP4/GIF, audio to MP3 |
 | Snake's Recompiler | recompiler | Python + C | N64 recompiler (Linux) |
-| Snake's Net | net | Python (curses) | btop style network monitor: speeds, apps, traffic types, open ports (Linux) |
+| Snake's Net | net | Python (curses); Kotlin on Android; Swift on iPhone | btop style network monitor: speeds, apps, traffic types, open ports, web view over Tailscale |
 
 ### Snake's Studio: one runtime for the new apps
 
@@ -118,6 +118,7 @@ tools/Snake's Studio/
 - [x] Projects/ shortcuts point at the Master Suite tools (they pointed at the old Snake's Suite)
 - [x] Snapshot of all of Projects/ after the release: `../Projects Snapshot 2026-10-20` (read-only)
 - [x] Snake's Net 1.0.0 (2026-11-08): terminal network monitor; per-app TCP speeds via sock_diag as a user, every app and UDP/QUIC by packet capture with sudo (`R` restarts with sudo); opens a terminal window when started from the menu; source package with a `snakes-net` command (build.py/install.py now give source apps their command)
+- [x] Snake's Net 1.1.0 (2026-11-08): Windows (psutil; TCP per app from Windows' per-connection counters as administrator) and macOS (psutil + nettop, TCP and UDP per app); `w` / `--serve` web view over Tailscale, `--headless`; Windows/macOS ship as one console program (build.py `console` packages), Linux stays source; GitHub check `.github/workflows/net.yml`. Android app (`android/apps/net`): phone speeds, Wi-Fi details, usage per app (Android's network statistics), live capture per app through a local VPN (own TCP/UDP relay, tested in the emulator: 250 Mb/s down, 95 Mb/s up, byte-exact), computers' web views. iPhone: a native Snake's Net screen in the Master Suite app (speeds, Wi-Fi/mobile, computers' web views); not compiled yet (needs the iOS workflow)
 
 ## Publishing the phone apps
 
