@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snakes-net"
+version = "1.0.0"
+description = "Snake's Net: live network speeds, apps, traffic types and open ports, in the terminal."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+snakes-net = "snakes_net.app:main"
+
+[tool.setuptools]
+packages = ["snakes_net"]
+
+[tool.setuptools.package-data]
+snakes_net = ["assets/*"]

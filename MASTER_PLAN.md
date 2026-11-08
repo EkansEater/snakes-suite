@@ -26,6 +26,7 @@ the index the hub updates from).
 | Snake's DAW | daw | Rust egui | Amp, effects, looper, recording |
 | Snake's Screen Recorder | screen | PyQt6 | Screen to MP4/GIF, audio to MP3 |
 | Snake's Recompiler | recompiler | Python + C | N64 recompiler (Linux) |
+| Snake's Net | net | Python (curses) | btop style network monitor: speeds, apps, traffic types, open ports (Linux) |
 
 ### Snake's Studio: one runtime for the new apps
 
@@ -116,6 +117,7 @@ tools/Snake's Studio/
 - [x] Taskbar names on Linux/Wayland (v1.4.2): every app of the Studio package showed as "snakes-studio" in KDE's taskbar (no name, no icon): the Wayland app id comes from CHROME_DESKTOP, which Electron fills from the package's own name. Studio's boot.js now sets it to the app's menu entry (snakes-word.desktop, snakes-code.desktop…), checked in a headless kwin_wayland with WAYLAND_DEBUG (xdg_toplevel.set_app_id). Shells in Terminal and Code no longer inherit it
 - [x] Projects/ shortcuts point at the Master Suite tools (they pointed at the old Snake's Suite)
 - [x] Snapshot of all of Projects/ after the release: `../Projects Snapshot 2026-10-20` (read-only)
+- [x] Snake's Net 1.0.0 (2026-11-08): terminal network monitor; per-app TCP speeds via sock_diag as a user, every app and UDP/QUIC by packet capture with sudo (`R` restarts with sudo); opens a terminal window when started from the menu; source package with a `snakes-net` command (build.py/install.py now give source apps their command)
 
 ## Publishing the phone apps
 

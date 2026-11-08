@@ -173,7 +173,8 @@ def build_script(tool: dict) -> dict:
     if not argv:
         raise Failed(f"{tool['name']} has no launcher for {OS}.")
     root = tool["root"]
-    return {"launch": [str(root / argv[0]), *argv[1:]], "cwd": str(root), "cli": None}
+    return {"launch": [str(root / argv[0]), *argv[1:]], "cwd": str(root),
+            "cli": [str(root / argv[0])] if tool.get("command") else None}
 
 
 BUILDERS = {"python": build_python, "cargo": build_cargo, "electron": build_electron, "script": build_script}

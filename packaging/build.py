@@ -409,7 +409,7 @@ def build_source(tool: dict, install: bool) -> Path:
         shutil.copy2(src, dst)
     icons_into(stage, tool)
     argv = tool["launch"][OS]
-    meta = {"launch": argv[0], "cwd": True, "cli": None}
+    meta = {"launch": argv[0], "cwd": True, "cli": argv[0] if tool.get("command") else None}
     if tool.get("user_data"):  # what older versions kept in the program's folder, for the app to move out
         meta["user_data"] = tool["user_data"]
     return archive(tool, stage, meta)

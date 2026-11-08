@@ -121,6 +121,9 @@ GLYPHS = {
   <path d="M22 103 L62 103 M22 128 L62 128 M22 153 L62 153" {S}/>
   <rect x="190" y="118" width="42" height="56" rx="6" {S}/>
   <path d="M190 104 L232 92" {S}/>""",
+    # Snake's Net: download arrow on the left, upload arrow on the right.
+    "net": f"""  <path d="M44 84 L44 170 M24 150 L44 172 L64 150" {S}/>
+  <path d="M212 200 L212 118 M192 138 L212 116 L232 138" {S}/>""",
     # Snake's Studio: sparkles either side.
     # Terminal: a shell prompt, > on the left and the cursor _ on the right.
     "terminal": f"""  <path d="M30 98 L62 128 L30 158" {S}/>

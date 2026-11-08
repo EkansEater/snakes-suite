@@ -670,6 +670,38 @@
         }
       },
       "version": "1.1.0"
+    },
+    {
+      "id": "net",
+      "name": "Snake's Net",
+      "tagline": "Network monitor",
+      "description": "Live download and upload speeds for Wi-Fi and Ethernet, which apps use the network, traffic types and open ports. Runs in a terminal, like btop.",
+      "folder": "tools/Snake's Net",
+      "kind": "script",
+      "launch": {
+        "linux": [
+          "./snakes-net"
+        ]
+      },
+      "platforms": [
+        "linux"
+      ],
+      "needs": [
+        "Python 3.10+",
+        "A terminal app (Konsole, GNOME Terminal, kitty, …)"
+      ],
+      "assets": {
+        "dir": "snakes_net/assets"
+      },
+      "wm_class": "snakes-net",
+      "command": "snakes-net",
+      "categories": "System;Network;Monitor;",
+      "accepts_files": false,
+      "legacy_desktop": [],
+      "package": {
+        "source": true
+      },
+      "version": "1.0.0"
     }
   ],
   "hub": {
