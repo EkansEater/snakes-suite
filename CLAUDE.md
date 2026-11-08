@@ -7,8 +7,9 @@
 
 ## Rules that bite
 
-- Work on the `master-suite` branch. `main` is what is released; never push, tag or release
-  without the owner saying so (`python ship.py` does releases).
+- Work on the `master-suite` branch. `main` is what is released; never push `main`, tag or
+  release without the owner saying so (`python ship.py` does releases). Pushing `master-suite`
+  (and the laptop's `laptop` branch) to GitHub at the end of a session is agreed: see below.
 - Changing an app: raise its `version` in `suite.json` **and** in the app's own manifest
   (`package.json`, `pyproject.toml`, `Cargo.toml`) together; `packaging/build.py` stops when they
   differ.
@@ -39,3 +40,24 @@ single-instance lock out of it.
 
 Stop it by PID (`pgrep gamescope`, check its args, `kill <pid>`). `pkill -f <pattern>` also
 kills your own shell when the pattern is in your command line.
+
+## Two machines, one meeting point
+
+The suite is worked on from mainrig (`/mnt/2TB_SSD/ExternalFiles/Projects/Snake's Master Suite`)
+and the laptop (`~/Projects/Snake's Master Suite`). GitHub's `master-suite` is where they meet;
+builds are made from commits, never synced by copying.
+
+- **Start of a session:** `python3 suite_sync.py` (on the laptop, `suite-sync`). It fetches GitHub
+  (and, from the laptop, the PC over Tailscale) and says what is behind, unmerged or uncommitted.
+  Pull before changing anything.
+- **The PC** works on `master-suite`. **The laptop** works on its `laptop` branch; the PC merges
+  that into `master-suite` when it is next on (the laptop then resets `laptop` to it).
+- **Version numbers settle it:** every change to an app raises its version (see above), so two
+  machines changing one app show up as a merge conflict, not as two different builds.
+- **Before building or installing:** `python3 suite_sync.py clean` must pass, so every installed
+  build is a commit.
+- **End of a session:** commit, then `python3 suite_sync.py share` (pushes `master-suite` from the
+  PC, `laptop` from the laptop: to GitHub, and to the PC when it is on). Not `main`, tags or
+  releases.
+- Don't sync this folder with Syncthing: two machines writing one `.git` corrupts it.
+
