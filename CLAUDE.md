@@ -52,8 +52,12 @@ builds are made from commits, never synced by copying.
   Pull before changing anything.
 - **The PC** works on `master-suite`. **The laptop** works on its `laptop` branch; the PC merges
   that into `master-suite` when it is next on (the laptop then resets `laptop` to it).
-- **Version numbers settle it:** every change to an app raises its version (see above), so two
-  machines changing one app show up as a merge conflict, not as two different builds.
+- **Merging:** every change to an app raises its version in `suite.json`, so that file changes on
+  both machines. `.gitattributes` merges it (and the hub's `catalogue.json`) app by app through
+  `suite_sync.py`, keeping the higher version where both raised one; the app's own files merge as
+  usual, so two machines changing the same code still stop for a person. If a merge stopped on
+  the catalogue anyway (the first one, before the helper is set up): `python3 suite_sync.py resolve`.
+  A merge that adds an app also raises the hub's version (it carries the catalogue).
 - **Before building or installing:** `python3 suite_sync.py clean` must pass, so every installed
   build is a commit.
 - **End of a session:** commit, then `python3 suite_sync.py share` (pushes `master-suite` from the
