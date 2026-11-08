@@ -5,6 +5,12 @@
     python3 suite_sync.py --brief    # warnings only, one line each (for session start)
     python3 suite_sync.py clean      # exit 1 if there are uncommitted changes (before installing a build)
     python3 suite_sync.py share      # push this machine's work: see below
+    python3 suite_sync.py resolve    # in a merge: merge suite.json and catalogue.json app by app
+
+suite.json changes on both machines (every app change raises a version there), so git would
+often stop on it. `.gitattributes` sends it, and the hub's copy, through `merge-json`, which merges
+app by app and keeps the higher version when both sides raised one. Running this script once
+sets that up in a checkout; `resolve` does the same by hand for a merge already stopped.
 
 The meeting point is GitHub's master-suite branch (`origin`). The laptop also has the PC as a
 remote (`pc`, over Tailscale), so it can see the PC's work before it reaches GitHub.
@@ -17,6 +23,7 @@ remote (`pc`, over Tailscale), so it can see the PC's work before it reaches Git
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -156,11 +163,143 @@ def share() -> int:
     return 0 if ok else 1
 
 
+# --------------------------------------------------------------------------- merging the catalogue
+# suite.json (and its copy, hub/snakes_suite/catalogue.json) changes on both machines: every app
+# change raises a version there. Git merges it line by line, so a new app next to a raised
+# version is a conflict. This merges it app by app instead.
+
+CATALOGUES = ("suite.json", "hub/snakes_suite/catalogue.json")
+
+
+class Clash(Exception):
+    pass
+
+
+def vkey(v: str) -> list[int]:
+    return [int(x) for x in str(v).split(".") if x.isdigit()]
+
+
+def _merge(base, ours, theirs, path: str):
+    if ours == theirs:
+        return ours
+    if ours == base:
+        return theirs
+    if theirs == base:
+        return ours
+    if path.endswith(".version") and isinstance(ours, str) and isinstance(theirs, str):
+        return max(ours, theirs, key=vkey)  # both raised it: the higher one
+    if isinstance(ours, dict) and isinstance(theirs, dict):
+        base = base if isinstance(base, dict) else {}
+        out = {}
+        for k in list(ours) + [k for k in theirs if k not in ours]:
+            v = _merge(base.get(k, _MISSING), ours.get(k, _MISSING), theirs.get(k, _MISSING), f"{path}.{k}")
+            if v is not _MISSING:
+                out[k] = v
+        return out
+    raise Clash(f"{path or 'top'} changed differently on both sides")
+
+
+_MISSING = object()
+
+
+def _merge_tools(base: list, ours: list, theirs: list) -> list:
+    b = {t["id"]: t for t in base}
+    o = {t["id"]: t for t in ours}
+    t_ = {t["id"]: t for t in theirs}
+    out = []
+    for t in ours:
+        tid = t["id"]
+        if tid not in t_:
+            if tid in b and t != b[tid]:
+                raise Clash(f"{tid}: changed here, removed on the other side")
+            if tid in b:
+                continue  # removed on the other side
+            out.append(t)
+            continue
+        out.append(_merge(b.get(tid, _MISSING), t, t_[tid], f"tools.{tid}"))
+    # Apps only the other side has: new there (or removed here).
+    for i, t in enumerate(theirs):
+        tid = t["id"]
+        if tid in o:
+            continue
+        if tid in b:
+            if t != b[tid]:
+                raise Clash(f"{tid}: removed here, changed on the other side")
+            continue
+        prev = next((theirs[j]["id"] for j in range(i - 1, -1, -1) if theirs[j]["id"] in {x["id"] for x in out}), None)
+        at = next((k + 1 for k, x in enumerate(out) if x["id"] == prev), 0) if prev else 0
+        out.insert(at, t)
+    return out
+
+
+def merge_catalogue(base_text: str, ours_text: str, theirs_text: str) -> str:
+    base, ours, theirs = (json.loads(x) if x.strip() else {} for x in (base_text, ours_text, theirs_text))
+    tools = _merge_tools(base.get("tools", []), ours.get("tools", []), theirs.get("tools", []))
+    rest = _merge({k: v for k, v in base.items() if k != "tools"}, {k: v for k, v in ours.items() if k != "tools"},
+                  {k: v for k, v in theirs.items() if k != "tools"}, "")
+    merged = {}
+    for k in ours:  # keep the file's key order
+        if k == "tools":
+            merged[k] = tools
+        elif k in rest:
+            merged[k] = rest[k]
+    for k in rest:
+        merged.setdefault(k, rest[k])
+    indent = 1 if ours_text.startswith('{\n "') else 2
+    return json.dumps(merged, indent=indent, ensure_ascii=False) + "\n"
+
+
+def merge_driver(base: str, ours: str, theirs: str) -> int:
+    """git merge driver: `suite_sync.py merge-json %O %A %B` (result goes into %A)."""
+    texts = [Path(p).read_text(encoding="utf-8") for p in (base, ours, theirs)]
+    try:
+        Path(ours).write_text(merge_catalogue(*texts), encoding="utf-8")
+    except (Clash, ValueError) as e:
+        print(f"suite_sync: could not merge the catalogue app by app: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def install_driver() -> None:
+    """Point git at the catalogue merge (once per checkout; .gitattributes names the files)."""
+    want = f'python3 "{SUITE / "suite_sync.py"}" merge-json %O %A %B'
+    if out("config", "--get", "merge.suite-json.driver") != want:
+        git("config", "merge.suite-json.name", "Snake's Master Suite catalogue, app by app")
+        git("config", "merge.suite-json.driver", want)
+
+
+def resolve() -> int:
+    """During a merge: redo the catalogue files app by app from git's three versions, then stage them."""
+    conflicted = out("diff", "--name-only", "--diff-filter=U").splitlines()
+    todo = [f for f in CATALOGUES if f in conflicted]
+    if not todo:
+        print("No catalogue conflicts to resolve.")
+        return 0
+    for f in todo:
+        texts = [git("show", f":{n}:{f}").stdout for n in (1, 2, 3)]
+        try:
+            (SUITE / f).write_text(merge_catalogue(*texts), encoding="utf-8")
+        except (Clash, ValueError) as e:
+            print(f"{f}: needs a hand ({e})")
+            return 1
+        git("add", "--", f, check=True)
+        print(f"{f}: merged app by app")
+    rest = [f for f in conflicted if f not in todo]
+    if rest:
+        print("Still to resolve: " + ", ".join(rest))
+    return 0
+
+
 def main() -> int:
     args = sys.argv[1:]
+    if args[:1] == ["merge-json"] and len(args) == 4:
+        return merge_driver(*args[1:])
     if not (SUITE / ".git").exists():
         print(f"{SUITE} is not a git checkout")
         return 2
+    install_driver()
+    if args[:1] == ["resolve"]:
+        return resolve()
     if args[:1] == ["clean"]:
         dirty = uncommitted()
         for line in dirty:
