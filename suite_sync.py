@@ -158,8 +158,10 @@ def share() -> int:
         r = git("push", "pc", LAPTOP, timeout=120)
         if r.returncode == 0:
             print("PC (laptop branch): pushed; merge it there into master-suite")
-        else:
+        elif ok:
             print("PC: not reachable, it will get the work from GitHub")
+        else:
+            print("PC: not reachable either; the work stays on this machine until one of them is")
     return 0 if ok else 1
 
 
