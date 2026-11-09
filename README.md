@@ -144,8 +144,9 @@ entries and program, and moves the old data folder to the new one.
 ## The look
 
 Every tool uses the **Snake Dark** theme of Snake's Code and an icon from the
-same family: the Snake's Code tile and snake, with a glyph of its own in place
-of the `< >` brackets.
+same family: the dark-green tile with the suite's snake faded into the
+background (only its red tongue keeps its colour) and the app's own symbol in
+bright green in front. The tongue is the only red in the family.
 
 ```
 shared/

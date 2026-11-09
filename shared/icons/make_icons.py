@@ -1,7 +1,9 @@
 """Generate the Snake's Suite icon family.
 
-Every icon is the Snake's Code logo: the same tile, the same snake. Only the
-muted glyph around the snake changes (the `< >` brackets on Snake's Code).
+Every icon shares one tile: the dark-green rounded square with the suite's snake
+faded into the background as a watermark (only its red tongue keeps its colour).
+In front sits the app's own symbol in bright green, so each app can be told
+apart at taskbar size.
 
     python shared/icons/make_icons.py
 
@@ -16,8 +18,10 @@ import subprocess
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-GLYPH = "#3c5a45"  # the muted green of the Snake's Code brackets
-RED = "#ff7b72"
+GREEN = "#7ee787"   # the symbol
+GHOST = "#26392c"   # the watermark snake, a step above the tile
+RED = "#ff7b72"     # the snake's tongue: the only red in the family
+DARK = "#0d1410"
 
 TILE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
   <defs>
@@ -25,115 +29,104 @@ TILE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
       <stop offset="0" stop-color="#1e2b22"/>
       <stop offset="1" stop-color="#0d1410"/>
     </linearGradient>
-    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7ee787"/>
-      <stop offset="1" stop-color="#2ea043"/>
-    </linearGradient>
   </defs>
   <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
-{glyph}
-  <!-- snake body: an S curve -->
+  <!-- the snake, as a watermark -->
   <path d="M166 70 C 120 52, 82 72, 96 104 C 108 132, 160 124, 164 156 C 168 190, 116 200, 86 184"
-        fill="none" stroke="url(#body)" stroke-width="26" stroke-linecap="round"/>
-  <!-- head -->
-  <ellipse cx="170" cy="70" rx="22" ry="17" fill="#7ee787"/>
-  <circle cx="176" cy="64" r="4.5" fill="#0d1410"/>
-  <path d="M190 74 L206 78 M206 78 L214 72 M206 78 L213 85" stroke="{red}" stroke-width="4" stroke-linecap="round" fill="none"/>
-{extra}</svg>
+        fill="none" stroke="{ghost}" stroke-width="26" stroke-linecap="round"/>
+  <ellipse cx="170" cy="70" rx="22" ry="17" fill="{ghost}"/>
+  <path d="M190 74 L206 78 M206 78 L214 72 M206 78 L213 85" stroke="{red}" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <!-- the app's symbol -->
+{glyph}
+</svg>
 """
 
-S = f'fill="none" stroke="{GLYPH}" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"'
-F = f'fill="{GLYPH}"'
+
+def S(w: float) -> str:
+    """A green line `w` wide."""
+    return f'fill="none" stroke="{GREEN}" stroke-width="{w:g}" stroke-linecap="round" stroke-linejoin="round"'
+
+
+F = f'fill="{GREEN}"'
+
+
+def star(cx: float, cy: float, r: float) -> str:
+    """A four-pointed sparkle."""
+    k = r * 0.12
+    return (f'  <path d="M{cx} {cy - r} Q{cx + k:g} {cy - k:g} {cx + r} {cy} Q{cx + k:g} {cy + k:g} {cx} {cy + r} '
+            f'Q{cx - k:g} {cy + k:g} {cx - r} {cy} Q{cx - k:g} {cy - k:g} {cx} {cy - r} Z" {F}/>')
+
 
 GLYPHS = {
-    # Snake's Code: the original brackets.
-    "code": f"""  <path d="M70 84 L36 128 L70 172" {S}/>
-  <path d="M186 84 L220 128 L186 172" {S}/>""",
-    # Snake's Suite: an app grid, a column of tiles on each side.
-    "suite": "\n".join(
-        f'  <rect x="{x}" y="{y}" width="28" height="28" rx="8" {F}/>'
-        for x in (30, 198) for y in (82, 116, 150)
-    ),
-    # Compressor: two jaws squeezing inwards.
-    "compressor": f"""  <path d="M30 84 L30 172" {S}/>
-  <path d="M52 104 L72 128 L52 152" {S}/>
-  <path d="M226 96 L226 172" {S}/>
-  <path d="M204 104 L184 128 L204 152" {S}/>""",
-    # Converter: two arrows chasing each other round the snake.
-    "converter": f"""  <path d="M58 170 A 82 82 0 0 1 58 86" {S}/>
-  <path d="M40 92 L58 86 L64 104" {S}/>
-  <path d="M198 92 A 82 82 0 0 1 198 176" {S}/>
-  <path d="M216 170 L198 176 L192 158" {S}/>""",
-    # Recompiler: the pins of a chip (or a cartridge edge).
-    "recompiler": "\n".join(
-        f'  <path d="M{x1} {y} L{x2} {y}" {S}/>'
-        for (x1, x2) in ((30, 62), (194, 226)) for y in (96, 128, 160)
-    ),
-    # SoundPad: a 2x2 pad on the left, sound waves on the right.
-    "soundpad": "\n".join(
-        f'  <rect x="{x}" y="{y}" width="24" height="24" rx="6" {F}/>'
-        for x in (24, 54) for y in (100, 130)
-    ) + f"""
-  <path d="M196 106 Q 208 128 196 150" {S}/>
-  <path d="M218 94 Q 236 128 218 162" {S}/>""",
-    # MP3 Converter: a note on the left, an arrow down into a tray on the right.
-    "mp3": f"""  <path d="M60 156 L60 92 L84 84" {S}/>
-  <circle cx="46" cy="160" r="15" {F}/>
-  <path d="M212 96 L212 146 M196 132 L212 148 L228 132" {S}/>
-  <path d="M194 172 L230 172" {S}/>""",
-    # DAW: level meters / waveform bars on both sides.
-    "daw": "\n".join(
-        f'  <path d="M{x} {128 - h} L{x} {128 + h}" {S}/>'
-        for x, h in ((30, 18), (56, 36), (200, 30), (226, 16))
-    ),
-    # Screen Recorder: the corners of a capture region.
-    "screen": f"""  <path d="M30 74 L30 44 L60 44" {S}/>
-  <path d="M30 182 L30 212 L60 212" {S}/>
-  <path d="M226 182 L226 212 L196 212" {S}/>
-  <path d="M226 110 L226 140" {S}/>""",
-    # Snake's Word: lines of text on the left, a W on the right.
-    "word": "\n".join(f'  <path d="M26 {y} L{x} {y}" {S}/>' for y, x in ((92, 62), (120, 54), (148, 62), (176, 44)))
-    + f"""
-  <path d="M190 104 L200 160 L211 124 L222 160 L232 104" {S}/>""",
-    # Snake's Spreadsheets: a grid of cells on each side.
-    "sheets": "\n".join(
-        f'  <rect x="{x}" y="86" width="44" height="88" rx="6" {S}/>\n  <path d="M{x} 115 L{x + 44} 115 M{x} 145 L{x + 44} 145 M{x + 22} 86 L{x + 22} 174" {S}/>'
-        for x in (22, 190)),
-    # Snake's Slides: a stack of slides on the left, a play button on the right.
-    "slides": "\n".join(f'  <rect x="22" y="{y}" width="44" height="26" rx="6" {S}/>' for y in (78, 115, 152))
-    + f"""
-  <path d="M196 102 L230 128 L196 154 Z" {F}/>""",
-    # Snake's Paint: paint dots on the left, a pencil on the right.
-    "paint": f"""  <path d="M196 170 L230 112" {S}/>
-  <path d="M188 184 L196 170 L204 176 Z" {F}/>""",
-    # Snake's Photo: a framed mountain on the left, stacked layers on the right.
-    "photo": f"""  <rect x="20" y="92" width="50" height="72" rx="8" {S}/>
-  <path d="M28 150 L42 128 L52 140 L58 132 L64 150" {S}/>
-  <path d="M190 112 L212 100 L234 112 L212 124 Z" {S}/>
-  <path d="M190 140 L212 152 L234 140" {S}/>
-  <path d="M190 166 L212 178 L234 166" {S}/>""",
-    # Snake's Player: a disc on the left, play on the right.
-    "player": f"""  <circle cx="44" cy="128" r="24" {S}/>
-  <circle cx="44" cy="128" r="5" {F}/>
-  <path d="M194 98 L234 128 L194 158 Z" {F}/>""",
-    # Snake's Movie Maker: a film strip on the left, a clapper on the right.
-    "movie": f"""  <rect x="22" y="78" width="40" height="100" rx="6" {S}/>
-  <path d="M22 103 L62 103 M22 128 L62 128 M22 153 L62 153" {S}/>
-  <rect x="190" y="118" width="42" height="56" rx="6" {S}/>
-  <path d="M190 104 L232 92" {S}/>""",
-    # Snake's Studio: sparkles either side.
-    # Terminal: a shell prompt, > on the left and the cursor _ on the right.
-    "terminal": f"""  <path d="M30 98 L62 128 L30 158" {S}/>
-  <path d="M188 176 L228 176" {S}/>""",
-    "studio": f"""  <path d="M44 92 Q48 120 72 124 Q48 128 44 156 Q40 128 16 124 Q40 120 44 92 Z" {F}/>
-  <path d="M212 112 Q215 132 232 135 Q215 138 212 158 Q209 138 192 135 Q209 132 212 112 Z" {F}/>""",
-}
-
-# A record light for the Screen Recorder, bottom left of the snake.
-EXTRA = {
-    "screen": f'  <circle cx="58" cy="128" r="14" fill="{RED}"/>\n',
-    "paint": "".join(f'  <circle cx="{x}" cy="{y}" r="11" fill="{c}"/>\n' for x, y, c in
-                     ((36, 92, RED), (56, 122, "#e3b341"), (36, 152, "#58a6ff"), (56, 180, "#7ee787"))),
+    # Snake's Suite: an app grid.
+    "suite": "\n".join(f'  <rect x="{62 + i * 48}" y="{62 + j * 48}" width="36" height="36" rx="9" {F}/>'
+                       for i in range(3) for j in range(3)),
+    # Word: a blank page with the cursor waiting at the top.
+    "word": f"""  <path d="M70 44 L156 44 L196 84 L196 212 L70 212 Z" {S(10.4)}/>
+  <path d="M156 44 L156 84 L196 84" {S(9.1)}/>
+  <path d="M96 76 L96 120" {S(13)}/>""",
+    # Spreadsheets: a table of cells.
+    "sheets": f"""  <rect x="50" y="70" width="156" height="116" rx="12" {S(10.4)}/>
+  <path d="M102 70 L102 186 M154 70 L154 186 M50 109 L206 109 M50 148 L206 148" {S(9.1)}/>""",
+    # Slides: a screen on a stand, with a rising line on it.
+    "slides": f"""  <rect x="46" y="60" width="164" height="104" rx="12" {S(10.4)}/>
+  <path d="M128 164 L128 196 M98 198 L158 198" {S(10.4)}/>
+  <path d="M78 136 L110 106 L138 124 L180 88" {S(9.1)}/>""",
+    # Paint: a brush.
+    "paint": f"""  <path d="M200 56 L134 122" {S(14.3)}/>
+  <path d="M126 120 C 100 112, 72 132, 74 162 C 74 180, 64 190, 50 196 C 92 206, 136 184, 140 140 Z" {F}/>""",
+    # Photo: a framed landscape with a sun.
+    "photo": f"""  <rect x="46" y="64" width="164" height="128" rx="16" {S(10.4)}/>
+  <path d="M60 180 L104 122 L134 158 L156 134 L196 180 Z" {F}/>
+  <circle cx="168" cy="100" r="14" {F}/>""",
+    # Player: a play button in a ring.
+    "player": f"""  <circle cx="128" cy="128" r="76" {S(11.7)}/>
+  <path d="M110 94 L164 128 L110 162 Z" {F} stroke="{GREEN}" stroke-width="6" stroke-linejoin="round"/>""",
+    # Movie Maker: a clapperboard.
+    "movie": f"""  <rect x="52" y="112" width="152" height="80" rx="10" {S(10.4)}/>
+  <g transform="rotate(-14 52 104)">
+    <rect x="52" y="80" width="152" height="24" rx="5" {F}/>
+    <path d="M84 80 L100 104 M124 80 L140 104 M164 80 L180 104" stroke="{DARK}" stroke-width="8"/>
+  </g>""",
+    # Code: </>.
+    "code": f"""  <path d="M88 78 L46 128 L88 178" {S(14.3)}/>
+  <path d="M168 78 L210 128 L168 178" {S(14.3)}/>
+  <path d="M144 70 L112 186" {S(11.7)}/>""",
+    # Terminal: a shell prompt, >_.
+    "terminal": f"""  <path d="M64 88 L110 128 L64 168" {S(15.6)}/>
+  <path d="M130 168 L196 168" {S(15.6)}/>""",
+    # Compressor: two arrows pressing onto a bar.
+    "compressor": f"""  <path d="M128 46 L128 98 M104 76 L128 100 L152 76" {S(13)}/>
+  <path d="M128 210 L128 158 M104 180 L128 156 L152 180" {S(13)}/>
+  <path d="M60 128 L196 128" {S(14.3)}/>""",
+    # Converter: two arrows chasing each other round.
+    "converter": f"""  <path d="M64 116 A 66 66 0 0 1 188 98" {S(13)}/>
+  <path d="M196 66 L190 102 L156 92" {S(13)}/>
+  <path d="M192 140 A 66 66 0 0 1 68 158" {S(13)}/>
+  <path d="M60 190 L66 154 L100 164" {S(13)}/>""",
+    # Recompiler: a chip.
+    "recompiler": f"""  <rect x="78" y="78" width="100" height="100" rx="12" {S(10.4)}/>
+  <rect x="108" y="108" width="40" height="40" rx="6" {F}/>
+""" + "\n".join(f'  <path d="M{p} 52 L{p} 70 M{p} 186 L{p} 204 M52 {p} L70 {p} M186 {p} L204 {p}" {S(7.8)}/>'
+                for p in (104, 128, 152)),
+    # SoundPad: a 2x2 pad with one pad lit.
+    "soundpad": f"""  <rect x="58" y="58" width="62" height="62" rx="14" {F}/>
+  <rect x="136" y="58" width="62" height="62" rx="14" {S(7.8)}/>
+  <rect x="58" y="136" width="62" height="62" rx="14" {S(7.8)}/>
+  <rect x="136" y="136" width="62" height="62" rx="14" {S(7.8)}/>""",
+    # MP3 Converter: a pair of notes.
+    "mp3": f"""  <circle cx="90" cy="176" r="22" {F}/>
+  <circle cx="178" cy="160" r="22" {F}/>
+  <path d="M110 176 L110 80 L198 62 L198 160" {S(11.7)}/>
+  <path d="M110 104 L198 86" {S(11.7)}/>""",
+    # DAW: level meters.
+    "daw": "\n".join(f'  <path d="M{x} {128 - h} L{x} {128 + h}" {S(14.3)}/>'
+                     for x, h in ((56, 26), (92, 56), (128, 78), (164, 48), (200, 22))),
+    # Screen Recorder: the corners of a capture region round a record light.
+    "screen": f"""  <path d="M50 92 L50 56 L86 56 M170 56 L206 56 L206 92 M206 164 L206 200 L170 200 M86 200 L50 200 L50 164" {S(11.7)}/>
+  <circle cx="128" cy="128" r="30" {F}/>""",
+    # Snake's Studio: sparkles.
+    "studio": star(116, 136, 70) + "\n" + star(190, 70, 26),
 }
 
 
@@ -141,7 +134,7 @@ def main() -> None:
     rsvg, magick = shutil.which("rsvg-convert"), shutil.which("magick")
     for name, glyph in GLYPHS.items():
         svg = HERE / f"{name}.svg"
-        svg.write_text(TILE.format(glyph=glyph, red=RED, extra=EXTRA.get(name, "")))
+        svg.write_text(TILE.format(glyph=glyph, ghost=GHOST, red=RED))
         if rsvg:
             png = HERE / f"{name}.png"
             subprocess.run([rsvg, "-w", "512", "-h", "512", str(svg), "-o", str(png)], check=True)
