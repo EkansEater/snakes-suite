@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snakes-mp3"
-version = "1.1.0"
+version = "1.2.0"
 description = "Snake's MP3 Converter: drag a video link in, get an MP3 out."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6-Essentials>=6.6",
+    # Qt Multimedia: listening in the Clip window
+    "PySide6-Addons>=6.6",
     "yt-dlp",
     # cover art and tags in Opus, FLAC and M4A files
     "mutagen",

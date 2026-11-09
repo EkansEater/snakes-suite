@@ -113,7 +113,8 @@ function makeTheme(def) {
     '--list-inactive': mix(p.sel, 'aa'),
     '--widget-bg': p.widget,
     '--widget-border': type === 'hc' ? '#6fc3df' : p.border,
-    '--shadow': dark ? 'rgba(0,0,0,.45)' : 'rgba(0,0,0,.16)',
+    // Hex, not rgba(): it is also Monaco's widget.shadow, and Monaco reads anything else as red.
+    '--shadow': dark ? '#00000073' : '#00000029',
     '--badge-bg': p.accent,
     '--badge-fg': p.accentFg,
     '--button-bg': p.accent,

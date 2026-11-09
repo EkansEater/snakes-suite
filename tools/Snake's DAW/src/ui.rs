@@ -475,7 +475,7 @@ impl App {
                 meter(ui.painter(), top.shrink2(vec2(0.0, 1.0)), m.0, false);
                 meter(ui.painter(), bottom.shrink2(vec2(0.0, 1.0)), m.1, false);
                 ui.spacing_mut().slider_width = 90.0;
-                ui.add(Slider::new(&mut self.project.master_db, -60.0..=6.0).suffix(" dB").fixed_decimals(1));
+                theme::slider(ui, Slider::new(&mut self.project.master_db, -60.0..=6.0).suffix(" dB").fixed_decimals(1));
                 ui.label("🔊");
             });
         });
@@ -809,7 +809,7 @@ impl App {
             if show_volume {
             ui.horizontal(|ui| {
                 ui.spacing_mut().slider_width = 104.0;
-                ui.add(Slider::new(&mut t.volume_db, -60.0..=6.0).suffix(" dB").fixed_decimals(1)).on_hover_text("Volume");
+                theme::slider(ui, Slider::new(&mut t.volume_db, -60.0..=6.0).suffix(" dB").fixed_decimals(1)).on_hover_text("Volume");
                 ui.add(DragValue::new(&mut t.pan).range(-1.0..=1.0).speed(0.01).fixed_decimals(2).prefix("Pan "))
                     .on_hover_text("Pan: -1 left, 0 centre, 1 right");
             });
@@ -1109,7 +1109,7 @@ impl App {
                                                 .logarithmic(info.log)
                                                 .step_by(info.step as f64)
                                                 .suffix(format!(" {}", info.unit));
-                                            if ui.add(slider).on_hover_text("Double-click to reset").double_clicked() {
+                                            if theme::slider(ui, slider).on_hover_text("Double-click to reset").double_clicked() {
                                                 *value = info.default;
                                             }
                                         }
@@ -1361,7 +1361,7 @@ impl App {
                         });
                         let mut db = gain_to_db(lp.gain[slot].get()).max(-60.0);
                         ui.spacing_mut().slider_width = SLOT_W - 52.0;
-                        if ui.add(Slider::new(&mut db, -60.0..=6.0).suffix(" dB").fixed_decimals(0)).changed() {
+                        if theme::slider(ui, Slider::new(&mut db, -60.0..=6.0).suffix(" dB").fixed_decimals(0)).changed() {
                             lp.gain[slot].set(crate::util::db_to_gain(db));
                         }
                     });

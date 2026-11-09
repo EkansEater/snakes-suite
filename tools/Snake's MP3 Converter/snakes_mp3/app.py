@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_NAME, snake_ergo, snake_theme
+from .clip import ClipDialog
 from .downloader import FORMATS, LOSSLESS, NAME_TEMPLATES, QUALITIES, DownloadJob, JobOptions, human_bytes, human_time
 
 HERE = Path(__file__).resolve().parent
@@ -154,6 +155,8 @@ class JobWidget(QFrame):
 
         self.btn_play = self._button("▶ Play", self.open_file)
         self.btn_folder = self._button("Show", self.show_in_folder)
+        self.btn_clip = self._button("✂ Clip", self.clip)
+        self.btn_clip.setToolTip("Keep only part of this track: pick the start and end, listen, save")
         self.btn_retry = self._button("↻ Retry", self.retry)
         self.btn_cancel = self._button("Cancel", self.cancel, danger=True)
         self.btn_remove = self._button("✕", self.remove, danger=True)
@@ -163,7 +166,7 @@ class JobWidget(QFrame):
 
         btns = QHBoxLayout()
         btns.setSpacing(6)
-        for b in (self.btn_play, self.btn_folder, self.btn_retry, self.btn_cancel, self.btn_remove):
+        for b in (self.btn_play, self.btn_clip, self.btn_folder, self.btn_retry, self.btn_cancel, self.btn_remove):
             btns.addWidget(b)
 
         right = QVBoxLayout()
@@ -222,6 +225,7 @@ class JobWidget(QFrame):
         self.btn_retry.setVisible(self.state in ("failed", "cancelled"))
         self.btn_play.setVisible(self.state == "done")
         self.btn_folder.setVisible(self.state == "done")
+        self.btn_clip.setVisible(self.state == "done" and len(self.files) == 1)
         self.bar.setVisible(self.state in ("queued", "running"))
         self.setCursor(Qt.OpenHandCursor if self.state == "done" else Qt.ArrowCursor)
         if self.state == "done":
@@ -333,6 +337,21 @@ class JobWidget(QFrame):
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(m3u)))
             except OSError:
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def clip(self):
+        if len(self.files) != 1 or not os.path.exists(self.files[0]):
+            self.win.statusBar().showMessage("The file was moved or deleted.", 4000)
+            return
+        dlg = ClipDialog(self.files[0], self.thumb.pixmap(), self.win)
+        dlg.saved.connect(self._on_clipped)
+        dlg.exec()
+
+    def _on_clipped(self, path: str):
+        replaced = path == self.files[0]
+        self.files = [path]
+        size = os.path.getsize(path) if os.path.exists(path) else 0
+        note = "original replaced" if replaced else "original kept"
+        self.set_state("done", f"Clip saved  ·  {Path(path).name}  ·  {human_bytes(size)}  ·  {note}")
 
     def show_in_folder(self):
         if self.files:
@@ -797,7 +816,30 @@ class MainWindow(QMainWindow):
             os._exit(0)
 
 
+
+def use_system_libraries() -> None:
+    """Start other programs with the system's libraries, not the bundled ones.
+
+    The packaged app (PyInstaller) points LD_LIBRARY_PATH at its own bundled
+    libraries, and every program it starts inherits that: ffmpeg (chapters), and the file manager behind
+    "Open folder" and "Show file". They load
+    the bundled copies instead of their own and crash or quit once the system's
+    are newer. This process keeps its libraries: the loader reads the variable
+    only at start. PYINSTALLER_RESET_ENVIRONMENT makes a packaged app started
+    from here unpack its own files instead of borrowing this one's.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    original = os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        os.environ["LD_LIBRARY_PATH"] = original
+    else:
+        os.environ.pop("LD_LIBRARY_PATH", None)
+
+
 def main():
+    use_system_libraries()
     QApplication.setApplicationName(APP_NAME)
     QApplication.setDesktopFileName("snakes-mp3")
     app = QApplication(sys.argv)
@@ -808,6 +850,12 @@ def main():
     cli_urls = [u for a in sys.argv[1:] for u in URL_RE.findall(a)]
     if cli_urls:
         win.add_urls(cli_urls)
+    test_clip = os.environ.get("SNAKE_TEST_CLIP")
+    if test_clip:  # test helper: open the Clip window on a file, report what it loaded, close
+        dlg = ClipDialog(test_clip, None, win)
+        QTimer.singleShot(4000, lambda: (print(f"clip: duration={dlg.wave.duration} peaks={len(dlg.wave.peaks)} "
+                                               f"error={dlg.player.errorString()!r}", flush=True), app.quit()))
+        dlg.show()
     sys.exit(app.exec())
 
 

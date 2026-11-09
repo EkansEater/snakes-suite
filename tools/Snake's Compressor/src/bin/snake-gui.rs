@@ -325,7 +325,7 @@ impl App {
         let output = self.output.clone().unwrap_or_else(|| default_output(first, self.zip));
         ui.horizontal(|ui| {
             ui.label("Compression:");
-            ui.add(egui::Slider::new(&mut self.level, 1..=22).show_value(!self.zip));
+            snake_theme::slider(ui, egui::Slider::new(&mut self.level, 1..=22).show_value(!self.zip));
             ui.label(match (self.zip, self.level) {
                 (true, 1..=3) => "fast",
                 (true, 4..=8) => "normal",

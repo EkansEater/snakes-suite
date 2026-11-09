@@ -23,6 +23,7 @@ You can also pass links on the command line: `./snakes-mp3 https://youtu.be/...`
 - Works with YouTube, SoundCloud, Bandcamp, Vimeo, TikTok and [1000+ other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
 - Quality: 320 / 256 / 192 / 128 kbps CBR, or VBR V0
 - **Formats**: MP3 (plays everywhere), M4A (AAC) and Opus (smaller at the same quality), FLAC and WAV (lossless)
+- **✂ Clip**: on a finished track, keep only the part you want (one song of a mix, an intro, a ringtone). Drag the handles on the waveform, or play to a spot and press **I** (start) and **O** (end), or type the times; **Play clip** plays just that part. The clip is saved next to the track as "… (clip)" (or in its place, if you tick "Replace the original"), with its tags and cover art. MP3, M4A, Opus and WAV are cut without encoding again; FLAC is encoded again losslessly. Keys: Space play/pause, ←/→ 5 s (Shift: 1 s), Home/End jump to the clip's start/end
 - **Split by chapters**: a video with chapters (an album, a DJ mix, a podcast) becomes one track per chapter, numbered and tagged as an album (title, album, artist, track number, cover art) in a folder named after the video
 - Embeds the video thumbnail as **album art** and writes title / artist / date tags
 - **Playlists**: tick "Whole playlist" to grab every track, saved into a numbered subfolder
@@ -38,7 +39,7 @@ folder already exists from before the rename) (change it with the "Save to" butt
 
 ## Requirements
 
-Python 3.10+, PySide6, yt-dlp, ffmpeg, and deno (yt-dlp uses it for YouTube). The Snake's Suite
+Python 3.10+, PySide6 (with Qt Multimedia, from PySide6-Addons, for listening in the Clip window), yt-dlp, ffmpeg, and deno (yt-dlp uses it for YouTube). The Snake's Suite
 installer fetches the Python parts; if ffmpeg is not installed, the copy bundled with
 imageio-ffmpeg is used. On Arch/CachyOS, to run from this folder:
 

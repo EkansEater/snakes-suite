@@ -111,6 +111,23 @@ pub fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     )
 }
 
+/// A slider that stays visible on every surface of the suite. Use it instead of `ui.add(slider)`.
+///
+/// egui paints the empty rail in the button colour and the filled part in the selection colour.
+/// Both are barely different from the panels, and the selection colour is exactly the background
+/// of a selected row, so on one the slider vanished. Here the rail is FG3 and the fill ACCENT;
+/// the handle turns lighter under the mouse and green while dragged.
+pub fn slider(ui: &mut egui::Ui, slider: egui::Slider) -> egui::Response {
+    ui.scope(|ui| {
+        let v = ui.visuals_mut();
+        v.widgets.inactive.bg_fill = FG3;
+        v.widgets.hovered.bg_fill = FG2;
+        v.selection.bg_fill = ACCENT;
+        ui.add(slider.trailing_fill(true))
+    })
+    .inner
+}
+
 /// A card: the side-bar colour with a thin border, for grouping controls.
 pub fn card() -> egui::Frame {
     egui::Frame::new()

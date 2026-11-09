@@ -24,6 +24,34 @@
   `src/main/web/android-bridge.js`): guard any new `window.snake.*` call that only the desktop has.
 - `shared/` holds the originals of the theme and icons; run `python shared/sync.py` after changing them.
 
+## Apply every change live (always, without being asked)
+
+The owner tests in the copy they launch from the app menu, not the source folder. After
+changing an app, building, linting and testing it, put it into the installed copy:
+
+1. `python packaging/build.py tool <id>` → `release/snakes-<x>-linux-x86_64.tar.gz`. Code,
+   Terminal and the seven Studio apps all build the one Studio package.
+2. Find the install folder in `~/.local/share/snakes-suite/apps/`: the one whose
+   `snake-package.json` has that id (`_studio` for the Studio package; `daw`, `converter`, ...).
+3. Check the app is not running (`pgrep -x snakes-studio` etc.); if it is, ask the owner to close it.
+4. Unpack into `<folder>.new`; for `_studio`, copy `resources/ffmpeg` over from the old copy if
+   the new one has none (build.py only bundles it with `SNAKE_FFMPEG_DIR`). Then
+   `<folder>` → `<folder>.old` (replace any older backup) and `<folder>.new` → `<folder>`.
+5. Launch the installed program headless (below, with its `--app=<id>` if it has one and port
+   9336) and check the change there.
+6. **Do the same on the laptop** (`lenovoloq`): `scp` the archive to `lenoloq-ts:/tmp/`, then
+   steps 2-4 over `ssh lenoloq-ts 'sh -s' <<'EOF' ... EOF` (its login shell is fish). It has no
+   gamescope or Node, so check it by comparing `sha256sum` of the installed `resources/app.asar`
+   (or the program) with the one tested here. If it is offline, say so and do it next time.
+7. Tell the owner it is live on both machines and to restart the app. This is local: no commit,
+   push or release.
+
+If the app is not installed on a machine, say so instead of installing it there.
+
+Sessions started from the Claude app on the laptop work in scratch folders and reach this PC
+with `ssh pc` (or `pc-ts` away from home); its `~/.claude/CLAUDE.md` points them here, so this
+section applies to them too: build here, install on both.
+
 ## Running and testing an Electron app headless
 
 ```bash

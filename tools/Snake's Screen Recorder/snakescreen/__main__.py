@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import os
 import signal
 import sys
 
@@ -26,7 +27,29 @@ def send_to_running_instance(command):
     return True
 
 
+def use_system_libraries() -> None:
+    """Start other programs with the system's libraries, not the bundled ones.
+
+    The packaged app (PyInstaller) points LD_LIBRARY_PATH at its own bundled
+    libraries, and every program it starts inherits that: the file manager behind "Open recording" and
+    "Open folder" (ffmpeg and GStreamer get platforms._child_env too). They load
+    the bundled copies instead of their own and crash or quit once the system's
+    are newer. This process keeps its libraries: the loader reads the variable
+    only at start. PYINSTALLER_RESET_ENVIRONMENT makes a packaged app started
+    from here unpack its own files instead of borrowing this one's.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    original = os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        os.environ["LD_LIBRARY_PATH"] = original
+    else:
+        os.environ.pop("LD_LIBRARY_PATH", None)
+
+
 def main():
+    use_system_libraries()
     parser = argparse.ArgumentParser(prog="snakescreen", description="Screen and audio recorder.")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
     group = parser.add_mutually_exclusive_group()

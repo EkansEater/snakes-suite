@@ -381,6 +381,9 @@ export function editorOptions() {
     unicodeHighlight: { ambiguousCharacters: settings.get('editor.unicodeHighlight.ambiguousCharacters') },
     automaticLayout: false,
     fixedOverflowWidgets: true,
+    // With fixedOverflowWidgets, Monaco's context menu lives in a shadow root on <body>, outside
+    // .monaco-editor where the theme's --vscode-* variables are defined, so it renders transparent.
+    useShadowDOM: false,
     contextmenu: true,
     glyphMargin: false,
     lineDecorationsWidth: 12,

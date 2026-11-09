@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -1174,7 +1175,30 @@ def uninstall_from_command_line(tool_id: str, yes: bool) -> int:
     return 0
 
 
+
+def use_system_libraries() -> None:
+    """Start other programs with the system's libraries, not the bundled ones.
+
+    The packaged app (PyInstaller) points LD_LIBRARY_PATH at its own bundled
+    libraries, and every program it starts inherits that: every app opened from here, the hub itself
+    after an update, and gio and the desktop-database tools. They load
+    the bundled copies instead of their own and crash or quit once the system's
+    are newer. This process keeps its libraries: the loader reads the variable
+    only at start. PYINSTALLER_RESET_ENVIRONMENT makes a packaged app started
+    from here unpack its own files instead of borrowing this one's.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    original = os.environ.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        os.environ["LD_LIBRARY_PATH"] = original
+    else:
+        os.environ.pop("LD_LIBRARY_PATH", None)
+
+
 def main() -> int:
+    use_system_libraries()
     parser = argparse.ArgumentParser(prog="snakes-suite", description="Every Snake tool in one place.")
     parser.add_argument("--uninstall", metavar="TOOL", help="remove a tool, or 'suite' for everything")
     parser.add_argument("--yes", action="store_true", help="do not ask first")

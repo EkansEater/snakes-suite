@@ -239,7 +239,7 @@ class Server {
   }
 
   fail(message) {
-    if (this.state === 'stopped') return false;
+    if (this.state === 'stopped' || this.state === 'missing') return false;
     this.state = 'failed';
     this.error = message;
     log(`[${this.def.name}] ${message}`);
@@ -419,6 +419,14 @@ class Server {
     if (this.state === 'stopped') return;
     servers.delete(this.key);
     log(`[${this.def.name}] ${this.program} exited (code ${code})${stderr ? `:\n${stderr}` : ''}`);
+    // A rustup proxy with its component not installed: the server is missing, not crashing.
+    if (/Unknown binary '[^']+' in official toolchain/.test(stderr || '')) {
+      this.state = 'missing';
+      missing.add(this.def.id);
+      servers.set(this.key, this);
+      renderStatus();
+      return;
+    }
     // Restart after a crash, unless it keeps crashing.
     const now = Date.now();
     this.crashes = [...this.crashes.filter((t) => now - t < 180000), now];
