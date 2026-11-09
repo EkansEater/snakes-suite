@@ -14,6 +14,7 @@
         <package android:name="com.snake.suite.mp3" />
         <package android:name="com.snake.suite.daw" />
         <package android:name="com.snake.suite.screen" />
+        <package android:name="com.snake.suite.net" />
     </queries>
 
     <application

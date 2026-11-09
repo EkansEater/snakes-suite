@@ -15,6 +15,7 @@ Snake's Master Suite repository; it builds from the desktop apps' own sources.
 | Snake's MP3 Converter | Share a video link, get a tagged MP3 | yt-dlp on Python (Chaquopy), QuickJS, ffmpeg |
 | Snake's SoundPad | A grid of sound clips, one tap to play | Kotlin + Compose |
 | Snake's DAW | Amp, effects, loop station, tuner, multitrack recording | The desktop DAW's own engine and controller (Rust, AAudio) + a Compose UI |
+| Snake's Net | Phone speeds, usage per app, live capture per app, your computers' Snake's Net | Kotlin + Compose; live capture is a local VPN with its own TCP/UDP relay |
 
 The Recompiler stays desktop only; the hub shows it as such.
 
@@ -41,6 +42,13 @@ picture, the timeline), in the other apps the whole interface (remembered per ap
   exported `cookies.txt` instead of a browser.
 - **DAW**: no JACK, LV2 or desktop-audio routing; audio is Android's AAudio.
   Projects live in the app's folder; exports are copied to Music/Snake's DAW.
+- **Snake's Net**: Android hides other apps' connections, so per-app numbers come two ways.
+  *Usage* is Android's own count per app (today, 7 or 30 days), after you allow usage access.
+  *Live capture* makes Snake's Net a VPN on the phone: every connection goes through its
+  relay (`apps/net/.../capture/Engine.kt`), which carries it on to where it was going and counts
+  it per app, as it happens. Android allows one VPN at a time, so Tailscale is off while it
+  runs; ping (ICMP) doesn't work then. *Computers* opens a computer's Snake's Net web view
+  (`w` on the computer) over Tailscale.
 - Everything needs Android 11 or newer.
 
 Output goes where Android's own apps look: Music, Movies, Pictures or Download,

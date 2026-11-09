@@ -62,6 +62,8 @@ object Tools {
             "Amp, effects, loop station, tuner and multitrack recording.", R.drawable.tile_daw),
         Tool("screen", "Snake's Screen Recorder", "Screen and audio recorder",
             "Record the screen to MP4 or GIF, or audio to MP3.", R.drawable.tile_screen),
+        Tool("net", "Snake's Net", "Network monitor",
+            "Live speeds, which apps use the network, and your computers' Snake's Net.", R.drawable.tile_net),
     )
 
     fun byId(id: String): Tool? = if (id == hub.id) hub else all.firstOrNull { it.id == id }

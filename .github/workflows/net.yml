@@ -1,0 +1,69 @@
+# Snake's Net on Linux, Windows and macOS: runs it on GitHub's machines with a download going,
+# checks it measured something and that its web view answers, then builds the package for each
+# system (a run artifact you can try before a release). Runs when Snake's Net changes, or by hand.
+name: Snake's Net
+
+on:
+  push:
+    branches: [main, master-suite, laptop]
+    paths: ["tools/Snake's Net/**", "packaging/build.py", ".github/workflows/net.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        shell: bash
+        run: python -m pip install pyinstaller "./tools/Snake's Net"
+      - name: The terminal library loads
+        run: python -c "import curses; print('curses ok')"
+      - name: Measure while downloading
+        shell: bash
+        run: |
+          (curl -sL -o /dev/null --max-time 25 https://speed.cloudflare.com/__down?bytes=200000000 || true) &
+          sleep 2
+          python -m snakes_net --snapshot 6 --bytes | tee report.txt
+          grep -q "^INTERFACES" report.txt
+          grep -q "^OPEN PORTS" report.txt
+          # Some interface must have seen the download.
+          python - <<'EOF'
+          import re
+          text = open("report.txt", encoding="utf-8").read()
+          totals = re.findall(r"total down\s+([\d.]+) (B|KB|MB|GB)", text)
+          scale = {"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9}
+          best = max((float(n) * scale[u] for n, u in totals), default=0)
+          print("largest interface total:", best)
+          assert best > 1e6, "no interface counted the download"
+          EOF
+      - name: Web view answers
+        shell: bash
+        run: |
+          python -m snakes_net --headless --port 7878 > web.log 2>&1 &
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            curl -sf http://127.0.0.1:7878/api/state -o state.json && break
+            sleep 1
+          done
+          cat web.log
+          curl -sf http://127.0.0.1:7878/ | grep -q "Snake's Net"
+          python -c "import json; d=json.load(open('state.json')); print(d['os'], d['mode'], len(d['ifaces']), 'interfaces', len(d['ports']), 'ports'); assert d['ifaces']"
+      - name: Build the package
+        if: runner.os != 'Linux'
+        shell: bash
+        run: python packaging/build.py tool net
+      - uses: actions/upload-artifact@v4
+        if: runner.os != 'Linux'
+        with:
+          name: snakes-net-${{ matrix.os }}
+          path: release/snakes-net-*

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0f0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>Snake's Net</title>
+<style>
+  :root {
+    --bg: #0b0f0c; --panel: #111814; --line: #223029; --text: #d8e4dc; --dim: #7d8f84;
+    --down: #6fd18a; --up: #f277a8; --accent: #5fafff; --warn: #ffd75f; --bad: #ff5f5f; --head: #87d787;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.35 ui-monospace, "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+  body { padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 24px max(12px, env(safe-area-inset-left)); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 0 8px; }
+  header h1 { font-size: 16px; margin: 0; color: var(--head); letter-spacing: .02em; }
+  header .meta { color: var(--dim); font-size: 12px; }
+  header .spacer { flex: 1; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--down); display: inline-block; margin-right: 6px; }
+  .dot.stale { background: var(--bad); }
+  button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+  button.on { border-color: var(--head); color: var(--head); }
+  .grid { display: grid; gap: 10px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .grid { grid-template-columns: 2fr 1fr; } .wide { grid-column: 1 / -1; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--head); margin: 0 0 8px;
+    display: flex; gap: 8px; align-items: baseline; }
+  section h2 small { color: var(--dim); text-transform: none; letter-spacing: 0; font-weight: normal; margin-left: auto; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+  .chips button { white-space: nowrap; }
+  .now { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 8px; }
+  .big { font-size: 22px; font-weight: 700; }
+  .down { color: var(--down); } .up { color: var(--up); } .dim { color: var(--dim); } .warn { color: var(--warn); }
+  canvas { width: 100%; height: 220px; display: block; }
+  .ifc { padding: 7px 0; border-top: 1px solid var(--line); }
+  .ifc:first-child { border-top: 0; padding-top: 0; }
+  .ifc .name { font-weight: 700; }
+  .ifc .kind { color: var(--accent); margin-left: 6px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--dim); font-weight: 600; font-size: 12px; padding: 3px 6px 5px 0; white-space: nowrap; }
+  td { padding: 3px 6px 3px 0; border-top: 1px solid #18221d; vertical-align: top; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  td.app { font-weight: 700; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.host { max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+  .scroll { overflow-x: auto; }
+  .bar { height: 10px; border-radius: 3px; background: currentColor; min-width: 2px; }
+  .types td:nth-child(2) { width: 50%; }
+  .note { background: #2a2410; border: 1px solid #4a3f14; color: var(--warn); border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; }
+  .muted { color: var(--dim); padding: 6px 0; }
+  @media (max-width: 600px) { .hide-sm { display: none; } canvas { height: 180px; } .big { font-size: 19px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Snake's Net</h1>
+  <span class="meta" id="meta">connecting…</span>
+  <span class="spacer"></span>
+  <button id="units" title="Bits or bytes per second">bits</button>
+</header>
+<div id="note" class="note" hidden></div>
+<div class="grid">
+  <section class="wide-sm">
+    <h2>Speed <small id="span"></small></h2>
+    <div class="chips" id="chips"></div>
+    <div class="now">
+      <div><div class="dim">▼ Download</div><div class="big down" id="rx">–</div><div class="dim" id="rxm"></div></div>
+      <div><div class="dim">▲ Upload</div><div class="big up" id="tx">–</div><div class="dim" id="txm"></div></div>
+    </div>
+    <canvas id="graph"></canvas>
+  </section>
+  <section>
+    <h2>Interfaces</h2>
+    <div id="ifaces"></div>
+  </section>
+  <section class="wide">
+    <h2><span id="flowsTitle">Apps</span>
+      <small><button id="view">connections</button></small></h2>
+    <div class="scroll"><table id="flows"></table></div>
+  </section>
+  <section>
+    <h2>Traffic by type <small>session</small></h2>
+    <table class="types" id="types"></table>
+  </section>
+  <section>
+    <h2>Open ports <small id="portsInfo"></small></h2>
+    <div class="scroll"><table id="ports"></table></div>
+  </section>
+</div>
+<script>
+"use strict";
+const CAT = {Web:"#5fafff",Streaming:"#ff87ff",Calls:"#af87ff",Gaming:"#ff5f5f",P2P:"#ff8700",Sync:"#87d787",
+  Files:"#d7af87",Remote:"#ffd75f",VPN:"#5fd7ff",DNS:"#afd787",Mail:"#ffd7af",Chat:"#d787ff",Dev:"#87afd7",
+  Database:"#af875f","Local net":"#87afaf",System:"#949494",Other:"#808080"};
+const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+let bits = store("bits") !== "0", view = store("view") || "apps", sel = store("iface") || "all";
+let state = null, lastOk = 0;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function rate(v) {
+  if (v == null) return "n/a";
+  let u = bits ? ["b/s","Kb/s","Mb/s","Gb/s","Tb/s"] : ["B/s","KB/s","MB/s","GB/s","TB/s"];
+  v = bits ? v * 8 : v; let i = 0;
+  while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
+  return (i === 0 ? v.toFixed(0) : v < 100 ? v.toFixed(1) : v.toFixed(0)) + " " + u[i];
+}
+function size(n) {
+  const u = ["B","KB","MB","GB","TB"]; let v = n, i = 0;
+  while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
+  return (i === 0 ? v.toFixed(0) : v < 100 ? v.toFixed(1) : v.toFixed(0)) + " " + u[i];
+}
+function niceMax(v) {
+  v = Math.max(v, 1000); let p = 1; while (p * 10 <= v) p *= 10;
+  for (const m of [1, 2, 5, 10]) if (m * p >= v) return m * p; return 10 * p;
+}
+const r = v => v == null ? '<span class="dim">n/a</span>' : v <= 0 ? '<span class="dim">·</span>' : rate(v);
+
+function drawGraph(it) {
+  const c = $("graph"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const n = Math.min(it.hist_rx.length, Math.max(30, Math.floor(w / 2)));
+  const rx = it.hist_rx.slice(-n), tx = it.hist_tx.slice(-n);
+  const mrx = niceMax(Math.max(...rx)), mtx = niceMax(Math.max(...tx));
+  const mid = Math.round(h / 2), step = w / (n - 1 || 1);
+  const area = (data, max, up, col) => {
+    const grad = g.createLinearGradient(0, mid, 0, up ? 0 : h);
+    grad.addColorStop(0, col + "22"); grad.addColorStop(1, col + "cc");
+    g.beginPath(); g.moveTo(0, mid);
+    data.forEach((v, i) => { const y = Math.min(1, v / max) * (mid - 2); g.lineTo(i * step, up ? mid - y : mid + y); });
+    g.lineTo((data.length - 1) * step, mid); g.closePath(); g.fillStyle = grad; g.fill();
+    g.beginPath();
+    data.forEach((v, i) => { const y = Math.min(1, v / max) * (mid - 2); const yy = up ? mid - y : mid + y; i ? g.lineTo(i * step, yy) : g.moveTo(0, yy); });
+    g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
+  };
+  g.strokeStyle = "#223029"; g.lineWidth = 1; g.beginPath(); g.moveTo(0, mid + .5); g.lineTo(w, mid + .5); g.stroke();
+  area(rx, mrx, true, "#6fd18a"); area(tx, mtx, false, "#f277a8");
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace"; g.fillStyle = "#7d8f84"; g.textAlign = "right";
+  g.fillText("scale " + rate(mrx), w - 4, 12); g.fillText("scale " + rate(mtx), w - 4, h - 4);
+  const span = n * (state.interval || 1);
+  $("span").textContent = span >= 120 ? Math.round(span / 60) + " min shown" : Math.round(span) + " s shown";
+}
+
+function render() {
+  if (!state) return;
+  const s = state;
+  $("meta").innerHTML = `<span class="dot${Date.now() - lastOk > 5000 ? " stale" : ""}"></span>${esc(s.host)} · ${esc(s.os)} · ${esc(s.mode)}`;
+  document.title = `Snake's Net · ${s.host}`;
+  $("note").hidden = !s.note; $("note").textContent = s.note || "";
+  $("units").textContent = bits ? "bits" : "bytes";
+  let it = s.ifaces.find(i => i.name === sel) || s.ifaces[0]; sel = it.name;
+  $("chips").innerHTML = s.ifaces.map(i => `<button data-i="${esc(i.name)}" class="${i.name === sel ? "on" : ""}">${i.name === "all" ? "All" : esc(i.name)}</button>`).join("");
+  $("rx").textContent = rate(it.rx); $("tx").textContent = rate(it.tx);
+  $("rxm").textContent = `peak ${rate(it.rx_peak)} · total ${size(it.rx_tot)}`;
+  $("txm").textContent = `peak ${rate(it.tx_peak)} · total ${size(it.tx_tot)}`;
+  drawGraph(it);
+
+  $("ifaces").innerHTML = s.ifaces.map(i => {
+    let extra = "";
+    if (i.name === "all") extra = "Wi-Fi + Ethernet";
+    else if (i.wifi && i.wifi.ssid) extra = esc(i.wifi.ssid) + (i.wifi.signal != null ? ` ${i.wifi.signal} dBm` : i.wifi.quality != null ? ` ${i.wifi.quality}%` : "") + (i.wifi.rx_bitrate ? ` · link ${Math.round(i.wifi.rx_bitrate)} Mb/s` : "");
+    else if (i.kind === "Ethernet" && i.speed) extra = `${i.speed} Mb/s link`;
+    else if (!i.up) extra = "down";
+    const addrs = (i.addrs || []).slice(0, 2).join(", ");
+    return `<div class="ifc"><span class="name" style="color:${i.up ? "var(--text)" : "var(--bad)"}">${i.name === "all" ? "All" : esc(i.name)}</span>${i.name === "all" ? "" : `<span class="kind">${esc(i.kind)}</span>`}
+      <div class="row"><span class="down">▼ ${rate(i.rx)}</span><span class="up">▲ ${rate(i.tx)}</span><span class="dim">in ${size(i.rx_tot)} · out ${size(i.tx_tot)}</span></div>
+      <div class="dim">${extra}${addrs ? (extra ? " · " : "") + esc(addrs) : ""}</div></div>`;
+  }).join("");
+
+  if (view === "apps") {
+    $("flowsTitle").textContent = `Apps using the network (${s.apps.length})`; $("view").textContent = "connections";
+    $("flows").innerHTML = `<tr><th>App</th><th class="n">▼ Down</th><th class="n">▲ Up</th><th class="n hide-sm">Received</th><th class="n hide-sm">Sent</th><th class="n hide-sm">Conns</th><th>Main traffic</th></tr>` +
+      (s.apps.length ? s.apps.map(a => `<tr><td class="app">${esc(a.proc)}</td><td class="n down">${r(a.down)}</td><td class="n up">${r(a.up)}</td>
+        <td class="n dim hide-sm">${a.recv ? size(a.recv) : "·"}</td><td class="n dim hide-sm">${a.sent ? size(a.sent) : "·"}</td><td class="n hide-sm">${a.conns}</td>
+        <td style="color:${CAT[a.cat] || "#808080"}" class="host">${esc(a.main)}</td></tr>`).join("") : `<tr><td class="muted" colspan="7">No connections yet.</td></tr>`);
+  } else {
+    $("flowsTitle").textContent = `Connections (${s.conns.length})`; $("view").textContent = "apps";
+    $("flows").innerHTML = `<tr><th>App</th><th class="hide-sm">Proto</th><th>Remote host</th><th>Type</th><th class="n">▼ Down</th><th class="n">▲ Up</th></tr>` +
+      s.conns.map(c => `<tr><td class="app">${esc(c.proc)}</td><td class="hide-sm" style="color:var(--accent)">${esc(c.proto.toUpperCase())}</td>
+        <td class="host">${esc(c.host)}${c.rport ? ":" + c.rport : ""}</td><td style="color:${CAT[c.cat] || "#808080"}">${esc(c.svc)}</td>
+        <td class="n down">${r(c.down)}</td><td class="n up">${r(c.up)}</td></tr>`).join("");
+  }
+
+  const total = s.types.reduce((a, t) => a + t.total, 0) || 1;
+  $("types").innerHTML = s.types.length ? s.types.map(t => `<tr style="color:${CAT[t.cat] || "#808080"}"><td>${esc(t.cat)}</td>
+    <td><div class="bar" style="width:${(100 * t.total / total).toFixed(1)}%"></div></td><td class="n">${r(t.rate)}</td><td class="n dim">${size(t.total)}</td></tr>`).join("")
+    : `<tr><td class="muted">${s.per_app ? "Measuring…" : "Needs per-app speeds on that computer."}</td></tr>`;
+
+  const pub = s.ports.filter(p => p.scope === "all" || p.scope === "lan").length;
+  $("portsInfo").textContent = `${s.ports.length} · ${pub} reachable from network`;
+  const scope = {all: ["network", "var(--warn)"], lan: ["LAN", "var(--warn)"], tailnet: ["tailnet", "var(--accent)"], local: ["this PC", "var(--dim)"]};
+  $("ports").innerHTML = `<tr><th>Proto</th><th>Port</th><th>Open to</th><th>Service</th><th>App</th></tr>` +
+    s.ports.map(p => `<tr><td style="color:var(--accent)">${esc(p.proto.toUpperCase())}</td><td><b>${p.port}</b></td>
+      <td style="color:${scope[p.scope][1]}">${scope[p.scope][0]}</td><td>${esc(p.svc)}</td><td class="app">${esc(p.proc)}</td></tr>`).join("");
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/api/state", {cache: "no-store"});
+    if (res.ok) { const s = await res.json(); if (s.ifaces) { state = s; lastOk = Date.now(); } }
+  } catch (e) { /* computer asleep or off the tailnet: keep the last numbers, mark them stale */ }
+  render();
+  setTimeout(poll, Math.max(1000, (state && state.interval || 1) * 1000));
+}
+
+$("chips").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { sel = b.dataset.i; store("iface", sel); render(); } });
+$("units").addEventListener("click", () => { bits = !bits; store("bits", bits ? "1" : "0"); render(); });
+$("view").addEventListener("click", () => { view = view === "apps" ? "conns" : "apps"; store("view", view); render(); });
+window.addEventListener("resize", render);
+poll();
+</script>
+</body>
+</html>

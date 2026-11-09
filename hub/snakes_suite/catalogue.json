@@ -275,7 +275,7 @@
       "package": {
         "electron": true
       },
-      "version": "1.2.1"
+      "version": "1.2.2"
     },
     {
       "id": "terminal",
@@ -335,7 +335,7 @@
       "accepts_files": false,
       "legacy_desktop": [],
       "package": {},
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "id": "converter",
@@ -391,7 +391,7 @@
           "PySide6.Qt3DCore"
         ]
       },
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "id": "recompiler",
@@ -501,13 +501,13 @@
           "PySide6.Qt3DCore"
         ]
       },
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "id": "mp3",
       "name": "Snake's MP3 Converter",
       "tagline": "Links to MP3",
-      "description": "Drop a video link from 1000+ sites, get a tagged MP3.",
+      "description": "Drop a video link from 1000+ sites, get a tagged MP3; clip it to the part you want.",
       "folder": "tools/Snake's MP3 Converter",
       "kind": "python",
       "module": "snakes_mp3",
@@ -558,7 +558,7 @@
           "PySide6.Qt3DCore"
         ]
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "id": "daw",
@@ -601,13 +601,13 @@
       "package": {
         "microphone": true
       },
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "id": "screen",
       "name": "Snake's Screen Recorder",
       "tagline": "Screen and audio recorder",
-      "description": "Record the screen, a region or a window to MP4, GIF or MP3.",
+      "description": "Record the screen, a region or a window to MP4, GIF or MP3; trim and crop recordings.",
       "folder": "tools/Snake's Screen Recorder",
       "kind": "python",
       "module": "snakescreen",
@@ -669,6 +669,61 @@
           ]
         }
       },
+      "version": "1.3.0"
+    },
+    {
+      "id": "net",
+      "name": "Snake's Net",
+      "tagline": "Network monitor",
+      "description": "Live download and upload speeds for Wi-Fi and Ethernet, which apps use the network, traffic types and open ports. Runs in a terminal, like btop, and can share a live web page with your phone over Tailscale.",
+      "folder": "tools/Snake's Net",
+      "kind": "script",
+      "launch": {
+        "linux": [
+          "./snakes-net"
+        ],
+        "macos": [
+          "./snakes-net"
+        ],
+        "windows": [
+          "snakes-net.cmd"
+        ]
+      },
+      "platforms": [
+        "linux",
+        "windows",
+        "macos"
+      ],
+      "needs": [
+        "Linux: Python 3.10+ and a terminal app (Konsole, GNOME Terminal, …)"
+      ],
+      "assets": {
+        "dir": "snakes_net/assets"
+      },
+      "wm_class": "snakes-net",
+      "command": "snakes-net",
+      "categories": "System;Network;Monitor;",
+      "accepts_files": false,
+      "legacy_desktop": [],
+      "package": {
+        "source": [
+          "linux"
+        ],
+        "console": true,
+        "entry": "snakes_net.app:main",
+        "exe": "snakes-net",
+        "collect_data": [
+          "snakes_net"
+        ],
+        "hidden_imports_by_os": {
+          "windows": [
+            "snakes_net.sources.windows"
+          ],
+          "macos": [
+            "snakes_net.sources.macos"
+          ]
+        }
+      },
       "version": "1.1.0"
     }
   ],
@@ -718,7 +773,7 @@
         "PySide6.Qt3DCore"
       ]
     },
-    "version": "1.1.6"
+    "version": "1.1.7"
   },
   "release": {
     "repo": "EkansEater/snakes-suite",

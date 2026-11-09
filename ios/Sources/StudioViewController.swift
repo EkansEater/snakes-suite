@@ -193,6 +193,13 @@ final class StudioViewController: UIViewController, WKNavigationDelegate, WKUIDe
         case "launch":
             let target = str(0) ?? "home"
             guard target.allSatisfy({ $0.isLetter }) else { return done(.failure(StudioError("No such app"))) }
+            if target == "net" {
+                // Snake's Net is a native screen: the page can't read the phone's network counters.
+                let net = NetViewController { [weak self] in self?.dismiss(animated: true) }
+                net.modalPresentationStyle = .fullScreen
+                present(net, animated: true)
+                return done(.success(nil))
+            }
             load(target)
             done(.success(nil))
         case "openExternal":

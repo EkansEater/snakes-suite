@@ -95,6 +95,9 @@ GLYPHS = {
     # Terminal: a shell prompt, >_.
     "terminal": f"""  <path d="M64 88 L110 128 L64 168" {S(15.6)}/>
   <path d="M130 168 L196 168" {S(15.6)}/>""",
+    # Snake's Net: a download arrow and an upload arrow side by side.
+    "net": f"""  <path d="M96 56 L96 196 M70 170 L96 198 L122 170" {S(13)}/>
+  <path d="M160 200 L160 60 M134 86 L160 58 L186 86" {S(13)}/>""",
     # Compressor: two arrows pressing onto a bar.
     "compressor": f"""  <path d="M128 46 L128 98 M104 76 L128 100 L152 76" {S(13)}/>
   <path d="M128 210 L128 158 M104 180 L128 156 L152 180" {S(13)}/>

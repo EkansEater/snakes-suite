@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2b22"/>
+      <stop offset="1" stop-color="#0d1410"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <!-- the snake, as a watermark -->
+  <path d="M166 70 C 120 52, 82 72, 96 104 C 108 132, 160 124, 164 156 C 168 190, 116 200, 86 184"
+        fill="none" stroke="#26392c" stroke-width="26" stroke-linecap="round"/>
+  <ellipse cx="170" cy="70" rx="22" ry="17" fill="#26392c"/>
+  <path d="M190 74 L206 78 M206 78 L214 72 M206 78 L213 85" stroke="#ff7b72" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <!-- the app's symbol -->
+  <path d="M96 56 L96 196 M70 170 L96 198 L122 170" fill="none" stroke="#7ee787" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M160 200 L160 60 M134 86 L160 58 L186 86" fill="none" stroke="#7ee787" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

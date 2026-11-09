@@ -21,6 +21,7 @@ that puts each one on your computer as a normal app, alone or as a whole kit.
 | Snake's MP3 Converter | Video links to tagged MP3s (was Snake's Sounds) | ✓ | ✓ | ✓ |
 | Snake's DAW | Amp, effects, looper, recording | ✓ | ✓ | ✓ |
 | Snake's Screen Recorder | Screen to MP4 / GIF, audio to MP3 | ✓ | ✓ | ✓ |
+| Snake's Net | Network monitor like btop: speeds, apps, traffic types, open ports; a web view for your phone | ✓ | ✓ | ✓ |
 
 On the desktop Snake's Code and Snake's Terminal also come in the Snake's Studio package
 (one Electron for all nine, one download), each still with its own window, icon and settings.
