@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snakes-net"
-version = "1.1.0"
+version = "1.1.1"
 description = "Snake's Net: live network speeds, apps, traffic types and open ports, in the terminal and on your phone."
 readme = "README.md"
 requires-python = ">=3.10"

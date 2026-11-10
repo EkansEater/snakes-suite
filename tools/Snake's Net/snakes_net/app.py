@@ -535,6 +535,8 @@ class UI:
         self.show_loop = False
         self.paused = False
         self.scroll = 0
+        self.port_scroll = 0  # scroll position of the Open ports panel
+        self.panels = {}  # screen area of each scrollable panel, for the mouse wheel
         self.sel = 0  # selected interface index (0 = all)
         self.order = []
         self.start = time.time()
@@ -712,7 +714,7 @@ class UI:
         elif self.web_error:
             left += f"  web: {self.web_error}"
         self.put(0, 0, left, self.cp(C_HEAD, curses.A_BOLD))
-        for keys in (f"tab iface  v view  s sort  b bits/bytes  n names  l loopback  w web  p pause  +/- {self.interval:g}s  q quit ",
+        for keys in (f"tab iface  v view  s sort  b bits/bytes  n names  l loopback  w web  p pause  +/- {self.interval:g}s  [ ] ports  q quit ",
                      f"tab iface  v view  s sort  b units  n names  l lo  w web  p pause  +/- {self.interval:g}s  q quit ",
                      "tab iface  v view  s sort  w web  q quit ",
                      "v view  w web  q quit "):
@@ -830,6 +832,7 @@ class UI:
         title += f" · {active} active transfer{'s' if active != 1 else ''}"
         right = f"v: {'connections' if self.view == 'process' else 'apps'} · sort: {self.sort}"
         self.box(y, x, h, w, title, right)
+        self.panels["flows"] = (y, x, h, w)
         key = {
             "speed": lambda r: -((r["down"] or 0) + (r["up"] or 0)),
             "total": lambda r: -(r["recv"] + r["sent"]),
@@ -949,10 +952,13 @@ class UI:
         rows = c.listening
         public = sum(1 for r in rows if r["scope"] in ("all", "lan"))
         self.box(y, x, h, w, f"Open ports ({len(rows)})", f"{public} reachable from network")
+        self.panels["ports"] = (y, x, h, w)
         if h < 4:
             return
+        body_h = h - 3
+        self.port_scroll = max(0, min(self.port_scroll, len(rows) - body_h))
         self.put(y + 1, x + 2, "Proto Port   Open to  Service     App", self.cp(C_DIM, curses.A_BOLD))
-        for i, r in enumerate(rows[: h - 3]):
+        for i, r in enumerate(rows[self.port_scroll:self.port_scroll + body_h]):
             ry = y + 2 + i
             scope_col = {"all": C_WARN, "lan": C_WARN, "tailnet": C_ACCENT, "local": C_DIM}[r["scope"]]
             scope_txt = {"all": "network", "lan": "LAN", "tailnet": "tailnet", "local": "this PC"}[r["scope"]]
@@ -962,8 +968,9 @@ class UI:
             self.put(ry, x + 24, trunc(r["svc"], 11).ljust(12), self.cp(C_TEXT))
             app = r["proc"] or "(system)"
             self.put(ry, x + 36, trunc(app, w - 38), self.cp(C_TEXT) if r["proc"] else self.cp(C_DIM))
-        if len(rows) > h - 3:
-            self.put(y + h - 1, x + 2, f" +{len(rows) - (h - 3)} more ", self.cp(C_DIM))
+        if len(rows) > body_h:
+            more = f" {self.port_scroll + 1}-{self.port_scroll + body_h} of {len(rows)} [ ] "
+            self.put(y + h - 1, x + w - 2 - len(more), more, self.cp(C_DIM))
 
     # ---- web view
     def toggle_web(self):
@@ -1022,7 +1029,37 @@ class UI:
             self.scroll = max(0, self.scroll - 10)
         elif k == curses.KEY_HOME:
             self.scroll = 0
+        elif k == ord("]"):
+            self.port_scroll += 1
+        elif k == ord("["):
+            self.port_scroll = max(0, self.port_scroll - 1)
+        elif k == curses.KEY_MOUSE:
+            self.wheel()
         return True
+
+    def wheel(self):
+        try:
+            _, mx, my, _, bstate = curses.getmouse()
+        except curses.error:
+            return
+        if bstate & WHEEL_UP:
+            step = -3
+        elif bstate & WHEEL_DOWN:
+            step = 3
+        else:
+            return
+        for name, (py, px, ph, pw) in self.panels.items():
+            if py <= my < py + ph and px <= mx < px + pw:
+                if name == "ports":
+                    self.port_scroll = max(0, self.port_scroll + step)
+                else:
+                    self.scroll = max(0, self.scroll + step)
+                return
+
+
+# Mouse wheel buttons (BUTTON5 is missing from older Pythons' curses)
+WHEEL_UP = curses.BUTTON4_PRESSED
+WHEEL_DOWN = getattr(curses, "BUTTON5_PRESSED", 0x200000)
 
 
 def start_web(col, args):
@@ -1034,6 +1071,7 @@ def run_tui(scr, args):
     curses.curs_set(0)
     scr.keypad(True)
     scr.timeout(100)
+    curses.mousemask(WHEEL_UP | WHEEL_DOWN)
     res = Resolver()
     col = Collector(sources.load(), capture=system_elevated() and not args.no_capture, resolver=res)
     ui = UI(scr, col, args, res)

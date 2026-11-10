@@ -41,7 +41,8 @@ The Snake's Net phone apps open the same page under *Computers*.
 ## Keys
 
 Tab / ← → interface · `v` apps or connections · `s` sort · `b` bits or bytes · `n` host names ·
-`l` loopback · `w` web view · `p` pause · `+` `-` update speed · ↑ ↓ PgUp PgDn scroll ·
+`l` loopback · `w` web view · `p` pause · `+` `-` update speed · ↑ ↓ PgUp PgDn scroll · `[` `]` scroll open ports ·
+mouse wheel scrolls the panel under the pointer ·
 `R` restart with sudo / as administrator · `q` quit
 
 ## Running from source
